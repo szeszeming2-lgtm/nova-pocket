@@ -1,4 +1,4 @@
-window.NP_VERSION='c3b368f620';
+window.NP_VERSION='89d4f7b3f8';
 /* ---- 00-core.js ---- */
 'use strict';
 /* ===== Super One core: helpers, storage, dialogs, files, sound ===== */
@@ -507,7 +507,8 @@ const Backup = {
       h('div', { class: 'row' },
         h('button', { class: 'btn pri sm', onclick: () => this.run(true) }, 'Back up everything'),
         h('button', { class: 'btn sm', onclick: () => this.run(false) }, 'Text only (small)'),
-        h('button', { class: 'btn sm', onclick: () => this.pickRestore() }, 'Restore…')));
+        h('button', { class: 'btn sm', onclick: () => this.pickRestore() }, 'Restore…')),
+      h('button', { class: 'btn sm mt', onclick: () => Shell.go('sync') }, '📲 Link my phone and computer'));
     return el;
   },
   async run(withFiles) {
@@ -612,6 +613,7 @@ const ICON_PATHS = {
   notes: '<rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8h6M9 12h6M9 16h4"/>',
   reminders: '<path d="M4 6l1.5 1.5L8 5M4 12l1.5 1.5L8 11M4 18l1.5 1.5L8 17M11.5 6.5h8.5M11.5 12.5h8.5M11.5 18.5h8.5"/>',
   passwords: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3M12 14.5v2.5"/>',
+  sync: '<rect x="2" y="5" width="13" height="9" rx="1.6"/><path d="M.8 17.2h15.4"/><rect x="16.5" y="7.5" width="6" height="12.5" rx="1.6"/><path d="M19.5 17.3h.01"/>',
   fit: '<circle cx="12" cy="4.2" r="2.1"/><path d="M12 7.5v6.5M5 9.5l7 1.2 7-1.2M8.5 21.5l3.5-7.5 3.5 7.5"/>',
   map: '<path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/>',
   weather: '<path d="M7 19h10a4 4 0 0 0 .5-7.97A5.5 5.5 0 0 0 7 11.5 3.75 3.75 0 0 0 7 19z"/><path d="M15.5 5.5a3.5 3.5 0 0 1 4.5 4M17.5 2.5v.01M21.5 6.5v.01"/>',
@@ -4970,7 +4972,7 @@ const GoHome = {
       h('div', { class: 'sec', style: { margin: '6px 0 0' } }, 'How do you go home?'), UI.seg(this.MODES.map(m => [m[0], m[1]]), s.mode, v => { s.mode = v; }),
       h('div', { class: 'sec', style: { margin: '6px 0 0' } }, 'Open in'), UI.seg([['google', 'Google Maps'], ['apple', 'Apple Maps']], s.app, v => { s.app = v; }),
       h('p', { class: 'tiny muted' }, '🔒 Saved only on this phone, never on the website. When you tap “Take me home”, the address goes to the map app so it can plan the route.'),
-      this.isSet() ? h('button', { class: 'btn bad sm', onclick: e => { localStorage.removeItem('np.home'); e.target.closest('.scrim').remove(); UI.toast('Home removed'); GoHome.changed(); } }, 'Forget my home') : null);
+      this.isSet() ? h('button', { class: 'btn bad sm', onclick: e => { Prefs.del ? Prefs.del('home') : localStorage.removeItem('np.home'); e.target.closest('.scrim').remove(); UI.toast('Home removed'); GoHome.changed(); } }, 'Forget my home') : null);
     UI.sheet({ title: '🏠 My home', body, actions: [{ label: 'Cancel' }, { label: after ? 'Save & go' : 'Save', cls: 'pri', onClick: c => {
       s.addr = addr.value.trim(); if (!s.addr && s.lat == null) return UI.toast('Type your address, or tap “I’m home right now”');
       Prefs.set('home', { addr: s.addr, lat: s.lat, lon: s.lon, mode: s.mode, app: s.app, at: Date.now() }); c(); UI.toast('🏠 Home saved'); this.changed(); if (after) after(); } }] });
@@ -5699,6 +5701,146 @@ Apps.reg({
     }
     if (ctx.param) open(ctx.param); else home();
     return () => Speak.stop();
+  },
+});
+
+/* ---- 48-sync.js ---- */
+/* ===== Link Devices: the same stuff on your phone and computer. A link file goes by AirDrop — no cloud, no account.
+   Every change is stamped with a time; when two devices meet, the newest change wins and deletions are remembered. ===== */
+const Sync = (() => {
+  const MK = 'np.__sync';
+  const LOCAL_ONLY = new Set(['hideInstall', 'pxmm', 'appOpens', 'timerEnd', 'timerLeft', 'timerTotal', 'stopwatch', 'size', 'theme']);
+  const KV_LOCAL = k => k === 'lastBackup' || /^sync/.test(k);
+  const prefOk = k => !k.startsWith('__') && !LOCAL_ONLY.has(k);
+  let meta = null, flushT = 0;
+  const load = () => { if (!meta) { try { meta = JSON.parse(localStorage.getItem(MK)) || {}; } catch (e) { meta = {}; } meta.m = meta.m || {}; meta.d = meta.d || {}; } return meta; };
+  const flush = () => { clearTimeout(flushT); if (meta) try { localStorage.setItem(MK, JSON.stringify(meta)); } catch (e) { } };
+  const later = () => { clearTimeout(flushT); flushT = setTimeout(flush, 400); };
+  const touch = key => { const M = load(); M.m[key] = Date.now(); delete M.d[key]; later(); };
+  const gone = key => { const M = load(); M.d[key] = Date.now(); delete M.m[key]; later(); };
+  addEventListener('pagehide', flush);
+  // stamp every change
+  const raw = { put: DB.put, del: DB.del, kset: DB.kset, kdel: DB.kdel, pset: Prefs.set.bind(Prefs) };
+  DB.put = (s, v) => raw.put(s, v).then(r => { if (v && v.id != null) touch('s:' + s + ':' + v.id); return r; });
+  DB.del = (s, id) => raw.del(s, id).then(r => { gone('s:' + s + ':' + id); return r; });
+  DB.kset = (k, v) => raw.kset(k, v).then(r => { if (!KV_LOCAL(k)) touch('k:' + k); return r; });
+  DB.kdel = k => raw.kdel(k).then(r => { if (!KV_LOCAL(k)) gone('k:' + k); return r; });
+  Prefs.set = (k, v) => { raw.pset(k, v); if (prefOk(k)) touch('p:' + k); };
+  Prefs.del = k => { try { localStorage.removeItem('np.' + k); } catch (e) { } if (prefOk(k)) gone('p:' + k); };
+  const guess = () => { const u = navigator.userAgent; return /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1) ? 'iPad' : /Android/.test(u) ? 'Android phone' : /Macintosh/.test(u) ? 'Mac' : /Windows/.test(u) ? 'PC' : 'Computer'; };
+  const dev = () => { let d = Prefs.get('__dev', null); if (!d) { d = { id: uid(), name: guess() }; raw.pset('__dev', d); } return d; };
+  async function keys(s) { const d = await DB.open(); return new Promise((res, rej) => { const r = d.transaction(s).objectStore(s).getAllKeys(); r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error); }); }
+  const plain = v => v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype;
+  function encoder(files) { let n = 0; const enc = (v, s) => { if (v instanceof Blob) { const nm = 'files/' + (n++) + '-' + s; files.push({ name: nm, data: v }); return { $blob: nm, type: v.type }; } if (Array.isArray(v)) return v.map(x => enc(x, s)); if (plain(v)) { const o = {}; for (const k in v) o[k] = enc(v[k], s); return o; } return v; }; return enc; }
+  function decoder(byName) { const dec = v => { if (Array.isArray(v)) return v.map(dec); if (plain(v)) { if (v.$blob) return byName[v.$blob] ? new Blob([byName[v.$blob]], { type: v.type || '' }) : null; const o = {}; for (const k in v) o[k] = dec(v[k]); return o; } return v; }; return dec; }
+  // workout logs and bests are combined instead of replaced
+  const MERGE = {
+    fitLog: (a, b) => { const m = new Map(); for (const e of [...(a || []), ...(b || [])]) if (e && e.id) m.set(e.id, e); return [...m.values()].sort((x, y) => y.at - x.at).slice(0, 500); },
+    fitPB: (a, b) => { const o = Object.assign({}, a); for (const k in b || {}) o[k] = Math.max(o[k] || 0, b[k]); return o; },
+  };
+  async function pack() {
+    flush(); const files = [], enc = encoder(files);
+    const data = { app: 'nova-pocket', kind: 'sync', format: 1, from: dev(), made: Date.now(), meta: load(), kv: [], stores: {}, prefs: {} };
+    for (const [k, v] of await DB.kentries()) if (!KV_LOCAL(k)) data.kv.push([k, enc(v, 'kv')]);
+    for (const s of DB.STORES) if (s !== 'kv') data.stores[s] = (await DB.all(s)).map(r => enc(r, s));
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (!k || !k.startsWith('np.') || !prefOk(k.slice(3))) continue; try { data.prefs[k.slice(3)] = JSON.parse(localStorage.getItem(k)); } catch (e) { } }
+    files.unshift({ name: 'super-one-sync.json', data: JSON.stringify(data) });
+    return Zip.make(files);
+  }
+  async function receive(file) {
+    const entries = await Zip.read(file), byName = Object.fromEntries(entries.map(e => [e.name, e.blob])), dec = decoder(byName);
+    let R = null;
+    if (byName['super-one-sync.json']) R = JSON.parse(await byName['super-one-sync.json'].text());
+    else if (byName['nova-pocket-backup.json']) { const b = JSON.parse(await byName['nova-pocket-backup.json'].text()); if (b.app === 'nova-pocket') R = { app: b.app, kind: 'backup', kv: b.kv || [], stores: b.stores || {}, prefs: {}, meta: { m: {}, d: {} }, from: { name: 'a backup file' } }; }
+    if (!R || R.app !== 'nova-pocket') throw new Error('That isn’t a Super One link file.');
+    if (R.from && R.from.id === dev().id) throw new Error('This file came from this same device. Open it on your other device.');
+    const M = load(), RM = R.meta || { m: {}, d: {} }, st = { added: 0, updated: 0, removed: 0, notes: [], from: (R.from && R.from.name) || 'your other device' };
+    RM.m = RM.m || {}; RM.d = RM.d || {};
+    // newest wins: 'add' | 'update' | 'del' | null (keep what's here)
+    const decide = (key, here, there) => {
+      const Lm = M.m[key] || 0, Ld = M.d[key] || 0, Rm = RM.m[key] || 0, Rd = RM.d[key] || 0;
+      if (there) return here ? (Rm > Lm ? 'update' : null) : (Ld > Rm ? null : 'add');
+      return here && Rd > Lm ? 'del' : null;
+    };
+    const mark = (act, key) => { if (act === 'del') { M.d[key] = RM.d[key]; delete M.m[key]; st.removed++; } else { if (RM.m[key]) M.m[key] = RM.m[key]; else delete M.m[key]; delete M.d[key]; st[act === 'add' ? 'added' : 'updated']++; } };
+    const tombIds = s => Object.keys(RM.d).filter(k => k.startsWith('s:' + s + ':')).map(k => k.slice(s.length + 3));
+    for (const s of DB.STORES) {
+      if (s === 'kv') continue;
+      const here = new Map((await keys(s)).map(k => [String(k), k])), there = new Map((R.stores[s] || []).map(r => [String(r.id), r]));
+      if (s === 'vault' && here.has('main') && there.has('main')) {
+        const a = await DB.get('vault', 'main'), b = there.get('main');
+        if (a && b && a.created !== b.created) { st.notes.push('🔐 Passwords were not linked, because each device has its own password vault. Keep your passwords on one device, or remove the vault on one device and link again.'); continue; }
+      }
+      for (const id of new Set([...here.keys(), ...there.keys(), ...tombIds(s)])) {
+        const key = 's:' + s + ':' + id, act = decide(key, here.has(id), there.has(id)); if (!act) continue;
+        if (act === 'del') await raw.del(s, here.get(id)); else await raw.put(s, dec(there.get(id)));
+        mark(act, key);
+      }
+    }
+    const hereKV = new Map((await DB.kentries()).filter(([k]) => !KV_LOCAL(k))), thereKV = new Map((R.kv || []).filter(([k]) => !KV_LOCAL(k)));
+    const kvTombs = Object.keys(RM.d).filter(k => k.startsWith('k:')).map(k => k.slice(2));
+    for (const k of new Set([...hereKV.keys(), ...thereKV.keys(), ...kvTombs])) {
+      const key = 'k:' + k;
+      if (MERGE[k] && hereKV.has(k) && thereKV.has(k)) { const a = hereKV.get(k), v = MERGE[k](a, dec(thereKV.get(k))); if (JSON.stringify(v) !== JSON.stringify(a)) { await raw.kset(k, v); M.m[key] = Math.max(M.m[key] || 0, RM.m[key] || 0); st.updated++; } continue; }
+      const act = decide(key, hereKV.has(k), thereKV.has(k)); if (!act) continue;
+      if (act === 'del') await raw.kdel(k); else await raw.kset(k, dec(thereKV.get(k)));
+      mark(act, key);
+    }
+    const prefsHere = new Set(); for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('np.') && prefOk(k.slice(3))) prefsHere.add(k.slice(3)); }
+    const prefTombs = Object.keys(RM.d).filter(k => k.startsWith('p:')).map(k => k.slice(2));
+    for (const k of new Set([...Object.keys(R.prefs || {}), ...prefTombs])) {
+      if (!prefOk(k)) continue; const key = 'p:' + k, there = Object.prototype.hasOwnProperty.call(R.prefs || {}, k), act = decide(key, prefsHere.has(k), there); if (!act) continue;
+      if (act === 'del') { try { localStorage.removeItem('np.' + k); } catch (e) { } } else raw.pset(k, R.prefs[k]);
+      mark(act, key);
+    }
+    for (const key in RM.d) if (!M.m[key] && (M.d[key] || 0) < RM.d[key]) M.d[key] = RM.d[key];
+    flush();
+    const L = Prefs.get('__links', {}); L.got = { at: Date.now(), from: st.from }; raw.pset('__links', L);
+    return st;
+  }
+  async function send() {
+    const d = dev(); UI.toast('Getting your stuff ready…');
+    const z = await pack(), name = 'super-one-link-from-' + d.name.replace(/[^A-Za-z0-9-]+/g, '-') + '.zip', file = new File([z], name, { type: 'application/zip' });
+    let r;
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file] }); r = 'shared'; } catch (e) { if (e.name === 'AbortError') return 'cancel'; } }
+    if (!r) r = await saveFile(z, name);
+    const L = Prefs.get('__links', {}); L.sent = { at: Date.now(), size: z.size }; raw.pset('__links', L);
+    return r;
+  }
+  return { pack, receive, send, dev, meta: load, flush, rename(n) { const d = dev(); d.name = n; raw.pset('__dev', d); } };
+})();
+Apps.reg({
+  id: 'sync', name: 'Link Devices', icon: '📲', color: 'linear-gradient(135deg,#00C6FB,#005BEA)', group: 'tools', keys: 'sync link devices computer mac laptop phone transfer airdrop account same stuff share move', blurb: 'Same stuff on phone and computer',
+  mount(v, ctx) {
+    function draw() {
+      v.innerHTML = ''; const d = Sync.dev(), L = Prefs.get('__links', {});
+      v.append(h('div', { class: 'card center', style: { background: 'linear-gradient(135deg,#00C6FB,#005BEA)', color: '#fff', border: 0 } },
+        h('div', { style: { fontSize: '44px', lineHeight: 1.1 } }, '📱 ⇄ 💻'), h('h3', { style: { margin: '8px 0 4px', fontSize: '22px' } }, 'Same stuff on your phone and computer'),
+        h('p', { style: { margin: 0, opacity: 0.95 } }, 'Send your stuff with AirDrop. Both sides mix together, and the newest change wins. No cloud, no account — it stays private.')));
+      v.append(h('div', { class: 'list mt' }, h('button', { class: 'li', onclick: async () => { const n = await UI.prompt('Name this device', { value: d.name, placeholder: 'e.g. My iPhone, My Mac' }); if (n && n.trim()) { Sync.rename(n.trim().slice(0, 30)); draw(); } } }, h('span', { class: 'ic' }, /iPhone|Android|iPad/.test(d.name) ? '📱' : '💻'), h('span', { class: 't' }, h('b', null, 'This device: ' + d.name), h('small', null, 'Tap to rename')), h('span', { class: 'chev' }, '✏️'))));
+      const big = (e, b, sm, cls, fn) => h('button', { class: 'bigbtn ' + cls, style: Object.assign({ width: '100%', minHeight: '84px', marginTop: '10px' }, cls === 'sendb' ? { background: 'var(--accent-soft)', borderColor: 'var(--accent)' } : {}), onclick: fn }, h('span', { class: 'e' }, e), h('b', null, b), h('small', null, sm));
+      v.append(big('📤', 'Send my stuff', 'Makes a link file and opens AirDrop', 'sendb', send), big('📥', 'Get stuff from my other device', 'Pick the file your other device sent', 'getb', get));
+      const line = []; if (L.sent) line.push('Last sent ' + fmtAgo(L.sent.at)); if (L.got) line.push('last got stuff from ' + L.got.from + ' ' + fmtAgo(L.got.at));
+      if (line.length) { const t = line.join(' · '); v.append(h('p', { class: 'small muted mt center' }, '🕘 ' + t[0].toUpperCase() + t.slice(1))); }
+      v.append(h('div', { class: 'sec' }, 'How to link'), h('ol', { class: 'card', style: { paddingLeft: '34px', lineHeight: 1.55, margin: 0 } },
+        h('li', null, 'On your phone: open ', h('b', null, 'Link Devices'), ', tap ', h('b', null, 'Send my stuff'), ', then ', h('b', null, 'AirDrop'), ' and pick your computer.'),
+        h('li', null, 'On your computer: open Super One, then ', h('b', null, 'Link Devices'), ' → ', h('b', null, 'Get stuff'), ' and pick the file (it’s in Downloads).'),
+        h('li', null, 'To make your phone match too, do it the other way: ', h('b', null, 'Send'), ' on the computer, ', h('b', null, 'Get'), ' on the phone.')),
+        h('p', { class: 'tiny muted mt' }, 'Photos, music and videos make the file bigger. Passwords stay locked with your master password. Do it again any time you want them to match.'));
+    }
+    async function send() { try { const r = await Sync.send(); if (r === 'cancel') return; UI.toast(r === 'shared' ? 'Sent! Now tap “Get stuff” on your other device.' : 'Link file saved. AirDrop it, or open Super One on the other device and tap “Get stuff”.', 4500); draw(); } catch (e) { console.error(e); UI.toast('Couldn’t make the link file: ' + e.message, 4500); } }
+    async function get() {
+      const [f] = await pickFiles('.zip,application/zip', { multiple: false }); if (!f) return;
+      UI.toast('Linking…');
+      try {
+        const st = await Sync.receive(f), same = !st.added && !st.updated && !st.removed;
+        UI.sheet({ title: same ? '✅ Already the same' : '✅ Linked with ' + st.from, onClose: () => location.reload(), body: h('div', null,
+          same ? h('p', null, 'Nothing new — this device already has everything from ' + st.from + '.') : h('div', { class: 'list' }, [['➕', st.added, 'new things added'], ['🔄', st.updated, 'things updated'], ['🗑️', st.removed, 'things removed']].filter(x => x[1]).map(([e, n, t]) => h('div', { class: 'li' }, h('span', { class: 'ic' }, e), h('span', { class: 't' }, h('b', null, n + ' ' + t))))),
+          st.notes.map(n => h('p', { class: 'note-banner mt' }, n)),
+          h('p', { class: 'small muted mt' }, 'Want ' + st.from + ' to match this device too? Tap “Send my stuff” here and AirDrop it back.')), actions: [{ label: 'Done', cls: 'pri' }] });
+      } catch (e) { UI.toast(e.message, 5000); }
+    }
+    draw();
   },
 });
 
