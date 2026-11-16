@@ -1,7 +1,7 @@
-window.NP_VERSION='b695da78a1';
+window.NP_VERSION='7b7fae5fd6';
 /* ---- 00-core.js ---- */
 'use strict';
-/* ===== Nova Pocket core: helpers, storage, dialogs, files, sound ===== */
+/* ===== Super One core: helpers, storage, dialogs, files, sound ===== */
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function h(tag, attrs, ...kids) {
@@ -48,8 +48,8 @@ const SVG = {
 
 /* ---------- IndexedDB storage (everything stays on this device) ---------- */
 const DB = (() => {
-  const NAME = 'nova-pocket', VER = 1;
-  const STORES = ['kv', 'notes', 'events', 'reminders', 'decks', 'cards', 'media', 'songs', 'memos', 'places', 'vault'];
+  const NAME = 'nova-pocket', VER = 2;
+  const STORES = ['kv', 'notes', 'events', 'reminders', 'decks', 'cards', 'media', 'songs', 'memos', 'places', 'vault', 'files'];
   let dbp = null;
   function open() {
     return dbp || (dbp = new Promise((res, rej) => {
@@ -246,12 +246,12 @@ const Speak = {
 function seeded(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
 function hashStr(str) { let x = 2166136261; for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 16777619); } return x >>> 0; }
 function addCSS(t) { document.head.append(h('style', null, t)); }
-/* calendar file (.ics) so iPhone Calendar can alert you even when Nova Pocket is closed */
+/* calendar file (.ics) so iPhone Calendar can alert you even when Super One is closed */
 const ICS = {
   stamp(d, allDay) { return allDay ? d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) : d.getUTCFullYear() + pad2(d.getUTCMonth() + 1) + pad2(d.getUTCDate()) + 'T' + pad2(d.getUTCHours()) + pad2(d.getUTCMinutes()) + '00Z'; },
   esc(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, m => '\\' + m); },
   make(items) {
-    const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Nova Pocket//EN', 'CALSCALE:GREGORIAN'];
+    const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Super One//EN', 'CALSCALE:GREGORIAN'];
     for (const it of items) {
       L.push('BEGIN:VEVENT', 'UID:' + (it.id || uid()) + '@nova-pocket', 'DTSTAMP:' + this.stamp(new Date()), 'SUMMARY:' + this.esc(it.title));
       if (it.allDay) { const e = new Date(it.start); e.setDate(e.getDate() + 1); L.push('DTSTART;VALUE=DATE:' + this.stamp(it.start, true), 'DTEND;VALUE=DATE:' + this.stamp(e, true)); }
@@ -264,13 +264,24 @@ const ICS = {
     L.push('END:VCALENDAR'); return new Blob([L.join('\r\n')], { type: 'text/calendar' });
   },
 };
+/* press-and-hold (iPhone has no right-click) */
+function onLongPress(el, fn, ms = 550) {
+  let t = null, fired = false, x0 = 0, y0 = 0;
+  el.addEventListener('pointerdown', e => { fired = false; x0 = e.clientX; y0 = e.clientY; clearTimeout(t); t = setTimeout(() => { fired = true; try { navigator.vibrate && navigator.vibrate(15); } catch (er) { } fn(); }, ms); });
+  el.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - x0, e.clientY - y0) > 10) clearTimeout(t); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(k => el.addEventListener(k, () => clearTimeout(t)));
+  el.addEventListener('click', e => { if (fired) { e.stopImmediatePropagation(); e.preventDefault(); fired = false; } }, true);
+  el.addEventListener('contextmenu', e => { e.preventDefault(); if (!fired) { clearTimeout(t); fn(); } });
+  el.style.webkitTouchCallout = 'none';
+  return el;
+}
 
 /* ---- 01-shell.js ---- */
 /* ===== Shell: home screen, app switching, settings, backup, offline saving ===== */
 const Apps = {
   list: [], byId: {},
   reg(a) { this.list.push(a); this.byId[a.id] = a; },
-  GROUPS: [['day', 'Everyday'], ['make', 'Create'], ['learn', 'Learn'], ['play', 'Play']],
+  GROUPS: [['day', 'Everyday'], ['make', 'Create'], ['learn', 'Learn'], ['play', 'Play & social'], ['tools', 'Tools']],
 };
 
 const Shell = {
@@ -294,10 +305,11 @@ const Shell = {
     if (this.cleanup) { try { this.cleanup(); } catch (e) { console.error(e); } this.cleanup = null; }
     URLS.freeAll(); Speak.stop();
     if (this.cur) this.scrollMemo[this.cur.id] = scrollY; else this.scrollMemo.home = scrollY;
-    this.backFn = null; this.view.className = ''; this.view.innerHTML = ''; this.top.innerHTML = '';
+    this.backFn = null; this.view.classList.remove('full'); this.view.innerHTML = ''; this.top.innerHTML = '';
     const a = id && Apps.byId[id];
-    if (!a) { this.cur = null; document.title = 'Nova Pocket'; this.renderHome(); requestAnimationFrame(() => scrollTo(0, this.scrollMemo.home || 0)); return; }
-    this.cur = a; document.title = a.name + ' · Nova Pocket';
+    document.body.classList.toggle('on-home', !a); this.view.classList.remove('enter'); void this.view.offsetWidth; this.view.classList.add('enter');
+    if (!a) { this.cur = null; document.title = 'Super One'; this.renderHome(); requestAnimationFrame(() => scrollTo(0, this.scrollMemo.home || 0)); return; }
+    this.cur = a; document.title = a.name + ' · Super One';
     const title = h('h1', null, a.name), acts = h('div', { class: 'acts' });
     this.top.append(h('button', { class: 'back', 'aria-label': 'Back', onclick: () => this.back(), html: SVG.back + '<span>Back</span>' }), title, acts);
     const ctx = {
@@ -313,66 +325,7 @@ const Shell = {
   },
   crash(e) { console.error(e); this.view.append(UI.empty('🛠️', 'Something went wrong here', String(e && e.message || e))); },
 
-  /* ---------- home ---------- */
-  paintHello() {
-    const el = $('#hello'); if (!el) return; const d = new Date(), hr = d.getHours();
-    const name = Prefs.get('name', '');
-    el.querySelector('h2').textContent = (hr < 5 ? 'Good night' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening') + (name ? ', ' + name : '');
-    el.querySelector('p').textContent = fmtDay(d, { weekday: 'long', month: 'long', day: 'numeric' }) + ' · ' + fmtTime(d);
-  },
-  renderHome() {
-    this.top.append(h('h1', null, 'Nova Pocket'), Offline.pill(), h('button', { class: 'ib', 'aria-label': 'Settings', html: SVG.gear, onclick: () => this.settings() }));
-    const v = this.view;
-    v.append(h('div', { class: 'hello', id: 'hello' }, h('h2'), h('p')));
-    this.paintHello();
-    const q = h('input', { type: 'search', placeholder: 'Search apps, notes, words…', 'aria-label': 'Search', autocomplete: 'off' });
-    const results = h('div', { class: 'mt' });
-    v.append(h('div', { class: 'search mt' }, q), results);
-    const today = h('div', { class: 'today' }); v.append(today); this.fillToday(today);
-    if (!Offline.standalone() && /iPhone|iPad|iPod/.test(navigator.userAgent) && !Prefs.get('hideInstall')) {
-      v.append(h('div', { class: 'info-banner mt', style: { display: 'flex', gap: '10px', alignItems: 'center' } },
-        h('span', { style: { fontSize: '26px' } }, '📲'),
-        h('span', { style: { flex: 1 } }, h('b', null, 'Put me on your Home Screen. '), 'Tap the Share button, then “Add to Home Screen”. Then I open like a real app and work with no internet.'),
-        h('button', { class: 'ib', 'aria-label': 'Hide', html: SVG.close, onclick: e => { Prefs.set('hideInstall', true); e.currentTarget.parentNode.remove(); } })));
-    }
-    Backup.nudge(v);
-    const groups = h('div');
-    for (const [g, label] of Apps.GROUPS) {
-      const apps = Apps.list.filter(a => a.group === g); if (!apps.length) continue;
-      groups.append(h('div', { class: 'sec' }, label), h('div', { class: 'tiles' }, apps.map(a => this.tile(a))));
-    }
-    v.append(groups);
-    v.append(h('p', { class: 'center tiny muted mt2' }, 'Everything you make stays on this device. Back it up in Settings.'));
-    const doSearch = debounce(async () => {
-      const s = q.value.trim().toLowerCase(); results.innerHTML = '';
-      groups.hidden = !!s; today.hidden = !!s; if (!s) return;
-      const list = h('div', { class: 'list' });
-      for (const a of Apps.list) if ((a.name + ' ' + (a.keys || '')).toLowerCase().includes(s)) list.append(h('button', { class: 'li', onclick: () => this.go(a.id) }, h('span', { class: 'ic', style: { background: a.color } }, a.icon), h('span', { class: 't' }, h('b', null, a.name), h('small', null, a.blurb || '')), h('span', { class: 'chev' }, '›')));
-      if (/^[a-z][a-z '\-]*$/i.test(s)) list.append(h('button', { class: 'li', onclick: () => this.go('dict', s) }, h('span', { class: 'ic' }, '📖'), h('span', { class: 't' }, h('b', null, 'Look up “' + s + '”'), h('small', null, 'Dictionary')), h('span', { class: 'chev' }, '›')));
-      const notes = (await DB.all('notes')).filter(n => ((n.title || '') + ' ' + (n.body || '')).toLowerCase().includes(s)).slice(0, 6);
-      for (const n of notes) list.append(h('button', { class: 'li', onclick: () => this.go('notes', n.id) }, h('span', { class: 'ic' }, '📝'), h('span', { class: 't' }, h('b', null, n.title || 'Untitled note'), h('small', null, (n.body || '').slice(0, 80))), h('span', { class: 'chev' }, '›')));
-      results.append(list.childNodes.length ? list : UI.empty('🔎', 'Nothing found', 'Try another word.'));
-    }, 120);
-    q.addEventListener('input', doSearch);
-  },
-  tile(a) {
-    const ico = h('span', { class: 'ico', style: { background: a.color } }, a.icon);
-    if (a.badge) Promise.resolve(a.badge()).then(n => { if (n > 0) ico.append(h('span', { class: 'badge' }, n > 99 ? '99+' : String(n))); }).catch(() => { });
-    return h('button', { class: 'tile', onclick: () => this.go(a.id), 'aria-label': a.name }, ico, h('span', null, a.name));
-  },
-  async fillToday(el) {
-    const w = (k, big, sub, go) => h('button', { class: 'tw', onclick: () => this.go(go) }, h('small', null, k), h('b', null, big), h('span', null, sub));
-    const parts = await Promise.all([
-      typeof Cal !== 'undefined' ? Cal.next().catch(() => null) : null,
-      typeof Rem !== 'undefined' ? Rem.dueCount().catch(() => 0) : 0,
-      typeof Weather !== 'undefined' ? Weather.peek().catch(() => null) : null,
-    ]);
-    const [ev, due, wx] = parts;
-    el.append(
-      w('Next up', ev ? ev.title : 'Free day', ev ? ev.when : 'No events today', 'calendar'),
-      w('To do', due ? due + ' due' : 'All done', due ? 'Reminders' : 'Nothing due today', 'reminders'),
-      w('Weather', wx ? wx.icon + ' ' + wx.temp : '⛅ Set up', wx ? wx.place : 'Tap to pick a place', 'weather'));
-  },
+  /* ---------- home screen: see 02-home.js ---------- */
 
   /* ---------- settings ---------- */
   async settings() {
@@ -389,7 +342,7 @@ const Shell = {
       h('div', { class: 'sec' }, 'Your stuff'), await Backup.panel(),
       h('div', { class: 'sec' }, 'About'),
       h('div', { class: 'card small' },
-        h('p', null, h('b', null, 'Nova Pocket'), ' · version ', h('span', { class: 'kbd' }, window.NP_VERSION || 'dev')),
+        h('p', null, h('b', null, 'Super One'), ' · version ', h('span', { class: 'kbd' }, window.NP_VERSION || 'dev')),
         h('p', { class: 'muted' }, 'Made for you. Nothing you save is sent anywhere. Weather is the only part that uses the internet, and only when you tap refresh.'),
         h('p', { class: 'muted' }, 'Dictionary: WordNet 3.1 © Princeton University. Map shapes: Natural Earth (public domain) via world-atlas. Country facts: mledoze/countries (ODbL). Weather data: Open-Meteo.com (CC BY 4.0).')),
       h('button', { class: 'btn bad wide mt', onclick: () => Backup.eraseAll() }, 'Erase everything on this device'));
@@ -454,7 +407,7 @@ const Offline = {
   async panel() { const el = h('div', { class: 'card small', id: 'offpanel' }); this.fillPanel(el); return el; },
   fillPanel(el) {
     const s = this.state; el.innerHTML = '';
-    if (!this.supported()) { el.append(h('p', null, 'Open Nova Pocket from its web address (https) to let it save itself for offline use.')); return; }
+    if (!this.supported()) { el.append(h('p', null, 'Open Super One from its web address (https) to let it save itself for offline use.')); return; }
     el.append(h('p', null, (s.core ? '✅' : '⏳') + ' The app itself ' + (s.core ? 'is saved on this device.' : 'is being saved…')),
       h('p', null, (s.data ? '✅' : '⏳') + ' Dictionary + world map ' + (s.data ? 'saved.' : s.total ? 'saving: ' + s.done + ' of ' + s.total + ' files.' : 'waiting to save.')));
     if (!s.data) el.append(h('div', { class: 'prog mb' }, h('i', { style: { width: (s.total ? 100 * s.done / s.total : 4) + '%' } })), h('button', { class: 'btn sm', onclick: () => this.kick() }, 'Try saving again'));
@@ -489,7 +442,7 @@ const Zip = {
   async read(blob) {
     const tailLen = Math.min(blob.size, 65557), tail = new DataView(await blob.slice(blob.size - tailLen).arrayBuffer());
     let eo = -1; for (let i = tailLen - 22; i >= 0; i--) if (tail.getUint32(i, true) === 0x06054b50) { eo = i; break; }
-    if (eo < 0) throw new Error('This is not a Nova Pocket backup file.');
+    if (eo < 0) throw new Error('This is not a Super One backup file.');
     const count = tail.getUint16(eo + 10, true), cdSize = tail.getUint32(eo + 12, true), cdOff = tail.getUint32(eo + 16, true);
     const cd = new DataView(await blob.slice(cdOff, cdOff + cdSize).arrayBuffer()), dec = new TextDecoder(), out = [];
     let p = 0;
@@ -524,8 +477,8 @@ const Backup = {
   },
   async restore(file) {
     const entries = await Zip.read(file), byName = Object.fromEntries(entries.map(e => [e.name, e.blob]));
-    const main = byName['nova-pocket-backup.json']; if (!main) throw new Error('This is not a Nova Pocket backup file.');
-    const data = JSON.parse(await main.text()); if (data.app !== 'nova-pocket') throw new Error('This is not a Nova Pocket backup file.');
+    const main = byName['nova-pocket-backup.json']; if (!main) throw new Error('This is not a Super One backup file.');
+    const data = JSON.parse(await main.text()); if (data.app !== 'nova-pocket') throw new Error('This is not a Super One backup file.');
     let count = 0;
     for (const [k, v] of data.kv || []) await DB.kset(k, v);
     for (const s in data.stores) {
@@ -555,7 +508,7 @@ const Backup = {
     UI.toast('Making your backup…');
     try {
       const z = await this.make(withFiles);
-      const r = await saveFile(z, 'nova-pocket-backup-' + ymd(new Date()) + '.zip');
+      const r = await saveFile(z, 'super-one-backup-' + ymd(new Date()) + '.zip');
       if (r !== 'cancel') { await DB.kset('lastBackup', Date.now()); UI.toast(r === 'shared' ? 'Backup ready. Pick “Save to Files”.' : 'Backup saved (' + fmtSize(z.size) + ')'); }
     } catch (e) { console.error(e); UI.toast('Backup failed: ' + e.message, 4000); }
   },
@@ -569,8 +522,7 @@ const Backup = {
     const last = await DB.kget('lastBackup', 0); if (last && Date.now() - last < 30 * 86400e3) return;
     const n = (await DB.count('notes')) + (await DB.count('cards')) + (await DB.count('media')) + (await DB.count('vault'));
     if (n < 5) return;
-    const hello = $('#hello', v); if (!hello) return;
-    hello.after(h('button', { class: 'info-banner mt', style: { display: 'block', width: '100%', textAlign: 'left', border: 0 }, onclick: () => Shell.settings() }, '💾 ', h('b', null, 'Time for a backup. '), last ? 'Your last one was ' + fmtAgo(last) + '.' : 'Save a copy of your stuff in Files.'));
+    v.append(h('button', { class: 'home-banner glass', onclick: () => Shell.settings() }, h('span', { style: { fontSize: '24px' } }, '💾'), h('span', { style: { flex: 1 } }, h('b', null, 'Time for a backup. '), last ? 'Your last one was ' + fmtAgo(last) + '.' : 'Save a copy of your stuff in Files.')));
   },
   async eraseAll() {
     if (!(await UI.ask('Erase ALL notes, passwords, photos, music, cards and settings on this device?', { ok: 'Erase', danger: true }))) return;
@@ -580,6 +532,195 @@ const Backup = {
     location.hash = '#/'; location.reload();
   },
 };
+
+/* ---- 02-home.js ---- */
+/* ===== Home screen: wallpaper, big clock, widgets, favorites dock, app icons ===== */
+addCSS(`
+#wall{position:fixed;inset:0;z-index:-1;background:var(--bg);background-size:cover;background-position:center;opacity:0;transition:opacity .25s}
+body.on-home #wall{opacity:1}
+body.on-home{background:transparent}
+body.on-home .top{background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;border-color:transparent;color:#fff}
+body.on-home .top.scrolled{background:rgba(10,8,30,.35);-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4)}
+body.on-home .top .ib{color:#fff}
+body.on-home .top .pill{background:rgba(255,255,255,.18);color:#fff}
+body.on-home .top .pill.good .dot{color:#5CF29A}
+.brand{display:flex;align-items:center;gap:8px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;font-family:var(--round);font-weight:900;font-size:19px;letter-spacing:.02em;font-style:italic}
+.brand i{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#FF3D7F,#7C3AED 50%,#1E40FF);font-style:normal;font-size:12px;font-weight:900;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+main#view.enter{animation:appIn .3s cubic-bezier(.2,.8,.2,1)}
+@keyframes appIn{from{opacity:0;transform:translateY(10px) scale(.995)}}
+.hero{color:#fff;text-align:center;padding:6px 0 4px;text-shadow:0 2px 14px rgba(0,0,0,.25)}
+.hero .clk{font-size:clamp(64px,22vw,96px);font-weight:200;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums;font-family:var(--round)}
+.hero .dt{font-size:18px;font-weight:600;opacity:.95;margin-top:4px}
+.hero .gr{font-size:15px;opacity:.85;margin-top:2px}
+.glass{background:rgba(255,255,255,.14);-webkit-backdrop-filter:blur(22px) saturate(1.5);backdrop-filter:blur(22px) saturate(1.5);border:1px solid rgba(255,255,255,.22);border-radius:22px;color:#fff;box-shadow:0 8px 30px rgba(0,0,0,.12)}
+:root[data-theme="dark"] .glass{background:rgba(20,18,40,.32)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .glass{background:rgba(20,18,40,.32)}}
+.widgets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}
+@media (min-width:700px){.widgets{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.wd{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:14px;min-height:150px;min-width:0;border:1px solid rgba(255,255,255,.22);font:inherit;color:#fff}
+.wd:active{transform:scale(.98)}
+.wd.wide{grid-column:span 2;min-height:0}
+.wd .k{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;opacity:.8;display:flex;align-items:center;gap:6px}
+.wd .big{font-size:40px;font-weight:300;line-height:1.05;margin-top:6px;font-family:var(--round)}
+.wd .t1{font-size:16px;font-weight:700;margin-top:6px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.wd .t2{font-size:13px;opacity:.85;margin-top:auto;padding-top:6px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.wd ul{list-style:none;padding:0;margin:8px 0 0;font-size:14px;width:100%}
+.wd li{display:flex;gap:8px;align-items:center;padding:3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wd li::before{content:"";width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.8);flex:0 0 auto}
+.wd .verse{font-size:15px;font-style:italic;line-height:1.4;margin-top:6px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.hsearch{position:relative;margin-top:14px}
+.hsearch input{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:16px;padding-left:42px;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+.hsearch input::placeholder{color:rgba(255,255,255,.75)}
+.hsearch svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:rgba(255,255,255,.85)}
+.dock{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px 10px 10px;margin-top:14px}
+.home-sec{color:#fff;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin:24px 6px 10px;opacity:.85;text-shadow:0 1px 6px rgba(0,0,0,.3)}
+.appgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px 8px;padding:16px 8px}
+@media (min-width:600px){.appgrid{grid-template-columns:repeat(6,minmax(0,1fr))}}
+@media (min-width:860px){.appgrid{grid-template-columns:repeat(8,minmax(0,1fr))}}
+.app{display:flex;flex-direction:column;align-items:center;gap:6px;border:0;background:none;padding:0;min-width:0;color:#fff}
+.app .ico{position:relative;width:60px;height:60px;border-radius:16px;display:grid;place-items:center;box-shadow:0 4px 12px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.35)}
+.app .ico::after{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,0) 50%);pointer-events:none}
+.app .ico svg{width:31px;height:31px;color:#fff;filter:drop-shadow(0 1px 1px rgba(0,0,0,.15))}
+.app:active .ico{transform:scale(.9)}
+.app > span:last-child{font-size:12px;font-weight:600;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 4px rgba(0,0,0,.45)}
+@media (max-width:360px){.app .ico{width:52px;height:52px;border-radius:14px}.app .ico svg{width:26px;height:26px}}
+.home-note{color:rgba(255,255,255,.85);text-align:center;font-size:12px;margin:22px 0 0;text-shadow:0 1px 4px rgba(0,0,0,.4)}
+.home-banner{display:flex;gap:10px;align-items:center;padding:12px 14px;margin-top:12px;font-size:14px;text-align:left;width:100%;font:inherit;color:#fff}
+.li .ic svg{width:22px;height:22px;color:#fff}
+.wallpick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.wallpick button{aspect-ratio:9/14;border-radius:14px;border:3px solid transparent;background-size:cover!important;background-position:center!important;color:#fff;font-weight:700;font-size:12px;display:flex;align-items:flex-end;justify-content:center;padding:6px;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.wallpick button[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--bg) inset}
+`);
+const ICON_PATHS = {
+  calendar: '<rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M7.5 13.5h.01M12 13.5h.01M16.5 13.5h.01M7.5 17h.01M12 17h.01"/>',
+  notes: '<rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8h6M9 12h6M9 16h4"/>',
+  reminders: '<path d="M4 6l1.5 1.5L8 5M4 12l1.5 1.5L8 11M4 18l1.5 1.5L8 17M11.5 6.5h8.5M11.5 12.5h8.5M11.5 18.5h8.5"/>',
+  passwords: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3M12 14.5v2.5"/>',
+  map: '<path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/>',
+  weather: '<path d="M7 19h10a4 4 0 0 0 .5-7.97A5.5 5.5 0 0 0 7 11.5 3.75 3.75 0 0 0 7 19z"/><path d="M15.5 5.5a3.5 3.5 0 0 1 4.5 4M17.5 2.5v.01M21.5 6.5v.01"/>',
+  media: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9.5" r="1.8"/><path d="M21 15.5l-5-5-9.5 9.5"/>',
+  music: '<path d="M9 18V5.5l11-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>',
+  memos: '<rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>',
+  studio: '<path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-.9 2-1.9 0-1-.9-1.6-.9-2.6 0-1.1 1-1.9 2.3-1.9H18a3 3 0 0 0 3-3C21 6.8 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.1"/><circle cx="10" cy="7" r="1.1"/><circle cx="15" cy="7.5" r="1.1"/>',
+  cfop: '<path d="M12 2.5l8.5 4.75v9.5L12 21.5l-8.5-4.75v-9.5z"/><path d="M3.5 7.25L12 12l8.5-4.75M12 12v9.5M7.75 4.9l8.5 4.7M16.25 4.9l-8.5 4.7"/>',
+  cards: '<rect x="3" y="7" width="14" height="13" rx="2.5"/><path d="M7 7V5.5A2.5 2.5 0 0 1 9.5 3h9A2.5 2.5 0 0 1 21 5.5v9a2.5 2.5 0 0 1-2.5 2.5H17"/>',
+  learn: '<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5M22 9v6"/>',
+  dict: '<path d="M12 6.5c-2-1.5-5-2-8.5-2v13c3.5 0 6.5.5 8.5 2 2-1.5 5-2 8.5-2v-13c-3.5 0-6.5.5-8.5 2zM12 6.5v13"/>',
+  chess: '<path d="M6.5 20.5h11M8 17.5h8M9 17.5l.8-8h4.4l.8 8M7.5 9.5h9M7.5 9.5V4h2v2h1.75V4h1.5v2h1.75V4h2v5.5"/>',
+  games: '<path d="M7 8h10a5 5 0 0 1 4.6 7l-.6 1.4a2.6 2.6 0 0 1-4.3.7L15 15.5H9l-1.7 1.6a2.6 2.6 0 0 1-4.3-.7L2.4 15A5 5 0 0 1 7 8z"/><path d="M7.5 10.5v3M6 12h3M15.5 11h.01M17.5 13h.01"/>',
+  files: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 10h18"/>',
+  videos: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.2v5.6l4.8-2.8z"/>',
+  social: '<path d="M4 5h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 3v-3H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M17 9h3a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-1v2.5L16 18h-3.5"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3.5 2"/>',
+  calc: '<rect x="5" y="2.5" width="14" height="19" rx="3"/><path d="M8.5 6.5h7v3h-7zM8.5 13.5h.01M12 13.5h.01M15.5 13.5h.01M8.5 17h.01M12 17h.01M15.5 17h.01"/>',
+  measure: '<path d="M3.5 16.5L16.5 3.5l4 4-13 13z"/><path d="M7 13l1.5 1.5M9.5 10.5l2 2M12 8l1.5 1.5M14.5 5.5l2 2"/>',
+  translate: '<path d="M3 5h9M7.5 3v2M5 5c1 3.5 3.5 6 6 7.5M10 5c-.8 3.6-3.4 6.6-6.5 8"/><path d="M12.5 21l4-9.5 4 9.5M14 17.5h5"/>',
+  news: '<path d="M4 4.5h13v14a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2z"/><path d="M17 8.5h3v10a2 2 0 0 1-2 2M7.5 8h6M7.5 11.5h6M7.5 15h4"/>',
+  bible: '<path d="M5 4.5a2 2 0 0 1 2-2h12v16H7a2 2 0 0 0-2 2z"/><path d="M5 20.5a2 2 0 0 0 2 1h12v-3M12 6v8M9.25 8.75h5.5"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/>',
+};
+const appIcon = a => { const p = ICON_PATHS[a.id]; return p ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>' : '<span style="font-size:30px">' + a.icon + '</span>'; };
+const WALLS = {
+  aurora: ['Aurora', 'radial-gradient(120% 70% at 0% 0%,#7C3AED 0%,transparent 60%),radial-gradient(90% 60% at 100% 15%,#EC4899 0%,transparent 55%),radial-gradient(120% 80% at 50% 100%,#0EA5E9 0%,transparent 60%),#1E1B4B'],
+  sunset: ['Sunset', 'radial-gradient(90% 50% at 50% 0%,#FFD29D 0%,transparent 60%),linear-gradient(175deg,#FF7E5F 0%,#E8508A 45%,#5B2A86 80%,#24124A 100%)'],
+  ocean: ['Ocean', 'radial-gradient(100% 60% at 80% 0%,#38BDF8 0%,transparent 55%),linear-gradient(170deg,#0E7490 0%,#1E3A8A 60%,#0B1437 100%)'],
+  forest: ['Forest', 'radial-gradient(90% 60% at 10% 0%,#A3E635 0%,transparent 50%),linear-gradient(170deg,#15803D 0%,#065F46 55%,#052E2B 100%)'],
+  galaxy: ['Galaxy', 'radial-gradient(2px 2px at 20% 30%,#fff,transparent),radial-gradient(2px 2px at 70% 20%,#fff,transparent),radial-gradient(1.5px 1.5px at 40% 70%,#fff,transparent),radial-gradient(1.5px 1.5px at 85% 60%,#fff,transparent),radial-gradient(80% 50% at 70% 30%,#7C3AED 0%,transparent 60%),radial-gradient(70% 50% at 20% 80%,#DB2777 0%,transparent 60%),#0B0820'],
+  candy: ['Candy', 'linear-gradient(155deg,#F472B6 0%,#A78BFA 50%,#60A5FA 100%)'],
+  lava: ['Lava', 'radial-gradient(90% 60% at 20% 0%,#FB923C 0%,transparent 60%),linear-gradient(170deg,#B91C1C 0%,#7F1D1D 55%,#1C0A0A 100%)'],
+  midnight: ['Midnight', 'radial-gradient(100% 60% at 85% 0%,#3B82F6 0%,transparent 50%),linear-gradient(180deg,#111733 0%,#05060D 100%)'],
+};
+const Home = {
+  wallUrl: null,
+  async applyWall() {
+    let el = $('#wall'); if (!el) { el = h('div', { id: 'wall', 'aria-hidden': 'true' }); document.body.prepend(el); }
+    const w = Prefs.get('wall', 'aurora');
+    if (w === 'photo') { const b = await DB.kget('wallPhoto', null); if (b) { if (this.wallUrl) URL.revokeObjectURL(this.wallUrl); this.wallUrl = URL.createObjectURL(b); el.style.background = 'linear-gradient(180deg,rgba(0,0,0,.35),rgba(0,0,0,.15) 40%,rgba(0,0,0,.45)),url("' + this.wallUrl + '") center/cover'; return; } }
+    el.style.background = (WALLS[w] || WALLS.aurora)[1];
+  },
+  favs() { return Prefs.get('favs', ['calendar', 'notes', 'music', 'games']).filter(id => Apps.byId[id]).slice(0, 4); },
+  widgetsOn() { return Prefs.get('widgets', { weather: true, next: true, todo: true, verse: true, news: true }); },
+};
+Shell.tile = function (a, cls = 'app') {
+  const ico = h('span', { class: 'ico', style: { background: a.color }, html: appIcon(a) });
+  if (a.badge) Promise.resolve(a.badge()).then(n => { if (n > 0) ico.append(h('span', { class: 'badge' }, n > 99 ? '99+' : String(n))); }).catch(() => { });
+  return h('button', { class: cls, onclick: () => this.go(a.id), 'aria-label': a.name }, ico, h('span', null, a.name));
+};
+Shell.paintHello = function () {
+  const el = $('#hello'); if (!el) return; const d = new Date(), hr = d.getHours(), name = Prefs.get('name', '');
+  el.querySelector('.clk').textContent = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(/\s?[AP]M$/i, '');
+  el.querySelector('.dt').textContent = fmtDay(d, { weekday: 'long', month: 'long', day: 'numeric' });
+  el.querySelector('.gr').textContent = (hr < 5 ? 'Good night' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening') + (name ? ', ' + name : '') + ' ✨';
+};
+Shell.renderHome = function () {
+  Home.applyWall();
+  this.top.append(h('div', { class: 'brand' }, h('i', null, 'S1'), 'Super One'), Offline.pill(),
+    h('button', { class: 'ib', 'aria-label': 'Edit home screen', html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICON_PATHS.edit + '</svg>', onclick: () => editHome() }),
+    h('button', { class: 'ib', 'aria-label': 'Settings', html: SVG.gear, onclick: () => this.settings() }));
+  const v = this.view;
+  v.append(h('div', { class: 'hero', id: 'hello' }, h('div', { class: 'clk' }), h('div', { class: 'dt' }), h('div', { class: 'gr' })));
+  this.paintHello();
+  const q = h('input', { type: 'search', placeholder: 'Search apps, notes, words, Bible…', 'aria-label': 'Search', autocomplete: 'off' });
+  const results = h('div', { class: 'mt' }), widgets = h('div', { class: 'widgets' }), rest = h('div');
+  v.append(widgets, h('div', { class: 'hsearch' }, h('span', { html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">' + ICON_PATHS.search + '</svg>' }), q), results, rest);
+  this.fillWidgets(widgets);
+  if (!Offline.standalone() && /iPhone|iPad|iPod/.test(navigator.userAgent) && !Prefs.get('hideInstall'))
+    rest.append(h('div', { class: 'home-banner glass' }, h('span', { style: { fontSize: '26px' } }, '📲'), h('span', { style: { flex: 1 } }, h('b', null, 'Put me on your Home Screen. '), 'Tap Share, then “Add to Home Screen”.'),
+      h('button', { class: 'ib', style: { color: '#fff' }, 'aria-label': 'Hide', html: SVG.close, onclick: e => { Prefs.set('hideInstall', true); e.currentTarget.parentNode.remove(); } })));
+  Backup.nudge(rest);
+  const favs = Home.favs(); if (favs.length) rest.append(h('div', { class: 'dock glass', role: 'toolbar', 'aria-label': 'Favorites' }, favs.map(id => this.tile(Apps.byId[id]))));
+  for (const [g, label] of Apps.GROUPS) {
+    const apps = Apps.list.filter(a => a.group === g); if (!apps.length) continue;
+    rest.append(h('div', { class: 'home-sec' }, label), h('div', { class: 'appgrid glass' }, apps.map(a => this.tile(a))));
+  }
+  rest.append(h('p', { class: 'home-note' }, Apps.list.length + ' apps · everything you make stays on this device'));
+  const doSearch = debounce(async () => {
+    const s = q.value.trim().toLowerCase(); results.innerHTML = ''; widgets.hidden = rest.hidden = !!s; if (!s) return;
+    const list = h('div', { class: 'list' }), row = (ic, bg, b, sm, go) => h('button', { class: 'li', onclick: go }, h('span', { class: 'ic', style: bg ? { background: bg } : null, html: ic }), h('span', { class: 't' }, h('b', null, b), h('small', null, sm)), h('span', { class: 'chev' }, '›'));
+    for (const a of Apps.list) if ((a.name + ' ' + (a.keys || '')).toLowerCase().includes(s)) list.append(row(appIcon(a), a.color, a.name, a.blurb || '', () => this.go(a.id)));
+    if (/^[a-z][a-z '\-]*$/i.test(s)) list.append(row('📖', null, 'Look up “' + s + '”', 'Dictionary', () => this.go('dict', s)));
+    if (s.length > 2 && Apps.byId.bible) list.append(row('✝️', null, 'Search the Bible for “' + s + '”', 'Bible', () => this.go('bible', 'search:' + s)));
+    if (s.length > 1 && Apps.byId.translate) list.append(row('🌐', null, 'Translate “' + s + '”', 'Translate', () => this.go('translate', s)));
+    const notes = (await DB.all('notes')).filter(n => ((n.title || '') + ' ' + (n.body || '')).toLowerCase().includes(s)).slice(0, 6);
+    for (const n of notes) list.append(row('📝', null, n.title || 'Untitled note', (n.body || '').slice(0, 80), () => this.go('notes', n.id)));
+    const files = (await DB.all('files').catch(() => [])).filter(f => (f.name || '').toLowerCase().includes(s)).slice(0, 6);
+    for (const f of files) list.append(row('📄', null, f.name, 'Files', () => this.go('files', f.id)));
+    results.append(list.childNodes.length ? list : UI.empty('🔎', 'Nothing found', 'Try another word.'));
+  }, 140);
+  q.addEventListener('input', doSearch);
+};
+Shell.fillWidgets = async function (el) {
+  const on = Home.widgetsOn();
+  const card = (cls, k, go, ...kids) => h('button', { class: 'wd glass ' + cls, onclick: () => this.go(go) }, h('span', { class: 'k' }, k), ...kids);
+  const [ev, due, wx, verse, news] = await Promise.all([
+    on.next && typeof Cal !== 'undefined' ? Cal.next().catch(() => null) : null,
+    on.todo && typeof Rem !== 'undefined' ? DB.all('reminders').catch(() => []) : [],
+    on.weather && typeof Weather !== 'undefined' ? Weather.peek().catch(() => null) : null,
+    on.verse && typeof Bible !== 'undefined' ? Bible.votd().catch(() => null) : null,
+    on.news && typeof News !== 'undefined' ? News.peek().catch(() => null) : null,
+  ]);
+  if (on.weather) el.append(wx ? card('', '⛅ Weather', 'weather', h('div', { class: 'big' }, wx.icon + ' ' + wx.temp), h('div', { class: 't2' }, '📍 ' + wx.place)) : card('', '⛅ Weather', 'weather', h('div', { class: 'big' }, '☀️'), h('div', { class: 't1' }, 'Pick your place'), h('div', { class: 't2' }, 'Saved for offline')));
+  if (on.next) { const d = new Date(); el.append(card('', '📅 ' + fmtDay(d, { weekday: 'short' }), 'calendar', h('div', { class: 'big' }, d.getDate()), h('div', { class: 't1' }, ev ? ev.title : 'Free day'), h('div', { class: 't2' }, ev ? ev.when : 'Nothing planned'))); }
+  if (on.todo) { const end = new Date(); end.setHours(23, 59, 59); const open = (due || []).filter(r => !r.done).sort((a, b) => (a.due || '9').localeCompare(b.due || '9')); const nDue = open.filter(r => r.due && Rem.dueDate(r) <= end).length;
+    el.append(card('', '☑️ To do', 'reminders', h('div', { class: 't1' }, open.length ? (nDue ? nDue + ' due today' : open.length + ' to do') : 'All done 🎉'), open.length ? h('ul', null, open.slice(0, 3).map(r => h('li', null, r.text))) : h('div', { class: 't2' }, 'Add one in Reminders'))); }
+  if (on.verse) el.append(card('', '✝️ Verse of the day', 'bible', verse ? h('div', { class: 'verse' }, '“' + verse.text + '”') : h('div', { class: 't1' }, 'Open the Bible'), h('div', { class: 't2' }, verse ? verse.ref : 'Saved for offline')));
+  if (on.news) el.append(card('wide', '📰 Top story', 'news', h('div', { class: 't1' }, news ? news.title : 'Get today’s news'), h('div', { class: 't2' }, news ? news.src + ' · ' + fmtAgo(news.at) : 'Updates when you have Wi-Fi')));
+  if (Player.cur) el.append(h('button', { class: 'wd glass wide', onclick: () => this.go('music') }, h('span', { class: 'k' }, '🎵 Now playing'), h('div', { class: 't1' }, Player.cur.title), h('div', { class: 't2' }, Player.audio.paused ? 'Paused' : 'Playing')));
+};
+function editHome() {
+  let wall = Prefs.get('wall', 'aurora'), favs = Home.favs(), on = Home.widgetsOn();
+  const wp = h('div', { class: 'wallpick' });
+  const drawWalls = () => { wp.innerHTML = ''; for (const k in WALLS) wp.append(h('button', { style: { background: WALLS[k][1] }, 'aria-pressed': String(wall === k), onclick: () => { wall = k; Prefs.set('wall', k); Home.applyWall(); drawWalls(); } }, WALLS[k][0]));
+    wp.append(h('button', { style: { background: 'var(--surface2)', color: 'var(--ink)', textShadow: 'none' }, 'aria-pressed': String(wall === 'photo'), onclick: async () => { const [f] = await pickFiles('image/*', { multiple: false }); if (!f) return; await DB.kset('wallPhoto', f); wall = 'photo'; Prefs.set('wall', 'photo'); Home.applyWall(); drawWalls(); } }, '🖼️ My photo')); };
+  drawWalls();
+  const favBox = h('div', { class: 'chips' });
+  const drawFavs = () => { favBox.innerHTML = ''; for (const a of Apps.list) favBox.append(h('button', { class: 'chip', 'aria-pressed': String(favs.includes(a.id)), onclick: () => { if (favs.includes(a.id)) favs = favs.filter(x => x !== a.id); else if (favs.length < 4) favs.push(a.id); else UI.toast('Pick up to 4 — tap one to remove it first'); Prefs.set('favs', favs); drawFavs(); } }, a.icon + ' ' + a.name)); };
+  drawFavs();
+  const W = [['weather', '⛅ Weather'], ['next', '📅 Next up'], ['todo', '☑️ To do'], ['verse', '✝️ Verse of the day'], ['news', '📰 Top story']];
+  const wBox = h('div', { class: 'chips' }, W.map(([k, l]) => { const b = h('button', { class: 'chip', 'aria-pressed': String(!!on[k]) }, l); b.onclick = () => { on[k] = !on[k]; Prefs.set('widgets', on); b.setAttribute('aria-pressed', String(!!on[k])); }; return b; }));
+  UI.sheet({ title: 'Edit home screen', onClose: () => { if (!Shell.cur) Shell.route(); }, body: h('div', null, h('div', { class: 'sec', style: { marginTop: 0 } }, 'Wallpaper'), wp, h('div', { class: 'sec' }, 'Favorites dock (up to 4)'), favBox, h('div', { class: 'sec' }, 'Widgets'), wBox) });
+}
 
 /* ---- 10-calendar.js ---- */
 /* ===== Calendar ===== */
@@ -816,7 +957,7 @@ const Rem = {
   },
   alert(r) {
     if (Prefs.get('sound', true)) Sfx.chime(); try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) { }
-    if (document.hidden && 'Notification' in window && Notification.permission === 'granted') navigator.serviceWorker && navigator.serviceWorker.ready.then(g => g.showNotification('⏰ ' + r.text, { body: 'Reminder from Nova Pocket', tag: r.id })).catch(() => { });
+    if (document.hidden && 'Notification' in window && Notification.permission === 'granted') navigator.serviceWorker && navigator.serviceWorker.ready.then(g => g.showNotification('⏰ ' + r.text, { body: 'Reminder from Super One', tag: r.id })).catch(() => { });
     const bar = h('div', { class: 'alertbar', role: 'alert' }, h('span', { style: { fontSize: '28px' } }, '⏰'),
       h('span', { style: { flex: 1, minWidth: 0 } }, h('b', { style: { display: 'block' } }, r.text), h('small', { class: 'muted' }, 'Reminder · ' + fmtTime(new Date(r.due)))),
       h('button', { class: 'btn sm', onclick: async () => { const d = new Date(Date.now() + 10 * 60e3); r.due = ymd(d) + 'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); r.alerted = ''; await DB.put('reminders', r); bar.remove(); UI.toast('I’ll remind you in 10 minutes'); } }, '10 min'),
@@ -837,7 +978,7 @@ Apps.reg({
     quick.addEventListener('keydown', e => { if (e.key === 'Enter') addQuick(); });
     const box = h('div');
     v.append(h('div', { class: 'quick' }, quick, h('button', { class: 'btn pri', onclick: addQuick, 'aria-label': 'Add' }, 'Add')),
-      h('p', { class: 'tiny muted', style: { margin: '0 4px 4px' } }, 'Tip: tap a reminder to give it a time. I ring while Nova Pocket is open. For alerts when it’s closed, use “Add to phone calendar”.'),
+      h('p', { class: 'tiny muted', style: { margin: '0 4px 4px' } }, 'Tip: tap a reminder to give it a time. I ring while Super One is open. For alerts when it’s closed, use “Add to phone calendar”.'),
       box, h('button', { class: 'fab', 'aria-label': 'New reminder with time', html: SVG.plus, onclick: () => edit({}) }));
     if ('Notification' in window && Notification.permission === 'default') ctx.setActions(h('button', { class: 'btn ghost sm', onclick: async e => { try { await Notification.requestPermission(); } catch (x) { } e.target.remove(); } }, '🔔 Allow alerts'));
     async function load() { list = await DB.all('reminders'); draw(); }
@@ -931,14 +1072,14 @@ const Vault = {
   },
 };
 Apps.reg({
-  id: 'passwords', name: 'Passwords', icon: '🔐', color: 'linear-gradient(135deg,#5C6BFF,#2B2FB8)', group: 'day', keys: 'vault login keys secure', blurb: 'Locked password keeper',
+  id: 'passwords', name: 'Passwords', icon: '🔐', color: 'linear-gradient(135deg,#5C6BFF,#2B2FB8)', group: 'tools', keys: 'vault login keys secure', blurb: 'Locked password keeper',
   mount(v, ctx) {
     let rec = null, key = null, items = null, q = '', hiddenAt = 0, idle = null, fails = 0, waitUntil = 0;
     const lock = () => { key = null; items = null; clearTimeout(idle); render(); };
     const poke = () => { clearTimeout(idle); if (key) idle = setTimeout(() => { lock(); UI.toast('Locked after 5 minutes'); }, 5 * 60e3); };
     const vis = () => { if (document.hidden) hiddenAt = Date.now(); else if (key && Date.now() - hiddenAt > 60e3) lock(); };
     document.addEventListener('visibilitychange', vis); v.addEventListener('pointerdown', poke);
-    if (!(window.crypto && crypto.subtle)) { v.append(UI.empty('⚠️', 'Encryption is not available here', 'Open Nova Pocket from its https address to use Passwords.')); return; }
+    if (!(window.crypto && crypto.subtle)) { v.append(UI.empty('⚠️', 'Encryption is not available here', 'Open Super One from its https address to use Passwords.')); return; }
     const save = async () => { rec.box = await Vault.seal(key, items); rec.updated = Date.now(); await DB.put('vault', rec); };
     const pwInput = (ph, auto = 'current-password') => h('input', { type: 'password', placeholder: ph, autocomplete: auto, autocapitalize: 'off', spellcheck: 'false' });
     async function render() {
@@ -1057,6 +1198,243 @@ Apps.reg({
     }
     render();
     return () => { key = null; items = null; clearTimeout(idle); document.removeEventListener('visibilitychange', vis); };
+  },
+});
+
+/* ---- 14-clock.js ---- */
+/* ===== Clock: world clock, alarms, stopwatch, timer ===== */
+addCSS(`
+.anaclock{display:block;width:min(260px,70vw);height:min(260px,70vw);margin:6px auto 4px}
+.bigtime{text-align:center;font-size:44px;font-weight:300;font-variant-numeric:tabular-nums;font-family:var(--round);line-height:1.1}
+.bigtime small{display:block;font-size:15px;color:var(--muted);font-weight:500}
+.wc{display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}
+.wc:first-child{border-top:0}
+.wc b{display:block;font-size:17px}
+.wc small{color:var(--muted);font-size:13px}
+.wc .tm{margin-left:auto;font-size:30px;font-weight:300;font-variant-numeric:tabular-nums;font-family:var(--round)}
+.sw{text-align:center;font-size:64px;font-weight:200;font-variant-numeric:tabular-nums;font-family:var(--round);padding:24px 0 14px;letter-spacing:-.02em}
+.roundbtns{display:flex;justify-content:space-between;max-width:360px;margin:0 auto 14px}
+.roundbtns button{width:84px;height:84px;border-radius:42px;border:0;font-size:17px;font-weight:650;background:var(--surface2);color:var(--ink)}
+.roundbtns button.go{background:#1F7A3D;color:#7CF0A6}.roundbtns button.stop{background:#7A1F1F;color:#FF9C9C}
+.lap{display:flex;justify-content:space-between;padding:10px 14px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+.lap.best{color:var(--good)}.lap.worst{color:var(--bad)}
+.ring{position:relative;width:min(280px,72vw);height:min(280px,72vw);margin:8px auto}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .tt{position:absolute;inset:0;display:grid;place-items:center;font-size:52px;font-weight:200;font-variant-numeric:tabular-nums;font-family:var(--round)}
+.alarm{display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}
+.alarm:first-child{border-top:0}
+.alarm .tm{font-size:38px;font-weight:300;font-family:var(--round);font-variant-numeric:tabular-nums}
+.alarm.off .tm,.alarm.off small{opacity:.45}
+.switch{position:relative;width:52px;height:32px;border-radius:16px;background:var(--surface2);border:0;flex:0 0 auto;transition:background .2s}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:13px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s}
+.switch[aria-checked="true"]{background:#34C759}.switch[aria-checked="true"]::after{transform:translateX(20px)}
+.ringing{position:fixed;inset:0;z-index:80;background:linear-gradient(160deg,#FF6B6B,#7C3AED);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px}
+.ringing .tm{font-size:84px;font-weight:200;font-family:var(--round)}
+.ringing .btn{min-width:220px;min-height:58px;font-size:20px;border:0}
+`);
+const ZONES = [['Honolulu', 'Pacific/Honolulu'], ['Anchorage', 'America/Anchorage'], ['Los Angeles', 'America/Los_Angeles'], ['Vancouver', 'America/Vancouver'], ['Denver', 'America/Denver'], ['Chicago', 'America/Chicago'], ['Mexico City', 'America/Mexico_City'], ['Toronto', 'America/Toronto'], ['New York', 'America/New_York'], ['Bogotá', 'America/Bogota'], ['Lima', 'America/Lima'], ['Santiago', 'America/Santiago'], ['Buenos Aires', 'America/Argentina/Buenos_Aires'], ['São Paulo', 'America/Sao_Paulo'], ['Reykjavík', 'Atlantic/Reykjavik'], ['London', 'Europe/London'], ['Dublin', 'Europe/Dublin'], ['Lisbon', 'Europe/Lisbon'], ['Paris', 'Europe/Paris'], ['Madrid', 'Europe/Madrid'], ['Berlin', 'Europe/Berlin'], ['Rome', 'Europe/Rome'], ['Amsterdam', 'Europe/Amsterdam'], ['Stockholm', 'Europe/Stockholm'], ['Athens', 'Europe/Athens'], ['Istanbul', 'Europe/Istanbul'], ['Moscow', 'Europe/Moscow'], ['Cairo', 'Africa/Cairo'], ['Lagos', 'Africa/Lagos'], ['Nairobi', 'Africa/Nairobi'], ['Johannesburg', 'Africa/Johannesburg'], ['Dubai', 'Asia/Dubai'], ['Tehran', 'Asia/Tehran'], ['Karachi', 'Asia/Karachi'], ['Delhi', 'Asia/Kolkata'], ['Dhaka', 'Asia/Dhaka'], ['Bangkok', 'Asia/Bangkok'], ['Jakarta', 'Asia/Jakarta'], ['Singapore', 'Asia/Singapore'], ['Kuala Lumpur', 'Asia/Kuala_Lumpur'], ['Hong Kong', 'Asia/Hong_Kong'], ['Beijing', 'Asia/Shanghai'], ['Taipei', 'Asia/Taipei'], ['Manila', 'Asia/Manila'], ['Seoul', 'Asia/Seoul'], ['Tokyo', 'Asia/Tokyo'], ['Perth', 'Australia/Perth'], ['Adelaide', 'Australia/Adelaide'], ['Brisbane', 'Australia/Brisbane'], ['Sydney', 'Australia/Sydney'], ['Melbourne', 'Australia/Melbourne'], ['Auckland', 'Pacific/Auckland'], ['Fiji', 'Pacific/Fiji']];
+const Alarms = {
+  ringing: null, stopSnd: null,
+  list() { return Prefs.get('alarms', []); },
+  save(a) { Prefs.set('alarms', a); },
+  tick() {
+    if (this.ringing) return; const now = new Date(), hm = pad2(now.getHours()) + ':' + pad2(now.getMinutes()), key = ymd(now) + ' ' + hm, list = this.list();
+    for (const a of list) { if (!a.on || a.time !== hm || a.last === key) continue; if (a.days && a.days.length && !a.days.includes(now.getDay())) continue; a.last = key; if (!a.days || !a.days.length) a.on = false; this.save(list); this.ring(a.label || 'Alarm', a.time, a); return; }
+    const t = Prefs.get('timerEnd', 0); if (t && Date.now() >= t) { Prefs.set('timerEnd', 0); this.ring('Timer done', '⏱️'); }
+  },
+  sound() { const c = Sfx.ctx(); if (!c) return () => { }; let on = true; const loop = () => { if (!on) return; [880, 1175, 880, 1175].forEach((f, i) => Sfx.tone(f, 0.18, { type: 'square', vol: 0.12, when: i * 0.22 })); setTimeout(loop, 1400); }; loop(); const stop = setTimeout(() => on = false, 90e3); return () => { on = false; clearTimeout(stop); }; },
+  ring(label, time, a) {
+    this.stopSnd = this.sound(); try { navigator.vibrate && navigator.vibrate([400, 200, 400, 200, 400]); } catch (e) { }
+    const done = () => { this.stopSnd && this.stopSnd(); el.remove(); this.ringing = null; };
+    const el = h('div', { class: 'ringing', role: 'alertdialog' }, h('div', { style: { fontSize: '54px' } }, '⏰'), h('div', { class: 'tm' }, time.includes(':') ? time : '⏱️'), h('div', { style: { fontSize: '24px', fontWeight: 700 } }, label),
+      a ? h('button', { class: 'btn', style: { background: 'rgba(255,255,255,.25)', color: '#fff' }, onclick: () => { done(); const d = new Date(Date.now() + 9 * 60e3); const list = this.list(); list.push({ id: uid(), time: pad2(d.getHours()) + ':' + pad2(d.getMinutes()), label: (label || 'Alarm') + ' (snooze)', days: [], on: true, snooze: true }); this.save(list); UI.toast('Snoozing 9 minutes'); } }, '😴 Snooze 9 min') : null,
+      h('button', { class: 'btn', style: { background: '#fff', color: '#7C3AED' }, onclick: done }, 'Stop'));
+    this.ringing = el; document.body.append(el);
+    if (document.hidden && 'Notification' in window && Notification.permission === 'granted') navigator.serviceWorker && navigator.serviceWorker.ready.then(g => g.showNotification('⏰ ' + label, { tag: 'alarm' })).catch(() => { });
+  },
+};
+setInterval(() => Alarms.tick(), 5000); document.addEventListener('visibilitychange', () => { if (!document.hidden) Alarms.tick(); });
+Apps.reg({
+  id: 'clock', name: 'Clock', icon: '⏰', color: 'linear-gradient(135deg,#3A3A4A,#111118)', group: 'day', keys: 'time alarm stopwatch timer world clock', blurb: 'World clock, alarms, stopwatch, timer',
+  mount(v, ctx) {
+    let tab = Prefs.get('clockTab', 'world'), stopTab = null;
+    const body = h('div');
+    v.append(UI.tabs([['world', '🌍 World'], ['alarm', '⏰ Alarms'], ['sw', '⏱️ Stopwatch'], ['timer', '⏳ Timer']], tab, t => { tab = t; Prefs.set('clockTab', t); show(); }), body);
+    function show() { if (stopTab) stopTab(); body.innerHTML = ''; ctx.setActions(); stopTab = ({ world, alarm, sw, timer })[tab](body) || null; }
+    function world(el) {
+      const cv = h('canvas', { class: 'anaclock', width: 520, height: 520, 'aria-hidden': 'true' }), big = h('div', { class: 'bigtime' }), list = h('div', { class: 'mt' });
+      el.append(cv, big, list);
+      ctx.setActions(h('button', { class: 'btn ghost sm', onclick: add }, '＋ City'));
+      const g = cv.getContext('2d');
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const offset = (zone, d) => { const p = new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }).formatToParts(d).reduce((o, x) => (o[x.type] = x.value, o), {}); return (Date.UTC(+p.year, p.month - 1, +p.day, +p.hour % 24, +p.minute) - Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes())) / 3600e3; };
+      function paint() {
+        const d = new Date(), W = 520, c = W / 2, dark = getComputedStyle(document.body).backgroundColor.match(/\d+/g).slice(0, 3).reduce((a, b) => a + +b, 0) < 300;
+        g.clearRect(0, 0, W, W); g.fillStyle = dark ? '#1A1C24' : '#fff'; g.beginPath(); g.arc(c, c, 240, 0, 6.283); g.fill(); g.lineWidth = 6; g.strokeStyle = dark ? '#333845' : '#E3E5EE'; g.stroke();
+        for (let i = 0; i < 60; i++) { const a = i / 60 * 6.283, r1 = i % 5 ? 222 : 206; g.strokeStyle = i % 5 ? (dark ? '#555' : '#BBB') : (dark ? '#EEE' : '#222'); g.lineWidth = i % 5 ? 3 : 7; g.beginPath(); g.moveTo(c + Math.sin(a) * r1, c - Math.cos(a) * r1); g.lineTo(c + Math.sin(a) * 230, c - Math.cos(a) * 230); g.stroke(); }
+        g.fillStyle = dark ? '#EEE' : '#222'; g.font = '600 38px ' + getComputedStyle(document.body).fontFamily; g.textAlign = 'center'; g.textBaseline = 'middle'; for (let n = 1; n <= 12; n++) { const a = n / 12 * 6.283; g.fillText(n, c + Math.sin(a) * 172, c - Math.cos(a) * 172); }
+        const hand = (ang, len, w, col) => { g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round'; g.beginPath(); g.moveTo(c - Math.sin(ang) * 24, c + Math.cos(ang) * 24); g.lineTo(c + Math.sin(ang) * len, c - Math.cos(ang) * len); g.stroke(); };
+        const s = d.getSeconds() + d.getMilliseconds() / 1000, m = d.getMinutes() + s / 60, hr = d.getHours() % 12 + m / 60;
+        hand(hr / 12 * 6.283, 120, 14, dark ? '#fff' : '#111'); hand(m / 60 * 6.283, 180, 9, dark ? '#fff' : '#111'); hand(s / 60 * 6.283, 200, 3.5, '#FF9500');
+        g.fillStyle = '#FF9500'; g.beginPath(); g.arc(c, c, 10, 0, 6.283); g.fill();
+        big.innerHTML = esc(d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' })) + '<small>' + esc(tz.replace(/_/g, ' ')) + '</small>';
+      }
+      function drawList() {
+        const cities = Prefs.get('cities', ['London', 'Tokyo', 'New York']), d = new Date(); list.innerHTML = '';
+        if (!cities.length) return;
+        list.append(h('div', { class: 'list' }, cities.map(name => { const z = (ZONES.find(x => x[0] === name) || [name, 'UTC'])[1], off = offset(z, d), t = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: z });
+          const dayDiff = new Date(d.toLocaleString('en-US', { timeZone: z })).getDate() - d.getDate();
+          return h('div', { class: 'wc' }, h('div', null, h('b', null, name), h('small', null, (dayDiff > 0 || dayDiff < -20 ? 'Tomorrow, ' : dayDiff < 0 || dayDiff > 20 ? 'Yesterday, ' : 'Today, ') + (off === 0 ? 'same time' : (off > 0 ? '+' : '') + off + ' h'))), h('span', { class: 'tm' }, t),
+            h('button', { class: 'ib', 'aria-label': 'Remove ' + name, html: SVG.close, onclick: () => { Prefs.set('cities', cities.filter(c => c !== name)); drawList(); } })); })));
+      }
+      function add() {
+        const q = h('input', { type: 'search', placeholder: 'Search cities' }), res = h('div', { class: 'list mt' });
+        const fill = () => { res.innerHTML = ''; const s = q.value.toLowerCase(); ZONES.filter(z => z[0].toLowerCase().includes(s)).forEach(z => res.append(h('button', { class: 'li', onclick: () => { const c = Prefs.get('cities', ['London', 'Tokyo', 'New York']); if (!c.includes(z[0])) c.push(z[0]); Prefs.set('cities', c); sh.close(); drawList(); } }, h('span', { class: 't' }, h('b', null, z[0]), h('small', null, new Date().toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: z[1] })))))); };
+        q.addEventListener('input', fill); const sh = UI.sheet({ title: 'Add a city', body: h('div', null, q, res) }); fill();
+      }
+      paint(); drawList(); const t1 = setInterval(paint, 250), t2 = setInterval(drawList, 30000);
+      return () => { clearInterval(t1); clearInterval(t2); };
+    }
+    function alarm(el) {
+      ctx.setActions(h('button', { class: 'btn ghost sm', onclick: () => edit(null) }, '＋ Alarm'));
+      const box = h('div'); el.append(h('div', { class: 'info-banner' }, '⏰ Alarms ring while Super One is open (screen on). For a wake-up alarm with the screen off, also set one in the iPhone Clock app.'), box);
+      const DN = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+      const draw = () => {
+        const list = Alarms.list().sort((a, b) => a.time.localeCompare(b.time)); box.innerHTML = '';
+        if (!list.length) { box.append(UI.empty('⏰', 'No alarms', 'Tap “＋ Alarm” to add one.')); return; }
+        box.append(h('div', { class: 'list' }, list.map(a => { const [hh, mm] = a.time.split(':').map(Number), d = new Date(); d.setHours(hh, mm);
+          const sw = h('button', { class: 'switch', role: 'switch', 'aria-checked': String(!!a.on), 'aria-label': 'Alarm on', onclick: () => { const L = Alarms.list(); const x = L.find(y => y.id === a.id); x.on = !x.on; x.last = ''; Alarms.save(L); draw(); } });
+          return h('div', { class: 'alarm' + (a.on ? '' : ' off') }, h('button', { style: { flex: 1, border: 0, background: 'none', textAlign: 'left', padding: 0, color: 'inherit' }, onclick: () => edit(a) }, h('div', { class: 'tm' }, fmtTime(d)), h('small', { class: 'muted' }, (a.label || 'Alarm') + ' · ' + (a.days && a.days.length ? (a.days.length === 7 ? 'Every day' : a.days.map(i => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][i]).join(' ')) : 'Once'))), sw); })));
+      };
+      function edit(a0) {
+        const a = Object.assign({ time: '07:00', label: '', days: [], on: true }, a0 || {});
+        const time = h('input', { type: 'time', value: a.time, style: { fontSize: '28px', textAlign: 'center' } }), label = h('input', { type: 'text', value: a.label, placeholder: 'Label (e.g. School)' });
+        let days = a.days.slice(); const dBox = h('div', { class: 'chips' });
+        const drawD = () => { dBox.innerHTML = ''; DN.forEach((n, i) => dBox.append(h('button', { class: 'chip', style: { minWidth: '40px', justifyContent: 'center' }, 'aria-pressed': String(days.includes(i)), onclick: () => { days = days.includes(i) ? days.filter(x => x !== i) : days.concat(i).sort(); drawD(); } }, n))); };
+        drawD();
+        UI.sheet({ title: a0 ? 'Edit alarm' : 'New alarm', body: h('div', null, time, h('label', { class: 'f mt' }, h('span', null, 'Label'), label), h('div', { class: 'small muted', style: { fontWeight: 600, marginBottom: '6px' } }, 'Repeat on (none = once)'), dBox,
+          a0 ? h('button', { class: 'btn bad sm mt', onclick: e => { Alarms.save(Alarms.list().filter(x => x.id !== a.id)); e.target.closest('.scrim').remove(); draw(); } }, 'Delete alarm') : null),
+          actions: [{ label: 'Cancel' }, { label: 'Save', cls: 'pri', onClick: c => { const L = Alarms.list().filter(x => x.id !== a.id); L.push(Object.assign(a, { id: a.id || uid(), time: time.value || '07:00', label: label.value.trim(), days, on: true, last: '' })); Alarms.save(L); c(); draw(); UI.toast('Alarm set for ' + time.value); } }] });
+      }
+      draw(); const t = setInterval(draw, 20000); return () => clearInterval(t);
+    }
+    function sw(el) {
+      let st = Prefs.get('stopwatch', { run: false, t0: 0, acc: 0, laps: [] }); let raf = 0;
+      const disp = h('div', { class: 'sw' }), left = h('button'), right = h('button'), laps = h('div', { class: 'list' });
+      el.append(disp, h('div', { class: 'roundbtns' }, left, right), laps);
+      const now = () => st.acc + (st.run ? Date.now() - st.t0 : 0);
+      const f = ms => { const m = Math.floor(ms / 60000), s = Math.floor(ms / 1000) % 60, cs = Math.floor(ms / 10) % 100; return pad2(m) + ':' + pad2(s) + '.' + pad2(cs); };
+      const save = () => Prefs.set('stopwatch', st);
+      const tick = () => { disp.textContent = f(now()); raf = requestAnimationFrame(tick); };
+      const paint = () => {
+        left.textContent = st.run ? 'Lap' : 'Reset'; left.disabled = !st.run && !now(); right.textContent = st.run ? 'Stop' : 'Start'; right.className = st.run ? 'stop' : 'go';
+        laps.innerHTML = ''; const all = st.laps.slice(); if (st.run || now()) all.unshift(now() - st.laps.reduce((a, b) => a + b, 0));
+        const done = st.laps; const mn = Math.min(...done), mx = Math.max(...done);
+        all.forEach((ms, i) => { const idx = all.length - i, isCur = (st.run || now()) && i === 0; laps.append(h('div', { class: 'lap' + (!isCur && done.length > 2 && ms === mn ? ' best' : !isCur && done.length > 2 && ms === mx ? ' worst' : '') }, h('span', null, 'Lap ' + idx), h('span', null, f(ms)))); });
+        laps.hidden = !all.length;
+      };
+      left.onclick = () => { if (st.run) st.laps.unshift(now() - st.laps.reduce((a, b) => a + b, 0)); else st = { run: false, t0: 0, acc: 0, laps: [] }; save(); paint(); disp.textContent = f(now()); };
+      right.onclick = () => { if (st.run) { st.acc = now(); st.run = false; } else { st.t0 = Date.now(); st.run = true; } save(); paint(); };
+      paint(); tick(); const t = setInterval(paint, 1000); return () => { cancelAnimationFrame(raf); clearInterval(t); };
+    }
+    function timer(el) {
+      let total = Prefs.get('timerTotal', 300), raf = 0;
+      const ring = h('div', { class: 'ring', html: '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--surface2)" stroke-width="6"/><circle class="pg" cx="50" cy="50" r="45" fill="none" stroke="#FF9500" stroke-width="6" stroke-linecap="round" stroke-dasharray="282.7" stroke-dashoffset="0"/></svg><div class="tt"></div>' });
+      const pickBox = h('div'), left = h('button'), right = h('button');
+      el.append(ring, h('div', { class: 'roundbtns' }, left, right), pickBox);
+      const mm = h('input', { type: 'number', min: 0, max: 600, value: Math.floor(total / 60), 'aria-label': 'Minutes', style: { textAlign: 'center', fontSize: '22px' } }), ss = h('input', { type: 'number', min: 0, max: 59, value: total % 60, 'aria-label': 'Seconds', style: { textAlign: 'center', fontSize: '22px' } });
+      const setT = s => { total = Math.max(1, s); Prefs.set('timerTotal', total); mm.value = Math.floor(total / 60); ss.value = total % 60; paint(); };
+      mm.oninput = ss.oninput = () => setT((+mm.value || 0) * 60 + (+ss.value || 0));
+      pickBox.append(h('div', { class: 'grid2' }, h('label', { class: 'f' }, h('span', null, 'Minutes'), mm), h('label', { class: 'f' }, h('span', null, 'Seconds'), ss)), h('div', { class: 'chips' }, [1, 3, 5, 10, 15, 25, 30, 60].map(m => h('button', { class: 'chip', onclick: () => setT(m * 60) }, m + ' min'))));
+      const end = () => Prefs.get('timerEnd', 0), paused = () => Prefs.get('timerLeft', 0);
+      const left_ = () => end() ? Math.max(0, end() - Date.now()) : paused() || total * 1000;
+      function paint() {
+        const l = left_(), s = Math.ceil(l / 1000); ring.querySelector('.tt').textContent = (s >= 3600 ? Math.floor(s / 3600) + ':' + pad2(Math.floor(s / 60) % 60) : Math.floor(s / 60)) + ':' + pad2(s % 60);
+        ring.querySelector('.pg').setAttribute('stroke-dashoffset', String(282.7 * (1 - l / (total * 1000))));
+        const running = !!end(); right.textContent = running ? 'Pause' : paused() ? 'Resume' : 'Start'; right.className = running ? 'stop' : 'go'; left.textContent = 'Cancel'; left.disabled = !running && !paused(); pickBox.hidden = running || !!paused();
+      }
+      right.onclick = () => { Sfx.ctx(); if (end()) { Prefs.set('timerLeft', left_()); Prefs.set('timerEnd', 0); } else { Prefs.set('timerEnd', Date.now() + (paused() || total * 1000)); Prefs.set('timerLeft', 0); } paint(); };
+      left.onclick = () => { Prefs.set('timerEnd', 0); Prefs.set('timerLeft', 0); paint(); };
+      const loop = () => { paint(); raf = requestAnimationFrame(loop); }; loop();
+      return () => cancelAnimationFrame(raf);
+    }
+    show();
+    return () => { if (stopTab) stopTab(); };
+  },
+});
+
+/* ---- 15-news.js ---- */
+/* ===== News: downloads headlines whenever you're online, keeps them to read offline ===== */
+addCSS(`
+.story{display:flex;gap:12px;align-items:flex-start;padding:14px;border-top:1px solid var(--line);border-left:0;border-right:0;border-bottom:0;background:none;width:100%;text-align:left;color:var(--ink)}
+.story:first-child{border-top:0}
+.story .im{width:84px;height:84px;border-radius:12px;flex:0 0 auto;background:var(--surface2) center/cover no-repeat;display:grid;place-items:center;font-size:30px}
+.story b{display:block;font-size:16px;line-height:1.3}
+.story small{display:block;color:var(--muted);font-size:13px;margin-top:4px}
+.story p{margin:4px 0 0;font-size:14px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.lead{border-radius:20px;overflow:hidden;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);text-align:left;width:100%;padding:0;color:var(--ink)}
+.lead .im{aspect-ratio:16/9;background:var(--surface2) center/cover no-repeat;display:grid;place-items:center;font-size:48px}
+.lead div.tx{padding:14px}
+.lead b{font-size:20px;line-height:1.25;display:block}
+`);
+const strip = s => String(s || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
+const News = {
+  SRC: { world: 'Wikipedia · In the news', space: 'Space news', tech: 'Tech news', day: 'On this day' },
+  async fetchAll() {
+    const d = new Date(), path = d.getFullYear() + '/' + pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()), out = {};
+    const job = async (k, f) => { try { out[k] = await f(); await DB.kset('news:' + k, { at: Date.now(), items: out[k] }); } catch (e) { out[k] = null; } };
+    await Promise.all([
+      job('world', async () => {
+        // "In the news" headlines from Wikipedia's front page, plus a short summary of each main article
+        const itn = await (await fetch('https://en.wikipedia.org/w/api.php?action=parse&page=Template:In_the_news&prop=text&format=json&formatversion=2&origin=*')).json();
+        const doc = new DOMParser().parseFromString(itn.parse.text, 'text/html'), ul = doc.querySelector('ul');
+        const lis = ul ? [...ul.children].filter(x => x.tagName === 'LI').slice(0, 8) : [];
+        const items = await Promise.all(lis.map(async li => {
+          const title = li.textContent.replace(/\s*\((pictured|shown)\)/g, '').replace(/\s+/g, ' ').trim(), a = li.querySelector('b a') || li.querySelector('a[href*="/wiki/"]');
+          const page = a ? decodeURIComponent((a.getAttribute('href') || '').replace(/^.*\/wiki\//, '')) : ''; const it = { title, sum: '', img: null, url: page ? 'https://en.m.wikipedia.org/wiki/' + encodeURIComponent(page) : null, src: 'Wikipedia · In the news' };
+          if (page) try { const sm = await (await fetch('https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(page))).json(); it.sum = sm.extract || ''; it.img = sm.thumbnail && sm.thumbnail.source; } catch (e) { }
+          return it;
+        }));
+        try {
+          const j = await (await fetch('https://en.wikipedia.org/api/rest_v1/feed/featured/' + path)).json();
+          if (j.tfa) items.push({ title: '⭐ Featured article: ' + strip(j.tfa.titles ? j.tfa.titles.normalized : j.tfa.title), sum: strip(j.tfa.extract), img: j.tfa.thumbnail && j.tfa.thumbnail.source, url: j.tfa.content_urls && j.tfa.content_urls.mobile.page, src: 'Wikipedia' });
+          await DB.kset('news:day', { at: Date.now(), items: (j.onthisday || []).slice(0, 15).map(o => { const pg = (o.pages || [])[0] || {}; return { title: o.year + ': ' + strip(o.text), sum: strip(pg.extract || ''), img: pg.thumbnail && pg.thumbnail.source, url: pg.content_urls && pg.content_urls.mobile.page, src: 'On this day' }; }) });
+        } catch (e) { }
+        if (!items.length) throw new Error('no news'); return items; }),
+      job('space', async () => { const j = await (await fetch('https://api.spaceflightnewsapi.net/v4/articles/?limit=20')).json(); return (j.results || []).map(a => ({ title: a.title, sum: strip(a.summary), img: a.image_url, url: a.url, src: a.news_site, when: Date.parse(a.published_at) })); }),
+      job('tech', async () => { const ids = (await (await fetch('https://hacker-news.firebaseio.com/v0/topstories.json')).json()).slice(0, 20); const its = await Promise.all(ids.map(id => fetch('https://hacker-news.firebaseio.com/v0/item/' + id + '.json').then(r => r.json()).catch(() => null))); return its.filter(x => x && x.title).map(x => ({ title: x.title, sum: (x.score || 0) + ' points · ' + (x.descendants || 0) + ' comments', url: x.url || 'https://news.ycombinator.com/item?id=' + x.id, src: x.url ? new URL(x.url).hostname.replace(/^www\./, '') : 'Hacker News', when: x.time * 1000 })); }),
+    ]);
+    await DB.kset('newsAt', Date.now()); return out;
+  },
+  async peek() { const w = await DB.kget('news:world', null) || await DB.kget('news:space', null); if (!w || !w.items.length) return null; return { title: w.items[0].title, src: w.items[0].src, at: w.at }; },
+  async auto() { if (!navigator.onLine) return; const at = await DB.kget('newsAt', 0); if (Date.now() - at > 3 * 3600e3) { try { await this.fetchAll(); } catch (e) { } } },
+};
+setTimeout(() => News.auto(), 4000); addEventListener('online', () => setTimeout(() => News.auto(), 2000));
+Apps.reg({
+  id: 'news', name: 'News', icon: '📰', color: 'linear-gradient(135deg,#FF5F6D,#C81D25)', group: 'day', keys: 'headlines updates world space tech today', blurb: 'Headlines, saved for offline',
+  mount(v, ctx) {
+    let tab = Prefs.get('newsTab', 'world');
+    const box = h('div'), status = h('div', { class: 'row small muted', style: { margin: '0 2px 10px' } });
+    v.append(UI.tabs([['world', '🌍 World'], ['space', '🚀 Space'], ['tech', '💻 Tech'], ['day', '📅 On this day']], tab, t => { tab = t; Prefs.set('newsTab', t); draw(); }), status, box);
+    const refresh = async () => { if (!navigator.onLine) return UI.toast('No internet right now — showing saved news'); status.textContent = 'Getting the latest…'; await News.fetchAll(); draw(); };
+    ctx.setActions(h('button', { class: 'btn ghost sm', onclick: refresh }, '↻'));
+    async function draw() {
+      const c = await DB.kget('news:' + tab, null); box.innerHTML = ''; status.innerHTML = '';
+      status.append(h('span', { class: 'sp' }, c ? (navigator.onLine ? 'Updated ' : '📴 Offline · saved ') + fmtAgo(c.at) : ''), h('span', null, News.SRC[tab]));
+      if (!c || !c.items.length) { box.append(UI.empty('📰', 'No news saved yet', navigator.onLine ? 'Tap ↻ to download today’s news.' : 'Connect to Wi-Fi once and I’ll save the news for offline reading.')); return; }
+      const img = (u, fb) => ({ style: { backgroundImage: u && navigator.onLine ? 'url("' + u + '")' : 'none' } });
+      const [first, ...rest] = c.items;
+      box.append(h('button', { class: 'lead', onclick: () => read(first) }, h('div', Object.assign({ class: 'im' }, img(first.img)), first.img && navigator.onLine ? '' : '📰'), h('div', { class: 'tx' }, h('b', null, first.title), first.sum ? h('p', { class: 'muted', style: { margin: '6px 0 0' } }, first.sum.slice(0, 160) + (first.sum.length > 160 ? '…' : '')) : null, h('small', { class: 'muted' }, first.src + (first.when ? ' · ' + fmtAgo(first.when) : '')))),
+        h('div', { class: 'list mt' }, rest.map(s => h('button', { class: 'story', onclick: () => read(s) }, h('span', Object.assign({ class: 'im' }, img(s.img)), s.img && navigator.onLine ? '' : ({ world: '🌍', space: '🚀', tech: '💻', day: '📅' })[tab]), h('span', { style: { flex: 1, minWidth: 0 } }, h('b', null, s.title), s.sum && tab !== 'tech' ? h('p', null, s.sum) : null, h('small', null, s.src + (s.when ? ' · ' + fmtAgo(s.when) : '') + (tab === 'tech' ? ' · ' + s.sum : '')))))));
+      box.append(h('p', { class: 'tiny muted center mt' }, 'News updates by itself whenever you’re online, and stays readable offline. Sources: Wikipedia, Spaceflight News API, Hacker News.'));
+    }
+    function read(s) {
+      UI.sheet({ title: s.src, body: h('div', null, s.img && navigator.onLine ? h('img', { src: s.img, alt: '', style: { width: '100%', borderRadius: '14px', marginBottom: '10px' } }) : null, h('h3', { style: { fontSize: '21px', marginBottom: '8px' } }, s.title), s.sum ? h('p', { style: { fontSize: '17px', lineHeight: 1.55 } }, s.sum) : null, s.when ? h('p', { class: 'small muted' }, new Date(s.when).toLocaleString()) : null),
+        actions: [{ label: '🔊 Read aloud', onClick: () => Speak.say(s.title + '. ' + (tab === 'tech' ? '' : s.sum)) }, { label: 'Full story ↗', cls: 'pri', onClick: () => { if (!navigator.onLine) return UI.toast('The full story needs internet'); if (s.url) window.open(s.url, '_blank', 'noopener'); } }] });
+    }
+    draw();
+    (async () => { const at = await DB.kget('newsAt', 0); if (navigator.onLine && Date.now() - at > 30 * 60e3) refresh(); })();
+    const on = () => refresh(); addEventListener('online', on); return () => removeEventListener('online', on);
   },
 });
 
@@ -1290,7 +1668,7 @@ const Player = {
     if (this.cur !== t) return;
     if (this.url) URL.revokeObjectURL(this.url); this.url = URL.createObjectURL(blob); this.audio.src = this.url; this.loading = false;
     if (play) { try { await this.audio.play(); } catch (e) { } }
-    if ('mediaSession' in navigator) { try { navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist || 'Nova Pocket', album: 'Nova Pocket' }); } catch (e) { } }
+    if ('mediaSession' in navigator) { try { navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist || 'Super One', album: 'Super One' }); } catch (e) { } }
     this.emit();
   },
   toggle() { if (!this.cur) return; if (this.audio.paused) this.audio.play().catch(() => { }); else this.audio.pause(); },
@@ -1329,7 +1707,7 @@ Apps.reg({
       const a = Player.audio, dur = a.duration && isFinite(a.duration) ? a.duration : (c.dur || 0);
       const seek = h('input', { type: 'range', min: 0, max: Math.max(1, dur), step: 0.1, value: a.currentTime || 0, 'aria-label': 'Position', oninput: e => { a.currentTime = +e.target.value; } });
       const tl = h('div', { class: 'times' }, h('span', { id: 'mcur' }, fmtDur(a.currentTime)), h('span', null, fmtDur(dur)));
-      now.append(h('div', { class: 'np mb' }, h('div', { class: 'row nw', style: { gap: '14px' } }, h('div', { class: 'art' }, c.icon || '🎵'), h('div', { style: { minWidth: 0, flex: 1 } }, h('b', null, c.title), h('small', null, Player.loading ? 'Getting it ready…' : (c.artist || 'Nova Pocket')))),
+      now.append(h('div', { class: 'np mb' }, h('div', { class: 'row nw', style: { gap: '14px' } }, h('div', { class: 'art' }, c.icon || '🎵'), h('div', { style: { minWidth: 0, flex: 1 } }, h('b', null, c.title), h('small', null, Player.loading ? 'Getting it ready…' : (c.artist || 'Super One')))),
         h('div', { class: 'mt' }, seek, tl),
         h('div', { class: 'ctl' }, h('button', { class: 'tog' + (Player.shuffle ? ' on' : ''), 'aria-label': 'Shuffle', onclick: () => { Player.shuffle = !Player.shuffle; paintNow(); } }, '🔀'),
           h('button', { 'aria-label': 'Previous', html: SVG.prev, onclick: () => Player.prev() }),
@@ -1742,6 +2120,192 @@ Apps.reg({
     }
     if (ctx.param) DB.get('media', ctx.param).then(m => m ? editor({ blob: m.blob, id: m.kind === 'drawing' ? m.id : null, name: m.kind === 'drawing' ? m.name : 'Edited photo', kind: m.kind }) : home()); else home();
     return () => { if (cleanup) cleanup(); };
+  },
+});
+
+/* ---- 24-files.js ---- */
+/* ===== Files: keep any file, make folders, preview, rename, move, share ===== */
+addCSS(`
+.crumbs{display:flex;gap:4px;align-items:center;flex-wrap:wrap;font-size:14px;margin:0 2px 10px}
+.crumbs button{border:0;background:none;color:var(--accent);font-weight:650;padding:4px 2px}
+.fgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (min-width:640px){.fgrid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.fitem{display:flex;flex-direction:column;align-items:center;gap:6px;border:0;background:none;padding:6px 2px;text-align:center;min-width:0;border-radius:14px}
+.fitem:active{background:var(--surface2)}
+.fitem .th{width:72px;height:72px;border-radius:14px;display:grid;place-items:center;font-size:40px;background:var(--surface);border:1px solid var(--line);overflow:hidden}
+.fitem .th img{width:100%;height:100%;object-fit:cover}
+.fitem b{font-size:13px;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fitem small{font-size:11px;color:var(--muted)}
+.fprev{max-height:60vh;overflow:auto;border-radius:12px;background:var(--surface2)}
+.fprev img,.fprev video{display:block;max-width:100%;margin:0 auto}
+.fprev pre{white-space:pre-wrap;word-break:break-word;font-family:var(--mono);font-size:13px;padding:12px;margin:0}
+`);
+const FileKit = {
+  icon(f) { if (f.dir) return '📁'; const t = f.type || '', n = (f.name || '').toLowerCase(); return t.startsWith('image') ? '🖼️' : t.startsWith('video') ? '🎬' : t.startsWith('audio') ? '🎵' : t.includes('pdf') || n.endsWith('.pdf') ? '📕' : /zip|rar|7z|tar/.test(t + n) ? '🗜️' : /sheet|excel|csv|\.xls/.test(t + n) ? '📊' : /presentation|powerpoint|\.ppt|\.key/.test(t + n) ? '📽️' : /word|\.doc|\.pages/.test(t + n) ? '📘' : FileKit.isText(f) ? '📝' : '📄'; },
+  isText(f) { return /^text\/|json|xml|javascript|csv|markdown/.test(f.type || '') || /\.(txt|md|csv|json|js|html|css|py|xml|log|ini|yaml|yml)$/i.test(f.name || ''); },
+  async children(folder) { return (await DB.all('files')).filter(f => (f.folder || null) === folder); },
+  async removeTree(f) { if (f.dir) for (const c of await this.children(f.id)) await this.removeTree(c); await DB.del('files', f.id); },
+  async add(files, folder) { let n = 0; for (const f of files) { const th = f.type.startsWith('image') ? await imageThumb(f, 200) : null; await DB.put('files', { id: uid(), name: f.name, type: f.type || '', size: f.size, blob: f, folder, thumb: th && th.url, created: Date.now(), updated: Date.now() }); n++; } return n; },
+};
+Apps.reg({
+  id: 'files', name: 'Files', icon: '📁', color: 'linear-gradient(135deg,#5AC8FA,#007AFF)', group: 'make', keys: 'documents folders pdf storage', blurb: 'Keep any file, in folders',
+  mount(v, ctx) {
+    let folder = null, path = [], q = '', sortBy = Prefs.get('fileSort', 'name');
+    const crumbs = h('div', { class: 'crumbs' }), search = h('input', { type: 'search', placeholder: 'Search files' }), box = h('div'), info = h('p', { class: 'tiny muted center mt' });
+    v.append(h('div', { class: 'search mb' }, search), crumbs, box, info, h('button', { class: 'fab', 'aria-label': 'Add', html: SVG.plus, onclick: addMenu }));
+    ctx.setActions(h('button', { class: 'btn ghost sm', onclick: () => UI.menu('Sort by', [['name', 'Name'], ['date', 'Newest'], ['size', 'Size']].map(([k, l]) => ({ icon: sortBy === k ? '✓' : '', label: l, run: () => { sortBy = k; Prefs.set('fileSort', k); draw(); } }))) }, 'Sort'));
+    search.addEventListener('input', () => { q = search.value.trim().toLowerCase(); draw(); });
+    function addMenu() {
+      UI.menu('Add', [
+        { icon: '📥', label: 'Import files', sub: 'From Files, iCloud Drive, or your computer', run: async () => { const fs = await pickFiles('*/*'); if (fs.length) { UI.toast('Adding ' + fs.length + '…'); await FileKit.add(fs, folder); draw(); } } },
+        { icon: '🖼️', label: 'Import photos or videos', run: async () => { const fs = await pickFiles('image/*,video/*'); if (fs.length) { await FileKit.add(fs, folder); draw(); } } },
+        { icon: '📷', label: 'Scan with camera', sub: 'Take a photo of paper', run: async () => { const fs = await pickFiles('image/*', { multiple: false, capture: 'environment' }); if (fs.length) { const f = new File([fs[0]], 'Scan ' + new Date().toLocaleString().replace(/[/:]/g, '-') + '.jpg', { type: fs[0].type }); await FileKit.add([f], folder); draw(); } } },
+        { icon: '📁', label: 'New folder', run: async () => { const n = await UI.prompt('Folder name', { value: 'New folder', ok: 'Create' }); if (n && n.trim()) { await DB.put('files', { id: uid(), name: n.trim(), dir: true, folder, created: Date.now(), updated: Date.now() }); draw(); } } },
+        { icon: '📝', label: 'New text file', run: async () => { const n = await UI.prompt('File name', { value: 'Untitled.txt', ok: 'Create' }); if (n && n.trim()) { const name = /\.\w+$/.test(n) ? n.trim() : n.trim() + '.txt'; const rec = { id: uid(), name, type: 'text/plain', size: 0, blob: new Blob([''], { type: 'text/plain' }), folder, created: Date.now(), updated: Date.now() }; await DB.put('files', rec); draw(); open(rec); } } },
+      ]);
+    }
+    async function draw() {
+      const all = await DB.all('files');
+      crumbs.innerHTML = ''; crumbs.append(h('button', { onclick: () => { folder = null; path = []; draw(); } }, '🏠 Files')); path.forEach((p, i) => crumbs.append('›', h('button', { onclick: () => { folder = p.id; path = path.slice(0, i + 1); draw(); } }, p.name)));
+      let items = q ? all.filter(f => (f.name || '').toLowerCase().includes(q)) : all.filter(f => (f.folder || null) === folder);
+      items.sort((a, b) => (b.dir ? 1 : 0) - (a.dir ? 1 : 0) || (sortBy === 'date' ? b.updated - a.updated : sortBy === 'size' ? (b.size || 0) - (a.size || 0) : a.name.localeCompare(b.name, undefined, { numeric: true })));
+      box.innerHTML = '';
+      if (!items.length) box.append(UI.empty(q ? '🔎' : '📂', q ? 'No files match' : 'This folder is empty', q ? '' : 'Tap + to import files, make a folder or write a text file.'));
+      else box.append(h('div', { class: 'fgrid' }, items.map(f => { const kids = f.dir ? all.filter(x => x.folder === f.id).length : 0;
+        return onLongPress(h('button', { class: 'fitem', onclick: () => f.dir ? (folder = f.id, path.push(f), q = '', search.value = '', draw()) : open(f) },
+          h('span', { class: 'th' }, f.thumb ? h('img', { src: f.thumb, alt: '' }) : FileKit.icon(f)), h('b', null, f.name), h('small', null, f.dir ? kids + ' items' : fmtSize(f.size || 0))), () => menu(f)); })));
+      if (!folder && !q) box.append(h('div', { class: 'sec' }, 'From your apps'), h('div', { class: 'list' }, [['media', '🖼️', 'Photos & drawings'], ['videos', '🎬', 'Videos'], ['memos', '🎙️', 'Voice memos'], ['music', '🎵', 'Songs']].map(([id, e, n]) => h('button', { class: 'li', onclick: () => Shell.go(id) }, h('span', { class: 'ic' }, e), h('span', { class: 't' }, h('b', null, n)), h('span', { class: 'chev' }, '›')))));
+      const total = all.reduce((a, f) => a + (f.size || 0), 0); info.textContent = all.filter(f => !f.dir).length + ' files · ' + fmtSize(total) + ' · long-press a file for more options';
+      ctx.setBack(folder ? () => { path.pop(); folder = path.length ? path[path.length - 1].id : null; draw(); return true; } : null);
+    }
+    function menu(f) {
+      UI.menu(f.name, [
+        { icon: '✏️', label: 'Rename', run: async () => { const n = await UI.prompt('New name', { value: f.name }); if (n && n.trim()) { f.name = n.trim(); f.updated = Date.now(); await DB.put('files', f); draw(); } } },
+        { icon: '📂', label: 'Move to…', run: () => move(f) },
+        !f.dir && { icon: '📤', label: 'Share or save', run: () => saveFile(f.blob, f.name) },
+        !f.dir && { icon: '📑', label: 'Duplicate', run: async () => { await DB.put('files', Object.assign({}, f, { id: uid(), name: f.name.replace(/(\.\w+)?$/, ' copy$1'), created: Date.now(), updated: Date.now() })); draw(); } },
+        { icon: '🗑️', label: 'Delete', danger: true, run: async () => { if (await UI.ask('Delete “' + f.name + '”' + (f.dir ? ' and everything inside it' : '') + '?', { ok: 'Delete', danger: true })) { await FileKit.removeTree(f); draw(); } } },
+      ]);
+    }
+    async function move(f) {
+      const dirs = (await DB.all('files')).filter(d => d.dir && d.id !== f.id);
+      const bad = new Set([f.id]); let grew = true; while (grew) { grew = false; for (const d of dirs) if (!bad.has(d.id) && bad.has(d.folder)) { bad.add(d.id); grew = true; } }
+      UI.menu('Move “' + f.name + '” to', [{ icon: '🏠', label: 'Files (top)', run: async () => { f.folder = null; await DB.put('files', f); draw(); } }].concat(dirs.filter(d => !bad.has(d.id)).map(d => ({ icon: '📁', label: d.name, run: async () => { f.folder = d.id; await DB.put('files', f); draw(); } }))));
+    }
+    async function open(f) {
+      const body = h('div'); let url = null;
+      const prev = h('div', { class: 'fprev' }); body.append(prev, h('p', { class: 'small muted mt' }, fmtSize(f.size || 0) + ' · ' + (f.type || 'file') + ' · added ' + fmtAgo(f.created)));
+      const t = f.type || '';
+      if (t.startsWith('image')) { url = URL.createObjectURL(f.blob); prev.append(h('img', { src: url, alt: f.name })); }
+      else if (t.startsWith('video')) { url = URL.createObjectURL(f.blob); prev.append(h('video', { src: url, controls: true, playsinline: true })); }
+      else if (t.startsWith('audio')) { url = URL.createObjectURL(f.blob); prev.append(h('audio', { src: url, controls: true, style: { width: '100%', margin: '14px 0' } })); }
+      else if (FileKit.isText(f)) {
+        const ta = h('textarea', { style: { minHeight: '45vh', fontFamily: 'var(--mono)', fontSize: '14px', border: 0 } }); ta.value = await f.blob.text(); prev.replaceWith(ta);
+        body.append(h('button', { class: 'btn pri sm', onclick: async () => { f.blob = new Blob([ta.value], { type: f.type || 'text/plain' }); f.size = f.blob.size; f.updated = Date.now(); await DB.put('files', f); UI.toast('Saved'); draw(); } }, '💾 Save changes'));
+      } else if (t.includes('pdf') || /\.pdf$/i.test(f.name)) { url = URL.createObjectURL(new Blob([f.blob], { type: 'application/pdf' })); prev.append(h('iframe', { src: url, title: f.name, style: { width: '100%', height: '60vh', border: 0, background: '#fff' } })); body.append(h('p', { class: 'tiny muted' }, 'Tip: tap “Open / share” to read every page.')); }
+      else prev.append(UI.empty(FileKit.icon(f), 'No preview for this kind of file', 'Tap “Open / share” to open it in another app.'));
+      UI.sheet({ title: f.name, body, onClose: () => url && URL.revokeObjectURL(url), actions: [{ label: '⋯ More', onClick: c => { c(); menu(f); } }, { label: '📤 Open / share', cls: 'pri', onClick: () => saveFile(f.blob, f.name) }] });
+    }
+    if (ctx.param) DB.get('files', ctx.param).then(f => { draw(); if (f && !f.dir) open(f); }); else draw();
+  },
+});
+
+/* ---- 25-videos.js ---- */
+/* ===== Videos: your video library, player that remembers where you stopped, save a video from a link ===== */
+addCSS(`
+.vrow{display:flex;gap:10px;overflow-x:auto;padding:2px 0 8px;scrollbar-width:none}
+.vrow::-webkit-scrollbar{display:none}
+.vcard{flex:0 0 auto;width:220px;border:0;background:none;padding:0;text-align:left;color:var(--ink)}
+.vgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (min-width:700px){.vgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.vthumb{position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:#111;display:grid;place-items:center;font-size:34px;box-shadow:var(--shadow)}
+.vthumb img{width:100%;height:100%;object-fit:cover}
+.vthumb .d{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.7);color:#fff;font-size:12px;font-weight:700;border-radius:6px;padding:2px 6px}
+.vthumb .pg{position:absolute;left:0;bottom:0;height:4px;background:#FF3B30}
+.vcard b,.vitem b{display:block;font-size:14px;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vcard small,.vitem small{font-size:12px;color:var(--muted)}
+.vitem{border:0;background:none;padding:0;text-align:left;min-width:0;color:var(--ink)}
+.vplayer{background:#000;border-radius:16px;overflow:hidden}
+.vplayer video{display:block;width:100%;max-height:62vh;background:#000}
+`);
+const BLOCKED_SITES = /(^|\.)(youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com|fb\.watch|twitter\.com|x\.com|snapchat\.com|twitch\.tv|vimeo\.com|netflix\.com|disneyplus\.com|reddit\.com|roblox\.com)$/i;
+Apps.reg({
+  id: 'videos', name: 'Videos', icon: '🎬', color: 'linear-gradient(135deg,#FF416C,#8E2DE2)', group: 'make', keys: 'movies clips watch player download link', blurb: 'Watch and save videos',
+  mount(v, ctx) {
+    let urlNow = null;
+    const pos = id => Prefs.get('vpos', {})[id] || 0, setPos = (id, t, d) => { const p = Prefs.get('vpos', {}); if (t < 3 || (d && t > d - 3)) delete p[id]; else p[id] = t; Prefs.set('vpos', p); };
+    async function list() {
+      if (ctx._clean) { ctx._clean(); ctx._clean = null; }
+      v.innerHTML = ''; ctx.setTitle('Videos'); ctx.setBack(null); if (urlNow) { URL.revokeObjectURL(urlNow); urlNow = null; }
+      ctx.setActions(h('button', { class: 'btn ghost sm', onclick: add }, '＋ Add'));
+      const all = (await DB.all('media')).filter(m => m.kind === 'video').sort((a, b) => b.created - a.created);
+      if (!all.length) { v.append(UI.empty('🎬', 'No videos yet', 'Add videos from your library, record one, or paste a link to a video file.'), h('div', { class: 'center' }, h('button', { class: 'btn pri', onclick: add }, '＋ Add a video'))); return; }
+      const thumb = m => h('div', { class: 'vthumb' }, m.thumb ? h('img', { src: m.thumb, alt: '' }) : '🎬', m.dur ? h('span', { class: 'd' }, fmtDur(m.dur)) : null, pos(m.id) && m.dur ? h('span', { class: 'pg', style: { width: (100 * pos(m.id) / m.dur) + '%' } }) : null);
+      const cont = all.filter(m => pos(m.id));
+      if (cont.length) v.append(h('div', { class: 'sec', style: { marginTop: '4px' } }, '▶️ Continue watching'), h('div', { class: 'vrow' }, cont.map(m => h('button', { class: 'vcard', onclick: () => play(m, all) }, thumb(m), h('b', null, m.name || 'Video'), h('small', null, fmtDur(m.dur - pos(m.id)) + ' left')))));
+      v.append(h('div', { class: 'sec' }, 'All videos · ' + all.length), h('div', { class: 'vgrid' }, all.map(m => onLongPress(h('button', { class: 'vitem', onclick: () => play(m, all) }, thumb(m), h('b', null, m.name || 'Video'), h('small', null, fmtDay(new Date(m.created)) + (m.size ? ' · ' + fmtSize(m.size) : ''))), () => opts(m)))),
+        h('p', { class: 'tiny muted center mt' }, 'Press and hold a video for options.'));
+    }
+    function add() {
+      UI.menu('Add a video', [
+        { icon: '🖼️', label: 'From my photo library', run: async () => { const f = await pickFiles('video/*'); if (f.length) { UI.toast('Adding…'); await Media.add(f); list(); } } },
+        { icon: '🎥', label: 'Record a video', run: async () => { const f = await pickFiles('video/*', { multiple: false, capture: 'environment' }); if (f.length) { await Media.add(f); list(); } } },
+        { icon: '🔗', label: 'Save from a link', sub: 'A direct link to a video file (.mp4, .mov, .webm)', run: fromLink },
+      ]);
+    }
+    function fromLink() {
+      const inp = h('input', { type: 'url', placeholder: 'https://…/video.mp4', autocapitalize: 'off', autocomplete: 'off' }), msg = h('div', { class: 'mt small' }), bar = h('i', { style: { width: '0%' } }), prog = h('div', { class: 'prog mt', hidden: true }, bar);
+      let ctrl = null;
+      const go = async () => {
+        let u; try { u = new URL(inp.value.trim()); } catch (e) { msg.textContent = 'That doesn’t look like a web link.'; return; }
+        if (!/^https?:$/.test(u.protocol)) { msg.textContent = 'Use a link that starts with https://'; return; }
+        if (BLOCKED_SITES.test(u.hostname.replace(/^www\.|^m\./, ''))) { msg.innerHTML = ''; msg.append(h('div', { class: 'note-banner', style: { margin: 0 } }, '🚫 ' + u.hostname.replace(/^www\./, '') + ' doesn’t let other apps download its videos, and its rules don’t allow it. Use the app’s own save or “download for offline” button instead, or ask the creator for the file.')); return; }
+        if (!navigator.onLine) { msg.textContent = 'You need internet to download.'; return; }
+        msg.textContent = 'Downloading…'; prog.hidden = false; ctrl = new AbortController();
+        try {
+          const r = await fetch(u.href, { signal: ctrl.signal }); if (!r.ok) throw new Error('The website said ' + r.status + '.');
+          const type = (r.headers.get('content-type') || '').split(';')[0];
+          if (!/^video\//.test(type) && !/\.(mp4|m4v|mov|webm|ogv)(\?|$)/i.test(u.pathname)) throw new Error('That link is a web page, not a video file. Look for a link that ends in .mp4.');
+          const total = +r.headers.get('content-length') || 0, reader = r.body.getReader(), parts = []; let got = 0;
+          for (; ;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); got += value.length; bar.style.width = total ? (100 * got / total) + '%' : Math.min(95, got / 2e5) + '%'; msg.textContent = 'Downloading… ' + fmtSize(got) + (total ? ' of ' + fmtSize(total) : ''); }
+          const name = decodeURIComponent(u.pathname.split('/').pop() || 'video.mp4') || 'video.mp4';
+          const file = new File(parts, name, { type: /^video\//.test(type) ? type : 'video/mp4' });
+          await Media.add([file]); bar.style.width = '100%'; Sfx.good(); UI.toast('Saved to Videos ✅'); s.close(); list();
+        } catch (e) {
+          prog.hidden = true;
+          msg.textContent = e.name === 'AbortError' ? 'Stopped.' : e instanceof TypeError ? 'That website blocks downloads from other apps. Try opening the link in Safari, download it there, then add it here with “From my photo library” or the Files app.' : e.message;
+        }
+      };
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+      const s = UI.sheet({ title: 'Save a video from a link', onClose: () => ctrl && ctrl.abort(), body: h('div', null, h('p', { class: 'small muted' }, 'Paste a link that goes straight to a video file. It downloads once, then plays offline.'), inp, prog, msg), actions: [{ label: 'Cancel' }, { label: '⬇️ Download', cls: 'pri', onClick: () => go() }] });
+      if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(t => { if (/^https?:\/\//.test(t) && !inp.value) inp.value = t.trim(); }).catch(() => { });
+    }
+    function opts(m) {
+      UI.menu(m.name || 'Video', [
+        { icon: '✏️', label: 'Rename', run: async () => { const n = await UI.prompt('Video name', { value: m.name || '' }); if (n && n.trim()) { m.name = n.trim(); await DB.put('media', m); list(); } } },
+        { icon: '📤', label: 'Share or save', run: () => saveFile(m.blob, (m.name || 'video').replace(/\.[^.]+$/, '') + (m.type && m.type.includes('quicktime') ? '.mov' : m.type && m.type.includes('webm') ? '.webm' : '.mp4')) },
+        { icon: '🗑️', label: 'Delete', danger: true, run: async () => { if (await UI.ask('Delete this video?', { ok: 'Delete', danger: true })) { await DB.del('media', m.id); setPos(m.id, 0); list(); } } },
+      ]);
+    }
+    function play(m, all) {
+      v.innerHTML = ''; ctx.setTitle(m.name || 'Video'); ctx.setBack(() => { save(); list(); return true; }); ctx.setActions(h('button', { class: 'ib', 'aria-label': 'Options', html: SVG.more, onclick: () => opts(m) }));
+      if (urlNow) URL.revokeObjectURL(urlNow); urlNow = URL.createObjectURL(m.blob);
+      const vid = h('video', { src: urlNow, controls: true, playsinline: true, autoplay: true, preload: 'auto' });
+      const save = () => { if (vid.currentTime) setPos(m.id, vid.currentTime, vid.duration); };
+      vid.addEventListener('loadedmetadata', () => { const p = pos(m.id); if (p && p < vid.duration - 3) { vid.currentTime = p; UI.toast('Resuming at ' + fmtDur(p)); } if (!m.dur && vid.duration) { m.dur = vid.duration; DB.put('media', m); } });
+      vid.addEventListener('pause', save); let tsave = setInterval(save, 5000);
+      let loop = Prefs.get('vloop', false); vid.loop = loop;
+      const i = all.indexOf(m), nextV = all[i + 1];
+      vid.addEventListener('ended', () => { setPos(m.id, 0); if (!loop && nextV && Prefs.get('vauto', true)) { UI.toast('Up next: ' + (nextV.name || 'video')); setTimeout(() => { clearInterval(tsave); play(nextV, all); }, 1200); } });
+      const speedB = h('div', { class: 'chips' }, [0.5, 1, 1.25, 1.5, 2].map(r => h('button', { class: 'chip', 'aria-pressed': String(r === 1), onclick: e => { vid.playbackRate = r; $$('.chip', speedB).forEach(b => b.setAttribute('aria-pressed', String(b === e.currentTarget))); } }, r + '×')));
+      const loopB = h('button', { class: 'chip', 'aria-pressed': String(loop), onclick: () => { loop = !loop; vid.loop = loop; Prefs.set('vloop', loop); loopB.setAttribute('aria-pressed', String(loop)); } }, '🔁 Loop');
+      const pip = (document.pictureInPictureEnabled || vid.webkitSupportsPresentationMode) ? h('button', { class: 'chip', onclick: () => { try { if (vid.webkitSetPresentationMode) vid.webkitSetPresentationMode('picture-in-picture'); else vid.requestPictureInPicture(); } catch (e) { UI.toast('Picture in picture isn’t available'); } } }, '⧉ Picture in picture') : null;
+      v.append(h('div', { class: 'vplayer' }, vid), h('div', { class: 'row mt' }, h('span', { class: 'small muted' }, 'Speed'), speedB), h('div', { class: 'row mt' }, loopB, pip, h('button', { class: 'chip', onclick: () => { vid.currentTime = Math.max(0, vid.currentTime - 10); } }, '⏪ 10s'), h('button', { class: 'chip', onclick: () => { vid.currentTime += 10; } }, '10s ⏩')),
+        nextV ? h('div', null, h('div', { class: 'sec' }, 'Up next'), h('button', { class: 'vcard', style: { width: '100%' }, onclick: () => { save(); clearInterval(tsave); play(nextV, all); } }, h('div', { class: 'vthumb' }, nextV.thumb ? h('img', { src: nextV.thumb, alt: '' }) : '🎬'), h('b', null, nextV.name || 'Video'))) : null);
+      if (ctx._clean) ctx._clean(); ctx._clean = () => { save(); clearInterval(tsave); vid.pause(); };
+    }
+    if (ctx.param) DB.get('media', ctx.param).then(async m => { const all = (await DB.all('media')).filter(x => x.kind === 'video').sort((a, b) => b.created - a.created); m ? play(m, all) : list(); }); else list();
+    return () => { if (ctx._clean) ctx._clean(); if (urlNow) URL.revokeObjectURL(urlNow); };
   },
 });
 
@@ -2681,6 +3245,8 @@ addCSS(`
 .slide button{aspect-ratio:1/1;border:0;border-radius:14px;font-size:clamp(22px,7vw,36px);font-weight:800;background:linear-gradient(135deg,#43AA8B,#2A9D8F);color:#fff;box-shadow:0 3px 0 #1E7466;font-family:var(--round)}
 .slide button.blank{visibility:hidden}
 `);
+const EXTRA_GAMES = {};
+function GameBest(k, val, lower) { const all = Prefs.get('gameBest', {}); if (val == null) return all[k]; if (all[k] == null || (lower ? val < all[k] : val > all[k])) { all[k] = val; Prefs.set('gameBest', all); return true; } return false; }
 const GAMES = [
   ['meteor', '☄️', 'Meteor Dash', 'Dodge space rocks, grab stars', 'linear-gradient(135deg,#3A1C71,#D76D77)'],
   ['memory', '🃏', 'Memory Match', 'Find all the pairs', 'linear-gradient(135deg,#6C63FF,#3F37C9)'],
@@ -2694,14 +3260,15 @@ Apps.reg({
   id: 'games', name: 'Games', icon: '🎮', color: 'linear-gradient(135deg,#00C9FF,#5B2EFF)', group: 'play', keys: 'play fun arcade puzzle sudoku memory', blurb: 'Six quick fun games',
   mount(v, ctx) {
     let cleanup = null;
-    const best = (k, val, lower) => { const all = Prefs.get('gameBest', {}); if (val == null) return all[k]; if (all[k] == null || (lower ? val < all[k] : val > all[k])) { all[k] = val; Prefs.set('gameBest', all); return true; } return false; };
+    const best = GameBest;
     function home() {
       if (cleanup) { cleanup(); cleanup = null; } v.innerHTML = ''; ctx.setTitle('Games'); ctx.setBack(null); ctx.setActions();
-      v.append(h('div', { class: 'stack' }, GAMES.map(([id, e, n, d, c]) => h('button', { class: 'gcard', style: { background: c }, onclick: () => open(id, n) }, h('span', { class: 'e' }, e), h('span', null, h('b', null, n), h('small', null, d + (best(id) != null ? ' · Best: ' + (id === 'sudoku' || id === 'memory' || id === 'slide' ? fmtDur(best(id)) : best(id)) : '')))))));
+      v.append(h('div', { class: 'stack' }, GAMES.map(([id, e, n, d, c]) => h('button', { class: 'gcard', style: { background: c }, onclick: () => open(id, n) }, h('span', { class: 'e' }, e), h('span', null, h('b', null, n), h('small', null, d + (best(id) != null ? ' · Best: ' + (id === 'sudoku' || id === 'memory' || id === 'slide' ? fmtDur(best(id)) : best(id)) : '')))))),
+        h('div', { class: 'sec' }, '🕹️ Your big 3D games'), h('div', { class: 'list' }, [['🦸', 'Capeborn', 'Superhero adventure', 'https://szeszeming2-lgtm.github.io/capeborn/'], ['🏝️', 'Hollowsky', '1000 floating isles', 'https://szeszeming2-lgtm.github.io/hollowsky/']].map(([e, n, d, u]) => h('button', { class: 'li', onclick: () => window.open(u, '_blank', 'noopener') }, h('span', { class: 'ic' }, e), h('span', { class: 't' }, h('b', null, n), h('small', null, d + ' · opens in Safari')), h('span', { class: 'chev' }, '↗')))));
     }
     function open(id, name) {
       if (cleanup) cleanup(); v.innerHTML = ''; ctx.setTitle(name); ctx.setBack(() => { home(); return true; }); ctx.setActions();
-      cleanup = ({ meteor, memory, ttt, sudoku, words, slide })[id](v) || null;
+      cleanup = (({ meteor, memory, ttt, sudoku, words, slide })[id] || EXTRA_GAMES[id])(v) || null;
     }
     /* ---------- Meteor Dash ---------- */
     function meteor(el) {
@@ -3036,7 +3603,7 @@ Apps.reg({
         [['cap', '🏛️', 'Capitals'], ['flag', '🏳️', 'Flags'], ['map', '🗺️', 'Find it']].map(([m, e, n]) => h('button', { class: 'bigbtn', onclick: () => start(m) }, h('span', { class: 'e' }, e), h('b', null, n)))));
       async function start(mode) {
         el.innerHTML = ''; const C = await WorldData.load().catch(() => null);
-        if (!C) { el.append(UI.empty('🌐', 'World data isn’t saved yet', 'Open Nova Pocket once with internet so it can save the map.')); return; }
+        if (!C) { el.append(UI.empty('🌐', 'World data isn’t saved yet', 'Open Super One once with internet so it can save the map.')); return; }
         const pool = Object.entries(C.facts).filter(([id, f]) => f.capital && f.flag && f.region);
         mcq(el, { key: 'world-' + mode, make: async () => {
           const [id, f] = pick(pool); const others = shuffle(pool.filter(([, g]) => g.name !== f.name && g.capital !== f.capital));
@@ -3059,6 +3626,206 @@ Apps.reg({
     return () => { if (cleanup) cleanup(); };
   },
 });
+
+/* ---- 35-social.js ---- */
+/* ===== Social: one place to jump into your social apps (they need internet) + your own links ===== */
+addCSS(`
+.sgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (min-width:640px){.sgrid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.sapp{display:flex;flex-direction:column;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:20px;padding:14px 6px;min-width:0;box-shadow:var(--shadow);color:var(--ink)}
+.sapp .lg{width:56px;height:56px;border-radius:16px;display:grid;place-items:center;font-size:28px;color:#fff;font-weight:900;box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
+.sapp b{font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sapp:active{transform:scale(.96)}
+`);
+const SOCIAL = [
+  ['youtube', 'YouTube', '▶', '#FF0000', 'youtube://', 'https://m.youtube.com'],
+  ['tiktok', 'TikTok', '♪', '#111111', 'tiktok://', 'https://www.tiktok.com'],
+  ['instagram', 'Instagram', '◎', 'linear-gradient(45deg,#F58529,#DD2A7B,#8134AF,#515BD4)', 'instagram://app', 'https://www.instagram.com'],
+  ['snapchat', 'Snapchat', '👻', '#FFCC00', 'snapchat://', 'https://www.snapchat.com'],
+  ['whatsapp', 'WhatsApp', '✆', '#25D366', 'whatsapp://', 'https://web.whatsapp.com'],
+  ['discord', 'Discord', '🎮', '#5865F2', 'discord://', 'https://discord.com/app'],
+  ['roblox', 'Roblox', '◆', '#393B3D', 'roblox://', 'https://www.roblox.com'],
+  ['messages', 'Messages', '💬', '#34C759', 'sms:', ''],
+  ['reddit', 'Reddit', '◉', '#FF4500', 'reddit://', 'https://www.reddit.com'],
+  ['pinterest', 'Pinterest', 'P', '#E60023', 'pinterest://', 'https://www.pinterest.com'],
+  ['x', 'X', '𝕏', '#000000', 'twitter://', 'https://x.com'],
+  ['facebook', 'Facebook', 'f', '#1877F2', 'fb://', 'https://m.facebook.com'],
+  ['messenger', 'Messenger', '⚡', 'linear-gradient(45deg,#0099FF,#A033FF,#FF5280)', 'fb-messenger://', 'https://www.messenger.com'],
+  ['twitch', 'Twitch', '📺', '#9146FF', 'twitch://', 'https://m.twitch.tv'],
+  ['spotify', 'Spotify', '♫', '#1DB954', 'spotify://', 'https://open.spotify.com'],
+  ['telegram', 'Telegram', '✈', '#2AABEE', 'tg://', 'https://web.telegram.org'],
+];
+function openOut(scheme, web) {
+  // try the real app first; if nothing happens (app not installed), open the website
+  if (!scheme) { if (web) window.open(web, '_blank', 'noopener'); return; }
+  let left = false; const vis = () => { if (document.hidden) left = true; };
+  document.addEventListener('visibilitychange', vis);
+  location.href = scheme;
+  setTimeout(() => { document.removeEventListener('visibilitychange', vis); if (!left && web && navigator.onLine) window.open(web, '_blank', 'noopener'); }, 1400);
+}
+Apps.reg({
+  id: 'social', name: 'Social', icon: '💬', color: 'linear-gradient(135deg,#FF6CAB,#7366FF)', group: 'play', keys: 'social media youtube tiktok instagram snapchat discord roblox friends', blurb: 'Your social apps in one place',
+  mount(v, ctx) {
+    const draw = () => {
+      v.innerHTML = '';
+      const on = Prefs.get('socialOn', ['youtube', 'tiktok', 'instagram', 'snapchat', 'whatsapp', 'discord', 'roblox', 'messages']), mine = Prefs.get('socialMine', []);
+      ctx.setActions(h('button', { class: 'btn ghost sm', onclick: edit }, 'Edit'));
+      if (!navigator.onLine) v.append(h('div', { class: 'note-banner' }, '📴 You’re offline. Social apps need internet — your messages will be waiting when you’re back on Wi-Fi.'));
+      v.append(h('p', { class: 'muted small', style: { margin: '0 2px 12px' } }, 'Tap to open the real app. If you don’t have it, I open the website.'),
+        h('div', { class: 'sgrid' }, SOCIAL.filter(s => on.includes(s[0])).map(([id, n, g, c, scheme, web]) => h('button', { class: 'sapp', onclick: () => openOut(scheme, web) }, h('span', { class: 'lg', style: { background: c, color: id === 'snapchat' ? '#111' : '#fff' } }, g), h('b', null, n)))));
+      v.append(h('div', { class: 'sec' }, '⭐ My links'));
+      if (mine.length) v.append(h('div', { class: 'list' }, mine.map((l, i) => onLongPress(h('button', { class: 'li', onclick: () => window.open(l.url, '_blank', 'noopener') }, h('span', { class: 'ic' }, l.emoji || '🔗'), h('span', { class: 't' }, h('b', null, l.name), h('small', null, l.url.replace(/^https?:\/\//, ''))), h('span', { class: 'chev' }, '↗')), async () => { if (await UI.ask('Remove “' + l.name + '”?', { ok: 'Remove', danger: true })) { mine.splice(i, 1); Prefs.set('socialMine', mine); draw(); } }))));
+      v.append(h('button', { class: 'btn wide mt', onclick: addLink }, '＋ Add a link (a friend’s channel, a game, a website)'),
+        h('div', { class: 'sec' }, '🎮 Your games'), h('div', { class: 'list' },
+          [['🦸', 'Capeborn', 'https://szeszeming2-lgtm.github.io/capeborn/'], ['🏝️', 'Hollowsky', 'https://szeszeming2-lgtm.github.io/hollowsky/']].map(([e, n, u]) => h('button', { class: 'li', onclick: () => window.open(u, '_blank', 'noopener') }, h('span', { class: 'ic' }, e), h('span', { class: 't' }, h('b', null, n), h('small', null, 'Your offline 3D game')), h('span', { class: 'chev' }, '↗')))),
+        h('p', { class: 'tiny muted mt' }, 'Stay safe online: only add friends you know in real life, and never share your passwords or address.'));
+    };
+    function edit() {
+      const on = Prefs.get('socialOn', ['youtube', 'tiktok', 'instagram', 'snapchat', 'whatsapp', 'discord', 'roblox', 'messages']);
+      UI.sheet({ title: 'Which apps to show', onClose: draw, body: h('div', { class: 'chips' }, SOCIAL.map(([id, n, g]) => { const b = h('button', { class: 'chip', 'aria-pressed': String(on.includes(id)) }, n); b.onclick = () => { const i = on.indexOf(id); if (i >= 0) on.splice(i, 1); else on.push(id); Prefs.set('socialOn', on); b.setAttribute('aria-pressed', String(on.includes(id))); }; return b; })) });
+    }
+    function addLink() {
+      const n = h('input', { type: 'text', placeholder: 'Name (e.g. My YouTube channel)' }), u = h('input', { type: 'url', placeholder: 'https://…', autocapitalize: 'off' }), e = h('input', { type: 'text', value: '🔗', maxlength: 4, style: { width: '70px', textAlign: 'center', fontSize: '22px' } });
+      UI.sheet({ title: 'Add a link', body: h('div', { class: 'stack' }, h('div', { class: 'row nw' }, e, n), u), actions: [{ label: 'Cancel' }, { label: 'Add', cls: 'pri', onClick: c => { let url = u.value.trim(); if (!url) return UI.toast('Paste a link'); if (!/^[a-z]+:/i.test(url)) url = 'https://' + url; const mine = Prefs.get('socialMine', []); mine.push({ name: n.value.trim() || url.replace(/^https?:\/\//, '').split('/')[0], url, emoji: e.value.trim() || '🔗' }); Prefs.set('socialMine', mine); c(); draw(); } }] });
+    }
+    const re = () => draw(); addEventListener('online', re); addEventListener('offline', re);
+    draw(); return () => { removeEventListener('online', re); removeEventListener('offline', re); };
+  },
+});
+
+/* ---- 36-games2.js ---- */
+/* ===== More games: Snake, Brick Smash, Four in a Row, Sky Hopper ===== */
+addCSS(`
+.dpad{display:grid;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(2,52px);gap:6px;justify-content:center;margin-top:10px}
+.dpad button{border:0;border-radius:14px;background:var(--surface2);font-size:24px;color:var(--ink)}
+.c4{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;background:#1E4FD8;padding:8px;border-radius:18px;max-width:460px;margin:10px auto;box-shadow:0 8px 24px rgba(30,79,216,.35)}
+.c4 button{aspect-ratio:1/1;border-radius:50%;border:0;background:var(--bg);box-shadow:inset 0 3px 6px rgba(0,0,0,.25);padding:0}
+.c4 button.r{background:radial-gradient(circle at 35% 35%,#FF8A8A,#E5383B)}.c4 button.y{background:radial-gradient(circle at 35% 35%,#FFF0A0,#F5B700)}
+.c4 button.win{outline:4px solid #fff;outline-offset:-4px}
+`);
+GAMES.push(
+  ['snake', '🐍', 'Snake', 'Eat, grow, don’t bite yourself', 'linear-gradient(135deg,#56AB2F,#1E6B1E)'],
+  ['bricks', '🧱', 'Brick Smash', 'Bounce the ball, break the wall', 'linear-gradient(135deg,#F7971E,#D7263D)'],
+  ['four', '🔴', 'Four in a Row', 'Line up 4 before the bot', 'linear-gradient(135deg,#2B5BFF,#0A1F8F)'],
+  ['hopper', '🦘', 'Sky Hopper', 'Tap to jump, run forever', 'linear-gradient(135deg,#36D1DC,#5B86E5)'],
+);
+function arenaKit(el, tip) {
+  const cv = h('canvas'), over = h('div', { class: 'over' }), arena = h('div', { class: 'arena' }, cv, over); el.append(arena, tip ? h('p', { class: 'tiny muted center mt' }, tip) : null);
+  const g = cv.getContext('2d'); const k = { cv, g, over, W: 0, H: 0 };
+  k.size = () => { const r = cv.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1); k.W = r.width; k.H = r.height; cv.width = r.width * d; cv.height = r.height * d; g.setTransform(d, 0, 0, d, 0, 0); };
+  k.menu = (title, sub, label, fn, bestKey) => { over.hidden = false; over.innerHTML = ''; over.append(h('h2', null, title), sub ? h('p', null, sub) : null, h('button', { class: 'btn pri', onclick: () => { over.hidden = true; fn(); } }, label || '▶ Play'), bestKey && GameBest(bestKey) != null ? h('small', null, 'Best: ' + GameBest(bestKey)) : null); };
+  return k;
+}
+EXTRA_GAMES.snake = el => {
+  const K = arenaKit(el, 'Swipe, use the arrows below, or the arrow keys.'); const N = 18; let snake, dir, nextDir, food, score, alive = false, timer = null, speed;
+  el.append(h('div', { class: 'dpad' }, h('span'), h('button', { 'aria-label': 'Up', onclick: () => turn(0, -1) }, '▲'), h('span'), h('button', { 'aria-label': 'Left', onclick: () => turn(-1, 0) }, '◀'), h('button', { 'aria-label': 'Down', onclick: () => turn(0, 1) }, '▼'), h('button', { 'aria-label': 'Right', onclick: () => turn(1, 0) }, '▶')));
+  const turn = (x, y) => { if (x === -dir[0] && y === -dir[1]) return; nextDir = [x, y]; };
+  const place = () => { do { food = [Math.floor(Math.random() * N), Math.floor(Math.random() * N)]; } while (snake.some(s => s[0] === food[0] && s[1] === food[1])); };
+  function start() { K.size(); snake = [[8, 9], [7, 9], [6, 9]]; dir = [1, 0]; nextDir = dir; score = 0; speed = 140; place(); alive = true; clearInterval(timer); timer = setInterval(step, speed); draw(); }
+  function step() {
+    dir = nextDir; const hd = [snake[0][0] + dir[0], snake[0][1] + dir[1]];
+    if (hd[0] < 0 || hd[1] < 0 || hd[0] >= N || hd[1] >= N || snake.some(s => s[0] === hd[0] && s[1] === hd[1])) { alive = false; clearInterval(timer); Sfx.bad(); const nb = GameBest('snake', score); K.menu(nb ? '🏆 New best: ' + score : 'Score: ' + score, 'Length ' + snake.length, 'Play again', start, 'snake'); return; }
+    snake.unshift(hd); if (hd[0] === food[0] && hd[1] === food[1]) { score += 10; Sfx.good(); place(); if (speed > 70) { speed -= 4; clearInterval(timer); timer = setInterval(step, speed); } } else snake.pop();
+    draw();
+  }
+  function draw() {
+    const { g, W, H } = K, c = Math.min(W, H) / N, ox = (W - c * N) / 2, oy = (H - c * N) / 2;
+    g.fillStyle = '#0D2B12'; g.fillRect(0, 0, W, H); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { g.fillStyle = (x + y) % 2 ? '#143D1A' : '#174620'; g.fillRect(ox + x * c, oy + y * c, c, c); }
+    g.font = Math.floor(c * .9) + 'px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🍎', ox + food[0] * c + c / 2, oy + food[1] * c + c / 2 + 1);
+    snake.forEach(([x, y], i) => { g.fillStyle = i ? 'hsl(' + (100 + i * 3) + ' 70% ' + (55 - Math.min(20, i)) + '%)' : '#B6F25A'; g.beginPath(); g.roundRect(ox + x * c + 1, oy + y * c + 1, c - 2, c - 2, c / 3); g.fill(); });
+    const [hx, hy] = snake[0]; g.fillStyle = '#111'; g.beginPath(); g.arc(ox + hx * c + c / 2 + dir[0] * c / 5 - dir[1] * c / 5, oy + hy * c + c / 2 + dir[1] * c / 5 - dir[0] * c / 5, c / 9, 0, 6.28); g.arc(ox + hx * c + c / 2 + dir[0] * c / 5 + dir[1] * c / 5, oy + hy * c + c / 2 + dir[1] * c / 5 + dir[0] * c / 5, c / 9, 0, 6.28); g.fill();
+    g.fillStyle = '#fff'; g.font = '700 18px ' + getComputedStyle(document.body).fontFamily; g.textAlign = 'left'; g.fillText('🍎 ' + score, 12, 20);
+  }
+  let sx, sy; K.cv.addEventListener('pointerdown', e => { sx = e.clientX; sy = e.clientY; }); K.cv.addEventListener('pointerup', e => { const dx = e.clientX - sx, dy = e.clientY - sy; if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return; Math.abs(dx) > Math.abs(dy) ? turn(Math.sign(dx), 0) : turn(0, Math.sign(dy)); });
+  const kd = e => { const m = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key]; if (m && alive) { e.preventDefault(); turn(...m); } }; addEventListener('keydown', kd);
+  requestAnimationFrame(() => { K.size(); snake = [[8, 9], [7, 9], [6, 9]]; dir = [1, 0]; food = [13, 9]; score = 0; draw(); K.menu('🐍 Snake', 'Eat apples to grow. Don’t hit the walls or yourself!', '▶ Play', start, 'snake'); });
+  return () => { clearInterval(timer); removeEventListener('keydown', kd); };
+};
+EXTRA_GAMES.bricks = el => {
+  const K = arenaKit(el, 'Drag to move the paddle. Catch ⭐ for a wider paddle and ❤️ for a life.'); let pad, balls, bricks, drops, lives, score, level, raf, last, run = false, held = false;
+  function setup(lv) { K.size(); const { W } = K, cols = 8, rows = Math.min(8, 3 + lv), bw = (W - 20) / cols; bricks = []; for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (lv < 3 || (r + c) % 5) bricks.push({ x: 10 + c * bw, y: 50 + r * 24, w: bw - 4, h: 18, hp: r < lv - 2 ? 2 : 1, col: 'hsl(' + (r * 40 + lv * 25) % 360 + ' 80% 60%)' }); pad = { x: W / 2, w: 90 }; balls = [{ x: W / 2, y: K.H - 60, vx: 180, vy: -(260 + lv * 25), stuck: true }]; drops = []; }
+  function start() { lives = 3; score = 0; level = 1; setup(1); go(); }
+  function go() { run = true; last = performance.now(); cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); }
+  function loop(now) {
+    if (!run) return; const dt = Math.min(0.033, (now - last) / 1000); last = now; const { g, W, H } = K; const py = H - 36;
+    g.fillStyle = '#12091F'; g.fillRect(0, 0, W, H);
+    for (const b of balls) {
+      if (b.stuck) { b.x = pad.x; b.y = py - 10; continue; }
+      b.x += b.vx * dt; b.y += b.vy * dt;
+      if (b.x < 8 || b.x > W - 8) { b.vx *= -1; b.x = clamp(b.x, 8, W - 8); } if (b.y < 8) { b.vy = Math.abs(b.vy); }
+      if (b.vy > 0 && b.y > py - 8 && b.y < py + 6 && Math.abs(b.x - pad.x) < pad.w / 2 + 6) { const hit = (b.x - pad.x) / (pad.w / 2), sp = Math.hypot(b.vx, b.vy); b.vx = sp * Math.sin(hit * 1.05); b.vy = -Math.abs(sp * Math.cos(hit * 1.05)); Sfx.tap(); }
+      for (const br of bricks) { if (br.hp <= 0) continue; if (b.x > br.x - 6 && b.x < br.x + br.w + 6 && b.y > br.y - 6 && b.y < br.y + br.h + 6) { br.hp--; const fromSide = Math.min(Math.abs(b.x - br.x), Math.abs(b.x - br.x - br.w)) < Math.min(Math.abs(b.y - br.y), Math.abs(b.y - br.y - br.h)); if (fromSide) b.vx *= -1; else b.vy *= -1; if (br.hp <= 0) { score += 10; Sfx.tone(500 + Math.random() * 300, .06, { type: 'square', vol: .06 }); if (Math.random() < 0.12) drops.push({ x: br.x + br.w / 2, y: br.y, t: Math.random() < 0.6 ? 'wide' : 'life' }); } break; } }
+    }
+    balls = balls.filter(b => b.y < H + 20);
+    if (!balls.length) { lives--; Sfx.bad(); if (lives <= 0) { run = false; const nb = GameBest('bricks', score); K.menu(nb ? '🏆 New best: ' + score : 'Game over', 'Score ' + score + ' · reached level ' + level, 'Play again', start, 'bricks'); return; } balls = [{ x: pad.x, y: py - 10, vx: 180, vy: -(260 + level * 25), stuck: true }]; }
+    if (bricks.every(b => b.hp <= 0)) { level++; Sfx.win(); setup(level); }
+    for (const d of drops) { d.y += 120 * dt; if (d.y > py - 10 && Math.abs(d.x - pad.x) < pad.w / 2) { d.y = H + 99; if (d.t === 'wide') { pad.w = Math.min(170, pad.w + 40); setTimeout(() => pad.w = 90, 12000); } else lives++; Sfx.good(); } }
+    drops = drops.filter(d => d.y < H + 20);
+    for (const br of bricks) if (br.hp > 0) { g.fillStyle = br.col; g.globalAlpha = br.hp > 1 ? 1 : .85; g.beginPath(); g.roundRect(br.x, br.y, br.w, br.h, 5); g.fill(); if (br.hp > 1) { g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke(); } } g.globalAlpha = 1;
+    g.font = '20px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; for (const d of drops) g.fillText(d.t === 'wide' ? '⭐' : '❤️', d.x, d.y);
+    const pg = g.createLinearGradient(0, py, 0, py + 12); pg.addColorStop(0, '#9AE6FF'); pg.addColorStop(1, '#3A86FF'); g.fillStyle = pg; g.beginPath(); g.roundRect(pad.x - pad.w / 2, py, pad.w, 12, 6); g.fill();
+    g.fillStyle = '#fff'; for (const b of balls) { g.beginPath(); g.arc(b.x, b.y, 7, 0, 6.28); g.fill(); }
+    g.font = '700 17px ' + getComputedStyle(document.body).fontFamily; g.textAlign = 'left'; g.fillText('⭐ ' + score + '   Level ' + level, 12, 22); g.textAlign = 'right'; g.fillText('❤️'.repeat(Math.max(0, Math.min(lives, 6))), W - 12, 22);
+    if (balls.some(b => b.stuck)) { g.textAlign = 'center'; g.fillStyle = 'rgba(255,255,255,.8)'; g.fillText('Tap to launch', W / 2, H / 2 + 60); }
+    raf = requestAnimationFrame(loop);
+  }
+  const moveTo = e => { const r = K.cv.getBoundingClientRect(); pad.x = clamp(e.clientX - r.left, pad.w / 2, K.W - pad.w / 2); };
+  K.cv.addEventListener('pointerdown', e => { held = true; K.cv.setPointerCapture(e.pointerId); if (pad) { moveTo(e); balls.forEach(b => b.stuck = false); } });
+  K.cv.addEventListener('pointermove', e => { if (pad && (held || e.pointerType === 'mouse')) moveTo(e); }); K.cv.addEventListener('pointerup', () => held = false);
+  const kd = e => { if (!pad) return; if (e.key === 'ArrowLeft') pad.x = Math.max(pad.w / 2, pad.x - 30); if (e.key === 'ArrowRight') pad.x = Math.min(K.W - pad.w / 2, pad.x + 30); if (e.key === ' ') balls.forEach(b => b.stuck = false); }; addEventListener('keydown', kd);
+  const vis = () => { if (document.hidden && run) { run = false; K.menu('Paused', '', 'Keep playing', go); } }; document.addEventListener('visibilitychange', vis);
+  requestAnimationFrame(() => { K.size(); K.g.fillStyle = '#12091F'; K.g.fillRect(0, 0, K.W, K.H); K.menu('🧱 Brick Smash', 'Break every brick to reach the next level.', '▶ Play', start, 'bricks'); });
+  return () => { run = false; cancelAnimationFrame(raf); removeEventListener('keydown', kd); document.removeEventListener('visibilitychange', vis); };
+};
+EXTRA_GAMES.four = el => {
+  const R = 6, C = 7; let b, turn, over, mode = Prefs.get('c4Mode', 'bot'), busy = false, winCells = [];
+  const grid = h('div', { class: 'c4', role: 'grid', 'aria-label': 'Four in a row board' }), info = h('div', { class: 'center', style: { fontSize: '18px', fontWeight: 700, minHeight: '28px' } });
+  el.append(UI.seg([['bot', '🤖 vs Bot'], ['two', '👥 2 players']], mode, m => { mode = m; Prefs.set('c4Mode', m); reset(); }), grid, info, h('div', { class: 'center mt' }, h('button', { class: 'btn pri', onclick: () => reset() }, 'New game')));
+  const drop = (bb, c, p) => { for (let r = R - 1; r >= 0; r--) if (!bb[r][c]) { bb[r][c] = p; return r; } return -1; };
+  const lines = (bb, p) => { for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) { const cells = []; for (let k = 0; k < 4; k++) { const rr = r + dr * k, cc = c + dc * k; if (rr < 0 || rr >= R || cc < 0 || cc >= C || bb[rr][cc] !== p) break; cells.push([rr, cc]); } if (cells.length === 4) return cells; } return null; };
+  const scoreWin = (bb, p) => { let s = 0; const o = p === 'r' ? 'y' : 'r'; for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) { let mine = 0, theirs = 0, ok = true; for (let k = 0; k < 4; k++) { const rr = r + dr * k, cc = c + dc * k; if (rr < 0 || rr >= R || cc < 0 || cc >= C) { ok = false; break; } if (bb[rr][cc] === p) mine++; else if (bb[rr][cc] === o) theirs++; } if (!ok) continue; if (!theirs) s += [0, 1, 6, 40, 1000][mine]; if (!mine) s -= [0, 1, 7, 50, 1000][theirs]; } for (let r = 0; r < R; r++) if (bb[r][3] === p) s += 3; return s; };
+  const valid = bb => [3, 2, 4, 1, 5, 0, 6].filter(c => !bb[0][c]);
+  const mm = (bb, d, a, be, maxi) => { if (lines(bb, 'y')) return 100000 + d; if (lines(bb, 'r')) return -100000 - d; const vs = valid(bb); if (!d || !vs.length) return scoreWin(bb, 'y'); if (maxi) { let v = -Infinity; for (const c of vs) { const r = drop(bb, c, 'y'); v = Math.max(v, mm(bb, d - 1, a, be, false)); bb[r][c] = ''; a = Math.max(a, v); if (a >= be) break; } return v; } let v = Infinity; for (const c of vs) { const r = drop(bb, c, 'r'); v = Math.min(v, mm(bb, d - 1, a, be, true)); bb[r][c] = ''; be = Math.min(be, v); if (a >= be) break; } return v; };
+  const bot = () => { let best = -Infinity, pickC = 3; for (const c of valid(b)) { const r = drop(b, c, 'y'); const v = mm(b, 5, -Infinity, Infinity, false) + (Math.random() - .5) * 4; b[r][c] = ''; if (v > best) { best = v; pickC = c; } } return pickC; };
+  function reset() { b = Array.from({ length: R }, () => Array(C).fill('')); turn = 'r'; over = false; winCells = []; busy = false; draw(); }
+  function play(c) {
+    if (over || busy || b[0][c]) return; drop(b, c, turn); Sfx.tap(); check(); if (over) return draw();
+    turn = turn === 'r' ? 'y' : 'r'; draw();
+    if (mode === 'bot' && turn === 'y') { busy = true; setTimeout(() => { drop(b, bot(), 'y'); busy = false; check(); if (!over) turn = 'r'; draw(); }, 350); }
+  }
+  function check() { for (const p of ['r', 'y']) { const w = lines(b, p); if (w) { over = p; winCells = w; mode === 'bot' && p === 'y' ? Sfx.bad() : Sfx.win(); if (mode === 'bot' && p === 'r') GameBest('four', (GameBest('four') || 0) + 1); return; } } if (b[0].every(Boolean)) over = 'draw'; }
+  function draw() {
+    grid.innerHTML = ''; for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) grid.append(h('button', { class: (b[r][c] || '') + (winCells.some(([a, d]) => a === r && d === c) ? ' win' : ''), 'aria-label': 'Column ' + (c + 1), onclick: () => play(c) }));
+    info.textContent = over === 'draw' ? '🤝 Board full — it’s a tie' : over ? (mode === 'bot' ? (over === 'r' ? '🎉 You win! (' + GameBest('four') + ' wins so far)' : '🤖 The bot wins this time') : (over === 'r' ? '🔴 Red' : '🟡 Yellow') + ' wins!') : busy ? '🤖 Thinking…' : (mode === 'bot' ? 'Your turn — you are 🔴' : (turn === 'r' ? '🔴 Red' : '🟡 Yellow') + '’s turn');
+  }
+  reset();
+};
+EXTRA_GAMES.hopper = el => {
+  const K = arenaKit(el, 'Tap (or press space) to jump. Tap again in the air for a double jump!'); let p, obs, coins, clouds, t, dist, run = false, raf, last, speed, spawn, coinN;
+  const ground = () => K.H - 70;
+  function start() { K.size(); p = { x: 70, y: ground(), vy: 0, jumps: 0 }; obs = []; coins = []; clouds = Array.from({ length: 5 }, (_, i) => ({ x: i * 120, y: 40 + Math.random() * 120, s: .5 + Math.random() })); t = 0; dist = 0; speed = 260; spawn = 1; coinN = 0; run = true; last = performance.now(); cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); }
+  const jump = () => { if (!run) return; if (p.jumps < 2) { p.vy = p.jumps ? -560 : -640; p.jumps++; Sfx.tone(p.jumps === 1 ? 520 : 760, .08, { type: 'triangle', vol: .08 }); } };
+  function loop(now) {
+    if (!run) return; const dt = Math.min(0.033, (now - last) / 1000); last = now; t += dt; speed = 260 + t * 9; dist += speed * dt / 10; const { g, W, H } = K, gy = ground();
+    p.vy += 1800 * dt; p.y += p.vy * dt; if (p.y >= gy) { p.y = gy; p.vy = 0; p.jumps = 0; }
+    spawn -= dt; if (spawn <= 0) { spawn = clamp(1.6 - t / 60, .65, 1.6) * (0.7 + Math.random() * .6); const fly = t > 15 && Math.random() < .3; obs.push(fly ? { x: W + 30, y: gy - 70 - Math.random() * 40, w: 34, h: 24, fly: true } : { x: W + 30, y: gy, w: 26 + Math.random() * 18, h: 30 + Math.random() * 30 }); if (Math.random() < .6) for (let i = 0; i < 3; i++) coins.push({ x: W + 120 + i * 32, y: gy - 60 - (Math.random() < .5 ? 60 : 0) }); }
+    const sky = g.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#5BC0F8'); sky.addColorStop(1, '#C7F0FF'); g.fillStyle = sky; g.fillRect(0, 0, W, H);
+    g.font = '40px system-ui'; g.textBaseline = 'middle'; for (const c of clouds) { c.x -= speed * .15 * c.s * dt; if (c.x < -80) { c.x = W + 40; c.y = 40 + Math.random() * 120; } g.globalAlpha = .9; g.fillText('☁️', c.x, c.y); } g.globalAlpha = 1;
+    g.fillStyle = '#6BCB4D'; g.fillRect(0, gy + 18, W, H); g.fillStyle = '#4FA83A'; for (let x = -((dist * 10) % 40); x < W; x += 40) g.fillRect(x, gy + 18, 20, 6);
+    for (const o of obs) { o.x -= speed * dt * (o.fly ? 1.25 : 1); if (o.fly) { g.font = '30px system-ui'; g.fillText('🦅', o.x, o.y); } else { g.fillStyle = '#A0522D'; g.beginPath(); g.roundRect(o.x - o.w / 2, gy + 18 - o.h, o.w, o.h, 5); g.fill(); g.strokeStyle = '#6B3410'; g.lineWidth = 2; g.strokeRect(o.x - o.w / 2 + 4, gy + 22 - o.h, o.w - 8, o.h - 8); }
+      const hx = Math.abs(o.x - p.x) < o.w / 2 + 12, hy = o.fly ? Math.abs(o.y - (p.y - 10)) < 26 : p.y + 18 > gy + 18 - o.h + 6; if (hx && hy) { run = false; Sfx.bad(); const sc = Math.floor(dist) + coinN * 10; const nb = GameBest('hopper', sc); K.menu(nb ? '🏆 New best: ' + sc : 'Score: ' + sc, Math.floor(dist) + ' m · ' + coinN + ' coins', 'Run again', start, 'hopper'); return; } }
+    obs = obs.filter(o => o.x > -60);
+    g.font = '24px system-ui'; for (const c of coins) { c.x -= speed * dt; if (Math.hypot(c.x - p.x, c.y - (p.y - 10)) < 26) { c.x = -99; coinN++; Sfx.good(); } else g.fillText('🪙', c.x, c.y); } coins = coins.filter(c => c.x > -30);
+    g.save(); g.translate(p.x, p.y); if (p.jumps) g.rotate(p.jumps === 2 ? t * 12 : -0.15); g.font = '40px system-ui'; g.textAlign = 'center'; g.fillText('🦘', 0, -4); g.restore(); g.textAlign = 'left';
+    g.fillStyle = '#0B3954'; g.font = '800 20px ' + getComputedStyle(document.body).fontFamily; g.fillText(Math.floor(dist) + ' m', 14, 26); g.textAlign = 'right'; g.fillText('🪙 ' + coinN, W - 14, 26); g.textAlign = 'left';
+    raf = requestAnimationFrame(loop);
+  }
+  K.cv.addEventListener('pointerdown', e => { e.preventDefault(); jump(); });
+  const kd = e => { if (e.key === ' ' || e.key === 'ArrowUp') { e.preventDefault(); jump(); } }; addEventListener('keydown', kd);
+  const vis = () => { if (document.hidden && run) { run = false; K.menu('Paused', '', 'Keep running', () => { run = true; last = performance.now(); raf = requestAnimationFrame(loop); }); } }; document.addEventListener('visibilitychange', vis);
+  requestAnimationFrame(() => { K.size(); const { g, W, H } = K; g.fillStyle = '#5BC0F8'; g.fillRect(0, 0, W, H); K.menu('🦘 Sky Hopper', 'Jump over crates, dodge the birds, grab coins!', '▶ Run', start, 'hopper'); });
+  return () => { run = false; cancelAnimationFrame(raf); removeEventListener('keydown', kd); document.removeEventListener('visibilitychange', vis); };
+};
 
 /* ---- 40-dict.js ---- */
 /* ===== Dictionary: 87,000 English words from WordNet, all offline ===== */
@@ -3213,7 +3980,7 @@ const WorldData = {
     for (const k of D.countries) { g.fillStyle = k === c ? '#E5383B' : '#F1EDE4'; g.fill(k.path); g.lineWidth = 0.6 / s * d; g.strokeStyle = '#9AA5B1'; g.stroke(k.path); }
   },
 };
-const geoHere = () => new Promise((res, rej) => { if (!navigator.geolocation) return rej(new Error('No location on this device')); navigator.geolocation.getCurrentPosition(p => res(p.coords), e => rej(new Error(e.code === 1 ? 'Location is turned off for Nova Pocket. Allow it in Settings → Privacy → Location.' : 'Could not find you. Try near a window or outside.')), { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }); });
+const geoHere = () => new Promise((res, rej) => { if (!navigator.geolocation) return rej(new Error('No location on this device')); navigator.geolocation.getCurrentPosition(p => res(p.coords), e => rej(new Error(e.code === 1 ? 'Location is turned off for Super One. Allow it in Settings → Privacy → Location.' : 'Could not find you. Try near a window or outside.')), { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }); });
 const haversine = (a, b, c, d) => { const R = 6371, r = Math.PI / 180, x = Math.sin((c - a) * r / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin((d - b) * r / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
 const fmtKm = km => km < 1 ? Math.round(km * 1000) + ' m' : km < 100 ? km.toFixed(1) + ' km' : Math.round(km).toLocaleString() + ' km';
 Apps.reg({
@@ -3225,7 +3992,7 @@ Apps.reg({
     const placesBox = h('div');
     v.append(h('div', { class: 'search mb' }, search), box, h('div', { class: 'row mt' }, h('button', { class: 'btn', onclick: locate }, '📍 Where am I?'), h('button', { class: 'btn', onclick: () => addPlace() }, '⭐ Save a place'), h('span', { class: 'sp' })), placesBox,
       h('p', { class: 'tiny muted mt' }, 'Your phone’s GPS works without internet. This map shows countries, not streets — for street directions use Apple Maps with an offline map downloaded.'));
-    let D; try { D = await WorldData.load(); } catch (e) { box.replaceWith(UI.empty('🌐', 'Map not saved yet', 'Open Nova Pocket once with internet so it can save the world map.')); return; }
+    let D; try { D = await WorldData.load(); } catch (e) { box.replaceWith(UI.empty('🌐', 'Map not saved yet', 'Open Super One once with internet so it can save the world map.')); return; }
     const g = cv.getContext('2d'); let W = 0, H = 0, dpr = 1, s = 1, tx = 0, ty = 0, sel = null, me = null, places = [], raf = 0;
     const fit = (x0, y0, x1, y1, pad = 0.12) => { const w = x1 - x0, hh = y1 - y0; s = Math.min(W / (w * (1 + pad * 2)), H / (hh * (1 + pad * 2))); s = clamp(s, minS(), 400); tx = W / 2 - (x0 + w / 2) * s; ty = H / 2 - (y0 + hh / 2) * s; clampView(); draw(); };
     const minS = () => Math.max(W / D.S, H / (D.S * 0.8)) * 0.98;
@@ -3391,6 +4158,435 @@ Apps.reg({
     const on = () => draw(); addEventListener('online', on); addEventListener('offline', on);
     draw();
     return () => { removeEventListener('online', on); removeEventListener('offline', on); };
+  },
+});
+
+/* ---- 43-calc.js ---- */
+/* ===== Calculator: standard + scientific, safe parser (no eval), history ===== */
+addCSS(`
+.calc{max-width:440px;margin:0 auto}
+.cdisp{text-align:right;padding:10px 6px 14px;min-height:130px;display:flex;flex-direction:column;justify-content:flex-end}
+.cdisp .ex{font-size:20px;color:var(--muted);min-height:28px;word-break:break-all;font-variant-numeric:tabular-nums}
+.cdisp .rs{font-size:64px;font-weight:300;line-height:1.05;font-variant-numeric:tabular-nums;word-break:break-all;font-family:var(--round)}
+.ckeys{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.ckeys.sci{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.ck{aspect-ratio:1/1;border:0;border-radius:50%;font-size:30px;font-weight:500;background:#333438;color:#fff;display:grid;place-items:center;padding:0}
+.ckeys.sci .ck{aspect-ratio:auto;height:42px;border-radius:21px;font-size:16px;background:var(--surface2);color:var(--ink)}
+.ck.fn{background:#A5A5A5;color:#111}.ck.op{background:#FF9F0A}.ck.op.on{background:#fff;color:#FF9F0A}
+.ck.zero{grid-column:span 2;aspect-ratio:auto;border-radius:999px;justify-content:start;padding-left:30px}
+.ck:active{filter:brightness(1.3)}
+`);
+const Calc = {
+  eval(src, deg) {
+    let s = src.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-').replace(/π/g, ' pi ').replace(/√/g, ' sqrt ').replace(/²/g, '^2').replace(/,/g, '');
+    const toks = []; const re = /\s*(\d+\.?\d*(?:e[+-]?\d+)?|\.\d+|pi|sqrt|sin|cos|tan|asin|acos|atan|ln|log|e|[+\-*/^%!()])/y; let m;
+    while (re.lastIndex < s.length) { const at = re.lastIndex; if (/^\s*$/.test(s.slice(at))) break; m = re.exec(s); if (!m) throw new Error('?'); toks.push(m[1]); }
+    let open = 0; for (const t of toks) open += t === '(' ? 1 : t === ')' ? -1 : 0; while (open-- > 0) toks.push(')');
+    let i = 0; const peek = () => toks[i], next = () => toks[i++];
+    const rad = x => deg ? x * Math.PI / 180 : x, unrad = x => deg ? x * 180 / Math.PI : x;
+    const F = { sqrt: Math.sqrt, sin: x => Math.sin(rad(x)), cos: x => Math.cos(rad(x)), tan: x => Math.tan(rad(x)), asin: x => unrad(Math.asin(x)), acos: x => unrad(Math.acos(x)), atan: x => unrad(Math.atan(x)), ln: Math.log, log: Math.log10 };
+    const fact = n => { if (n < 0 || n !== Math.floor(n) || n > 170) throw new Error('?'); let r = 1; for (let k = 2; k <= n; k++) r *= k; return r; };
+    const startsPrimary = t => t != null && (/^[\d.]/.test(t) || t === '(' || t === 'pi' || t === 'e' || t in F);
+    function expr() { let v = term(); while (peek() === '+' || peek() === '-') { const o = next(), r = term(); v = o === '+' ? v + r : v - r; } return v; }
+    function term() { let v = power(); for (; ;) { const t = peek(); if (t === '*' || t === '/') { next(); const r = power(); if (t === '/' && r === 0) throw new Error('Can’t divide by 0'); v = t === '*' ? v * r : v / r; } else if (startsPrimary(t)) v *= power(); else return v; } }
+    function power() { const b = unary(); if (peek() === '^') { next(); return Math.pow(b, power()); } return b; }
+    function unary() { if (peek() === '-') { next(); return -unary(); } if (peek() === '+') { next(); return unary(); } return post(); }
+    function post() { let v = prim(); while (peek() === '!' || peek() === '%') { v = next() === '!' ? fact(v) : v / 100; } return v; }
+    function prim() {
+      const t = next(); if (t == null) throw new Error('?');
+      if (/^[\d.]/.test(t)) return parseFloat(t); if (t === 'pi') return Math.PI; if (t === 'e') return Math.E;
+      if (t === '(') { const v = expr(); if (next() !== ')') throw new Error('?'); return v; }
+      if (t in F) { const a = peek() === '(' ? prim() : power(); return F[t](a); }
+      throw new Error('?');
+    }
+    const v = expr(); if (i < toks.length) throw new Error('?'); if (!isFinite(v)) throw new Error(isNaN(v) ? 'Not a number' : 'Too big'); return v;
+  },
+  fmt(v) { if (Math.abs(v) >= 1e15 || (Math.abs(v) < 1e-9 && v !== 0)) return v.toExponential(8).replace(/\.?0+e/, 'e'); const r = Number(v.toPrecision(12)); return r.toLocaleString(undefined, { maximumFractionDigits: 10 }); },
+};
+Apps.reg({
+  id: 'calc', name: 'Calculator', icon: '🧮', color: 'linear-gradient(135deg,#FFB547,#FF7A00)', group: 'tools', keys: 'math numbers add multiply scientific', blurb: 'Standard + scientific',
+  mount(v, ctx) {
+    let ex = '', last = '', sci = Prefs.get('calcSci', false), deg = Prefs.get('calcDeg', true), justDone = false;
+    const exEl = h('div', { class: 'ex' }), rsEl = h('div', { class: 'rs', 'aria-live': 'polite' }), sciBox = h('div', { class: 'ckeys sci' }), keys = h('div', { class: 'ckeys' });
+    v.append(h('div', { class: 'calc' }, h('div', { class: 'cdisp' }, exEl, rsEl), sciBox, keys));
+    ctx.setActions(h('button', { class: 'btn ghost sm', onclick: hist }, '🕘'), h('button', { class: 'btn ghost sm', onclick: () => { sci = !sci; Prefs.set('calcSci', sci); build(); } }, sci ? '123' : 'ƒx'));
+    const preview = () => { if (!ex) return ''; try { return Calc.fmt(Calc.eval(ex, deg)); } catch (e) { return ''; } };
+    function paint() {
+      exEl.textContent = justDone ? last : ex.length ? ex : ' ';
+      const out = justDone ? rsEl.dataset.v : (preview() || (ex ? rsEl.dataset.p || '' : '0'));
+      rsEl.textContent = out || ex || '0'; if (!justDone) rsEl.dataset.p = preview();
+      const len = rsEl.textContent.length; rsEl.style.fontSize = len > 14 ? '34px' : len > 10 ? '46px' : '64px';
+      const ac = keys.querySelector('[data-k="AC"]'); if (ac) ac.textContent = ex && !justDone ? '⌫' : 'AC';
+    }
+    function press(k) {
+      Sfx.tap();
+      if (k === 'AC') { if (ex && !justDone) ex = ex.slice(0, -1); else { ex = ''; last = ''; } justDone = false; return paint(); }
+      if (k === '=') { if (!ex) return; try { const r = Calc.eval(ex, deg); const out = Calc.fmt(r); const H = Prefs.get('calcHist', []); H.unshift({ ex, out, at: Date.now() }); Prefs.set('calcHist', H.slice(0, 40)); last = ex + ' ='; ex = String(Number(r.toPrecision(12))); rsEl.dataset.v = out; justDone = true; } catch (e) { rsEl.dataset.v = e.message === '?' ? 'Error' : e.message; last = ex; justDone = true; ex = ''; } return paint(); }
+      if (k === '±') { ex = ex ? (ex.startsWith('−(') && ex.endsWith(')') ? ex.slice(2, -1) : '−(' + ex + ')') : '−'; justDone = false; return paint(); }
+      if (k === 'deg') { deg = !deg; Prefs.set('calcDeg', deg); build(); return; }
+      const isOp = /^[+−×÷^]$/.test(k);
+      if (justDone && !isOp && !['%', '!', '²'].includes(k)) ex = '';
+      justDone = false;
+      if (isOp && /[+−×÷^]$/.test(ex)) ex = ex.slice(0, -1);
+      if (['sin', 'cos', 'tan', 'ln', 'log', '√', 'asin', 'acos', 'atan'].includes(k)) ex += k + '('; else if (k === '1/x') ex = '1÷(' + (ex || '1') + ')'; else ex += k;
+      paint();
+    }
+    const btn = (k, cls = '', label) => h('button', { class: 'ck ' + cls, 'data-k': k, 'aria-label': label || k, onclick: () => press(k) }, label || k);
+    function build() {
+      keys.innerHTML = ''; sciBox.innerHTML = ''; sciBox.hidden = !sci;
+      if (sci) sciBox.append(...[['(', '('], [')', ')'], ['²', 'x²'], ['^', 'xʸ'], ['√', '√'], ['sin', 'sin'], ['cos', 'cos'], ['tan', 'tan'], ['ln', 'ln'], ['log', 'log'], ['π', 'π'], ['e', 'e'], ['!', 'x!'], ['1/x', '1/x'], ['deg', deg ? 'Deg' : 'Rad']].map(([k, l]) => btn(k, '', l)));
+      keys.append(btn('AC', 'fn'), btn('±', 'fn', '+/−'), btn('%', 'fn'), btn('÷', 'op'), btn('7'), btn('8'), btn('9'), btn('×', 'op'), btn('4'), btn('5'), btn('6'), btn('−', 'op'), btn('1'), btn('2'), btn('3'), btn('+', 'op'), btn('0', 'zero'), btn('.'), btn('=', 'op'));
+      paint();
+    }
+    function hist() {
+      const H = Prefs.get('calcHist', []);
+      UI.sheet({ title: 'History', body: H.length ? h('div', { class: 'list' }, H.map(x => h('button', { class: 'li', onclick: e => { ex = x.ex; justDone = false; paint(); e.target.closest('.scrim').remove(); } }, h('span', { class: 't' }, h('small', null, x.ex), h('b', { style: { fontSize: '20px' } }, '= ' + x.out))))) : UI.empty('🕘', 'No history yet'), actions: H.length ? [{ label: 'Clear history', cls: 'bad', onClick: c => { Prefs.set('calcHist', []); c(); } }] : [] });
+    }
+    const kd = e => { if (e.target.tagName === 'INPUT') return; const map = { '*': '×', '/': '÷', '-': '−', Enter: '=', '=': '=', Backspace: 'AC', Escape: 'AC' }; const k = map[e.key] || e.key; if (/^[\d.+%()^!]$/.test(k) || ['×', '÷', '−', '='].includes(k) || (k === 'AC' && e.key === 'Backspace')) { e.preventDefault(); press(k); } };
+    addEventListener('keydown', kd); build();
+    return () => removeEventListener('keydown', kd);
+  },
+});
+
+/* ---- 44-measure.js ---- */
+/* ===== Measure: ruler, bubble level, unit converter, sound meter ===== */
+addCSS(`
+.ruler{position:relative;height:min(70vh,640px);height:min(70dvh,640px);border-radius:16px;background:linear-gradient(90deg,#FFE9A8,#FFD970);overflow:hidden;touch-action:none;color:#3A2A00}
+.ruler canvas{position:absolute;inset:0;width:100%;height:100%}
+.ruler .read{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.85);border-radius:14px;padding:10px 14px;font-size:22px;font-weight:800;text-align:right;font-family:var(--round)}
+.ruler .read small{display:block;font-size:13px;font-weight:600;color:#7A5A00}
+.level{position:relative;width:min(300px,80vw);height:min(300px,80vw);margin:10px auto;border-radius:50%;background:radial-gradient(circle,var(--surface) 0,var(--surface2) 100%);border:2px solid var(--line);overflow:hidden}
+.level .cross{position:absolute;inset:0}
+.level .cross::before,.level .cross::after{content:"";position:absolute;background:var(--line)}
+.level .cross::before{left:50%;top:0;bottom:0;width:2px;margin-left:-1px}.level .cross::after{top:50%;left:0;right:0;height:2px;margin-top:-1px}
+.level .ring0{position:absolute;left:50%;top:50%;width:70px;height:70px;margin:-35px 0 0 -35px;border-radius:50%;border:2px dashed var(--muted)}
+.level .bub{position:absolute;left:50%;top:50%;width:60px;height:60px;margin:-30px 0 0 -30px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#E8FFB0,#7BC74D);box-shadow:0 4px 12px rgba(60,120,20,.4);transition:transform .08s linear}
+.level.flat .bub{background:radial-gradient(circle at 35% 35%,#C8FFE0,#18B65A)}
+.lvread{text-align:center;font-size:56px;font-weight:300;font-family:var(--round);font-variant-numeric:tabular-nums}
+.meterbar{height:22px;border-radius:11px;background:linear-gradient(90deg,#34C759,#FFCC00 60%,#FF3B30);position:relative;overflow:hidden}
+.meterbar i{position:absolute;right:0;top:0;bottom:0;background:var(--surface2);transition:width .1s}
+`);
+const UNITS = {
+  Length: { m: 1, km: 1000, cm: 0.01, mm: 0.001, mi: 1609.344, yd: 0.9144, ft: 0.3048, in: 0.0254 },
+  Weight: { kg: 1, g: 0.001, mg: 1e-6, t: 1000, lb: 0.45359237, oz: 0.028349523, st: 6.35029318 },
+  Temperature: { '°C': 'C', '°F': 'F', K: 'K' },
+  Volume: { L: 1, mL: 0.001, 'm³': 1000, gal: 3.785411784, qt: 0.946352946, pt: 0.473176473, cup: 0.2365882365, 'fl oz': 0.0295735296, tbsp: 0.0147867648, tsp: 0.00492892159 },
+  Speed: { 'km/h': 1, 'mph': 1.609344, 'm/s': 3.6, knot: 1.852 },
+  Area: { 'm²': 1, 'km²': 1e6, 'cm²': 1e-4, ha: 1e4, acre: 4046.8564224, 'ft²': 0.09290304, 'mi²': 2589988.110336 },
+  Time: { s: 1, min: 60, h: 3600, day: 86400, week: 604800, year: 31557600 },
+  Data: { B: 1, KB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12 },
+};
+const convert = (cat, val, a, b) => {
+  if (cat !== 'Temperature') return val * UNITS[cat][a] / UNITS[cat][b];
+  const c = a === '°C' ? val : a === '°F' ? (val - 32) * 5 / 9 : val - 273.15; return b === '°C' ? c : b === '°F' ? c * 9 / 5 + 32 : c + 273.15;
+};
+Apps.reg({
+  id: 'measure', name: 'Measure', icon: '📏', color: 'linear-gradient(135deg,#FFD84D,#E6A700)', group: 'tools', keys: 'ruler level converter units sound decibel inches cm', blurb: 'Ruler, level, converter, sound meter',
+  mount(v, ctx) {
+    let tab = Prefs.get('measTab', 'ruler'), stop = null;
+    const body = h('div');
+    v.append(UI.tabs([['ruler', '📏 Ruler'], ['level', '🫧 Level'], ['conv', '🔁 Convert'], ['sound', '🔊 Sound']], tab, t => { tab = t; Prefs.set('measTab', t); show(); }), body);
+    function show() { if (stop) stop(); stop = null; body.innerHTML = ''; ctx.setActions(); stop = ({ ruler, level, conv, sound })[tab](body) || null; }
+    function ruler(el) {
+      // CSS pixels per millimeter: iPhones are about 6.03 (460 ppi ÷ 3); you can calibrate with a bank card
+      let pxmm = Prefs.get('pxmm', /iPhone/.test(navigator.userAgent) ? 6.03 : /iPad/.test(navigator.userAgent) ? 5.18 : 3.78), a = 0.2, b = 0.55;
+      const cv = h('canvas'), read = h('div', { class: 'read' }), box = h('div', { class: 'ruler' }, cv, read);
+      el.append(box, h('div', { class: 'row mt' }, h('button', { class: 'btn sm', onclick: calib }, '🎯 Calibrate with a card'), h('span', { class: 'small muted sp' }, 'Drag the two lines. Put the object against the left edge.')));
+      const g = cv.getContext('2d');
+      const draw = () => {
+        const r = box.getBoundingClientRect(), d = devicePixelRatio || 1; cv.width = r.width * d; cv.height = r.height * d; g.setTransform(d, 0, 0, d, 0, 0); const H = r.height;
+        g.clearRect(0, 0, r.width, H); g.strokeStyle = '#3A2A00'; g.fillStyle = '#3A2A00'; g.font = '700 13px ' + getComputedStyle(document.body).fontFamily; g.textBaseline = 'middle';
+        for (let mm = 0; mm * pxmm < H; mm++) { const y = mm * pxmm, L = mm % 10 === 0 ? 34 : mm % 5 === 0 ? 24 : 14; g.lineWidth = mm % 10 ? 1 : 1.6; g.beginPath(); g.moveTo(0, y); g.lineTo(L, y); g.stroke(); if (mm % 10 === 0 && mm) g.fillText(mm / 10, 40, y); }
+        const pxin = pxmm * 25.4; for (let s = 0; s * pxin / 16 < H; s++) { const y = s * pxin / 16, L = s % 16 === 0 ? 30 : s % 8 === 0 ? 22 : s % 4 === 0 ? 16 : 10; g.lineWidth = s % 16 ? 1 : 1.6; g.beginPath(); g.moveTo(r.width, y); g.lineTo(r.width - L, y); g.stroke(); if (s % 16 === 0 && s) { g.textAlign = 'right'; g.fillText(s / 16 + '"', r.width - 36, y); g.textAlign = 'left'; } }
+        g.fillText('cm', 40, 12); g.textAlign = 'right'; g.fillText('in', r.width - 36, 12); g.textAlign = 'left';
+        for (const [k, col] of [[a, '#E5383B'], [b, '#1D4ED8']]) { const y = k * H; g.strokeStyle = col; g.lineWidth = 3; g.beginPath(); g.moveTo(0, y); g.lineTo(r.width, y); g.stroke(); g.fillStyle = col; g.beginPath(); g.arc(r.width / 2, y, 12, 0, 6.283); g.fill(); }
+        g.fillStyle = 'rgba(29,78,216,.08)'; g.fillRect(0, Math.min(a, b) * H, r.width, Math.abs(b - a) * H);
+        const mmLen = Math.abs(b - a) * H / pxmm; read.innerHTML = (mmLen / 10).toFixed(1) + ' cm<small>' + (mmLen / 25.4).toFixed(2) + ' in</small>';
+      };
+      let dragging = null;
+      box.addEventListener('pointerdown', e => { const r = box.getBoundingClientRect(), y = (e.clientY - r.top) / r.height; dragging = Math.abs(y - a) < Math.abs(y - b) ? 'a' : 'b'; box.setPointerCapture(e.pointerId); move(e); });
+      const move = e => { if (!dragging) return; const r = box.getBoundingClientRect(), y = clamp((e.clientY - r.top) / r.height, 0, 1); if (dragging === 'a') a = y; else b = y; draw(); };
+      box.addEventListener('pointermove', move); box.addEventListener('pointerup', () => dragging = null);
+      function calib() {
+        const card = h('div', { style: { width: '120px', height: (85.6 * pxmm) + 'px', margin: '10px auto', borderRadius: '10px', background: 'linear-gradient(135deg,#7C3AED,#1E40FF)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 700 } }, '💳');
+        const sl = h('input', { type: 'range', min: 2.5, max: 9, step: 0.01, value: pxmm, oninput: () => { card.style.height = (85.6 * sl.value) + 'px'; } });
+        UI.sheet({ title: 'Calibrate the ruler', body: h('div', null, h('p', { class: 'small' }, 'Hold any bank or library card (long side up) against the screen. Slide until the purple box is exactly as tall as the card.'), sl, card), actions: [{ label: 'Reset', onClick: c => { Prefs.set('pxmm', null); pxmm = /iPhone/.test(navigator.userAgent) ? 6.03 : 3.78; c(); draw(); } }, { label: 'Save', cls: 'pri', onClick: c => { pxmm = +sl.value; Prefs.set('pxmm', pxmm); c(); draw(); } }] });
+      }
+      requestAnimationFrame(draw); addEventListener('resize', draw); return () => removeEventListener('resize', draw);
+    }
+    function level(el) {
+      const bub = h('div', { class: 'bub' }), lv = h('div', { class: 'level' }, h('div', { class: 'cross' }), h('div', { class: 'ring0' }), bub), rd = h('div', { class: 'lvread' }, '0°'), hint = h('p', { class: 'center small muted' });
+      let zero = Prefs.get('levelZero', [0, 0]), cur = [0, 0], got = false;
+      const on = e => {
+        if (e.beta == null) return; got = true; cur = [e.gamma || 0, e.beta || 0]; const x = clamp(cur[0] - zero[0], -45, 45), y = clamp(cur[1] - zero[1], -45, 45);
+        const R = lv.clientWidth / 2 - 30; bub.style.transform = 'translate(' + (-x / 45 * R) + 'px,' + (-y / 45 * R) + 'px)';
+        const ang = Math.round(Math.hypot(x, y)); rd.textContent = ang + '°'; lv.classList.toggle('flat', ang <= 1); if (ang === 0 && rd.dataset.last !== '0') Sfx.tap(); rd.dataset.last = String(ang);
+      };
+      const start = async () => { try { if (window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission) { const p = await DeviceOrientationEvent.requestPermission(); if (p !== 'granted') { hint.textContent = 'Motion access was turned off. Allow it in Settings → Safari → Motion & Orientation.'; return; } } addEventListener('deviceorientation', on); hint.textContent = 'Lay your phone flat. The green bubble moves to the middle when it’s level.'; setTimeout(() => { if (!got) hint.textContent = 'No tilt sensor found on this device — try it on your phone.'; }, 2500); } catch (e) { hint.textContent = 'Could not start the level.'; } };
+      el.append(lv, rd, hint, h('div', { class: 'row', style: { justifyContent: 'center' } }, h('button', { class: 'btn pri', onclick: start }, '▶ Start level'), h('button', { class: 'btn', onclick: () => { zero = cur.slice(); Prefs.set('levelZero', zero); UI.toast('Set as level'); } }, 'Set zero'), h('button', { class: 'btn ghost', onclick: () => { zero = [0, 0]; Prefs.set('levelZero', zero); } }, 'Reset')));
+      if (!(window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission)) start();
+      return () => removeEventListener('deviceorientation', on);
+    }
+    function conv(el) {
+      let cat = Prefs.get('convCat', 'Length');
+      const box = h('div'); el.append(h('div', { class: 'chips mb' }, Object.keys(UNITS).map(c => h('button', { class: 'chip', 'aria-pressed': String(c === cat), onclick: e => { cat = c; Prefs.set('convCat', c); $$('.chip', e.target.parentNode).forEach(b => b.setAttribute('aria-pressed', String(b.textContent === c))); draw(); } }, c))), box);
+      function draw() {
+        const u = Object.keys(UNITS[cat]); box.innerHTML = '';
+        const sel = (val) => h('select', null, u.map(x => h('option', { value: x, selected: x === val }, x)));
+        const s1 = sel(Prefs.get('conv1' + cat, u[0])), s2 = sel(Prefs.get('conv2' + cat, u[1] || u[0])), i1 = h('input', { type: 'number', inputmode: 'decimal', value: '1', style: { fontSize: '24px' } }), out = h('div', { style: { fontSize: '34px', fontWeight: 700, fontFamily: 'var(--round)', wordBreak: 'break-all' } });
+        const calc = () => { Prefs.set('conv1' + cat, s1.value); Prefs.set('conv2' + cat, s2.value); const x = parseFloat(i1.value); out.textContent = isNaN(x) ? '—' : Calc.fmt(convert(cat, x, s1.value, s2.value)) + ' ' + s2.value; all.innerHTML = ''; if (!isNaN(x)) u.filter(k => k !== s1.value).forEach(k => all.append(h('div', { class: 'li' }, h('span', { class: 't' }, h('b', null, Calc.fmt(convert(cat, x, s1.value, k)) + ' ' + k))))); };
+        const all = h('div', { class: 'list mt' });
+        [s1, s2, i1].forEach(e => e.addEventListener('input', calc));
+        box.append(h('div', { class: 'card' }, h('div', { class: 'row nw' }, i1, h('div', { style: { width: '120px', flex: '0 0 auto' } }, s1)), h('div', { class: 'row nw mt' }, h('button', { class: 'btn', 'aria-label': 'Swap', onclick: () => { const t = s1.value; s1.value = s2.value; s2.value = t; calc(); } }, '⇅'), h('div', { style: { flex: 1 } }, s2)), h('div', { class: 'mt' }, out)), all);
+        calc();
+      }
+      draw();
+    }
+    function sound(el) {
+      let stream = null, raf = 0, peak = 0, sum = 0, n = 0;
+      const big = h('div', { class: 'lvread' }, '— dB'), bar = h('i', { style: { width: '100%' } }), lab = h('p', { class: 'center' }), stats = h('div', { class: 'grid2 mt' });
+      const startB = h('button', { class: 'btn pri' }, '🎤 Start');
+      el.append(big, h('div', { class: 'meterbar' }, bar), lab, stats, h('div', { class: 'center mt' }, startB), h('p', { class: 'tiny muted center mt' }, 'Rough loudness from your microphone — great for “how loud is it?”, not for official measurements.'));
+      const LV = [[30, '🤫 Whisper quiet'], [50, '🏠 Quiet room'], [65, '🗣️ Talking'], [80, '🚗 Busy street'], [95, '📢 Very loud'], [999, '🚨 Painfully loud — protect your ears']];
+      startB.onclick = async () => {
+        if (stream) { stop2(); return; }
+        try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); } catch (e) { lab.textContent = '🎤 I need the microphone for this.'; return; }
+        const c = Sfx.ctx(), src = c.createMediaStreamSource(stream), an = c.createAnalyser(); an.fftSize = 2048; src.connect(an); const buf = new Float32Array(an.fftSize); startB.textContent = '⏹ Stop'; peak = 0; sum = 0; n = 0;
+        const loop = () => { an.getFloatTimeDomainData(buf); let s = 0; for (const x of buf) s += x * x; const rms = Math.sqrt(s / buf.length); const db = Math.max(0, Math.round(20 * Math.log10(rms + 1e-9) + 94)); peak = Math.max(peak, db); sum += db; n++;
+          big.textContent = db + ' dB'; bar.style.width = (100 - clamp(db, 0, 120) / 120 * 100) + '%'; lab.textContent = LV.find(([t]) => db < t)[1];
+          stats.innerHTML = ''; stats.append(h('div', { class: 'stat' }, h('b', null, Math.round(sum / n)), h('small', null, 'Average dB')), h('div', { class: 'stat' }, h('b', null, peak), h('small', null, 'Loudest dB'))); raf = requestAnimationFrame(loop); };
+        loop();
+      };
+      const stop2 = () => { cancelAnimationFrame(raf); if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; startB.textContent = '🎤 Start'; };
+      return stop2;
+    }
+    show();
+    return () => { if (stop) stop(); };
+  },
+});
+
+/* ---- 45-translate.js ---- */
+/* ===== Translate: offline phrasebook (10 languages) + translate anything when online (MyMemory) ===== */
+addCSS(`
+.tbox{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:12px;box-shadow:var(--shadow)}
+.tbox textarea{border:0;min-height:96px;font-size:20px;padding:4px;background:transparent}
+.tout{font-size:22px;font-weight:600;min-height:40px;padding:6px 4px;word-break:break-word}
+.langbar{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.langbar select{flex:1}
+.phr{display:flex;align-items:center;gap:10px;padding:12px 14px;border-top:1px solid var(--line)}
+.phr:first-child{border-top:0}
+.phr .t{flex:1;min-width:0}
+.phr .t b{display:block;font-size:18px;white-space:normal}
+.phr .t small{display:block;color:var(--muted);font-size:14px}
+`);
+const PB_LANGS = [['es', 'Spanish', 'es-ES', '🇪🇸'], ['fr', 'French', 'fr-FR', '🇫🇷'], ['de', 'German', 'de-DE', '🇩🇪'], ['it', 'Italian', 'it-IT', '🇮🇹'], ['pt', 'Portuguese', 'pt-BR', '🇧🇷'], ['zh-CN', 'Chinese', 'zh-CN', '🇨🇳'], ['ja', 'Japanese', 'ja-JP', '🇯🇵'], ['ko', 'Korean', 'ko-KR', '🇰🇷'], ['hi', 'Hindi', 'hi-IN', '🇮🇳'], ['ar', 'Arabic', 'ar-SA', '🇸🇦']];
+const MORE_LANGS = [['en', 'English', 'en-US', '🇺🇸'], ['zh-TW', 'Chinese (Traditional)', 'zh-TW', '🇹🇼'], ['ru', 'Russian', 'ru-RU', '🇷🇺'], ['tr', 'Turkish', 'tr-TR', '🇹🇷'], ['vi', 'Vietnamese', 'vi-VN', '🇻🇳'], ['th', 'Thai', 'th-TH', '🇹🇭'], ['id', 'Indonesian', 'id-ID', '🇮🇩'], ['tl', 'Filipino', 'fil-PH', '🇵🇭'], ['nl', 'Dutch', 'nl-NL', '🇳🇱'], ['pl', 'Polish', 'pl-PL', '🇵🇱'], ['uk', 'Ukrainian', 'uk-UA', '🇺🇦'], ['el', 'Greek', 'el-GR', '🇬🇷'], ['he', 'Hebrew', 'he-IL', '🇮🇱'], ['sv', 'Swedish', 'sv-SE', '🇸🇪']];
+const ALL_LANGS = [MORE_LANGS[0], ...PB_LANGS, ...MORE_LANGS.slice(1)];
+const PHRASES = {
+  '👋 Basics': [
+    ['Hello', 'Hola', 'Bonjour', 'Hallo', 'Ciao', 'Olá', '你好', 'こんにちは', '안녕하세요', 'नमस्ते', 'مرحبا'],
+    ['Goodbye', 'Adiós', 'Au revoir', 'Tschüss', 'Arrivederci', 'Tchau', '再见', 'さようなら', '안녕히 가세요', 'अलविदा', 'مع السلامة'],
+    ['Please', 'Por favor', 'S’il vous plaît', 'Bitte', 'Per favore', 'Por favor', '请', 'お願いします', '부탁합니다', 'कृपया', 'من فضلك'],
+    ['Thank you', 'Gracias', 'Merci', 'Danke', 'Grazie', 'Obrigado', '谢谢', 'ありがとう', '감사합니다', 'धन्यवाद', 'شكرا'],
+    ['You’re welcome', 'De nada', 'De rien', 'Gern geschehen', 'Prego', 'De nada', '不客气', 'どういたしまして', '천만에요', 'आपका स्वागत है', 'عفوا'],
+    ['Yes', 'Sí', 'Oui', 'Ja', 'Sì', 'Sim', '是', 'はい', '네', 'हाँ', 'نعم'],
+    ['No', 'No', 'Non', 'Nein', 'No', 'Não', '不', 'いいえ', '아니요', 'नहीं', 'لا'],
+    ['Excuse me', 'Perdón', 'Excusez-moi', 'Entschuldigung', 'Mi scusi', 'Com licença', '打扰一下', 'すみません', '실례합니다', 'माफ़ कीजिए', 'لو سمحت'],
+    ['Sorry', 'Lo siento', 'Désolé', 'Es tut mir leid', 'Mi dispiace', 'Desculpe', '对不起', 'ごめんなさい', '죄송합니다', 'मुझे माफ़ करें', 'آسف'],
+    ['Good morning', 'Buenos días', 'Bonjour', 'Guten Morgen', 'Buongiorno', 'Bom dia', '早上好', 'おはようございます', '좋은 아침이에요', 'सुप्रभात', 'صباح الخير'],
+    ['Good night', 'Buenas noches', 'Bonne nuit', 'Gute Nacht', 'Buona notte', 'Boa noite', '晚安', 'おやすみなさい', '안녕히 주무세요', 'शुभ रात्रि', 'تصبح على خير'],
+    ['How are you?', '¿Cómo estás?', 'Comment ça va ?', 'Wie geht es dir?', 'Come stai?', 'Como você está?', '你好吗？', 'お元気ですか？', '어떻게 지내세요?', 'आप कैसे हैं?', 'كيف حالك؟'],
+    ['I’m fine, thanks', 'Estoy bien, gracias', 'Ça va bien, merci', 'Mir geht es gut, danke', 'Sto bene, grazie', 'Estou bem, obrigado', '我很好，谢谢', '元気です、ありがとう', '잘 지내요, 감사합니다', 'मैं ठीक हूँ, धन्यवाद', 'أنا بخير، شكرا'],
+    ['What’s your name?', '¿Cómo te llamas?', 'Comment tu t’appelles ?', 'Wie heißt du?', 'Come ti chiami?', 'Qual é o seu nome?', '你叫什么名字？', 'お名前は何ですか？', '이름이 뭐예요?', 'आपका नाम क्या है?', 'ما اسمك؟'],
+    ['My name is …', 'Me llamo …', 'Je m’appelle …', 'Ich heiße …', 'Mi chiamo …', 'Meu nome é …', '我叫…', '私の名前は…です', '제 이름은 …예요', 'मेरा नाम … है', 'اسمي …'],
+    ['Nice to meet you', 'Mucho gusto', 'Enchanté', 'Freut mich', 'Piacere', 'Muito prazer', '很高兴认识你', 'はじめまして', '만나서 반가워요', 'आपसे मिलकर खुशी हुई', 'تشرفنا'],
+    ['I don’t understand', 'No entiendo', 'Je ne comprends pas', 'Ich verstehe nicht', 'Non capisco', 'Não entendo', '我不明白', 'わかりません', '이해가 안 돼요', 'मुझे समझ नहीं आया', 'لا أفهم'],
+    ['Do you speak English?', '¿Hablas inglés?', 'Parlez-vous anglais ?', 'Sprechen Sie Englisch?', 'Parli inglese?', 'Você fala inglês?', '你会说英语吗？', '英語を話せますか？', '영어 할 줄 아세요?', 'क्या आप अंग्रेज़ी बोलते हैं?', 'هل تتكلم الإنجليزية؟'],
+    ['Can you help me?', '¿Puedes ayudarme?', 'Pouvez-vous m’aider ?', 'Können Sie mir helfen?', 'Può aiutarmi?', 'Você pode me ajudar?', '你能帮我吗？', '手伝ってもらえますか？', '도와주실 수 있어요?', 'क्या आप मेरी मदद कर सकते हैं?', 'هل يمكنك مساعدتي؟'],
+  ],
+  '🧭 Getting around': [
+    ['Where is the bathroom?', '¿Dónde está el baño?', 'Où sont les toilettes ?', 'Wo ist die Toilette?', 'Dov’è il bagno?', 'Onde fica o banheiro?', '洗手间在哪里？', 'トイレはどこですか？', '화장실이 어디예요?', 'शौचालय कहाँ है?', 'أين الحمام؟'],
+    ['How much does it cost?', '¿Cuánto cuesta?', 'Combien ça coûte ?', 'Wie viel kostet das?', 'Quanto costa?', 'Quanto custa?', '多少钱？', 'いくらですか？', '얼마예요?', 'यह कितने का है?', 'كم الثمن؟'],
+    ['Where is …?', '¿Dónde está …?', 'Où est … ?', 'Wo ist …?', 'Dov’è …?', 'Onde fica …?', '…在哪里？', '…はどこですか？', '…은/는 어디예요?', '… कहाँ है?', 'أين …؟'],
+    ['Left / Right', 'Izquierda / Derecha', 'Gauche / Droite', 'Links / Rechts', 'Sinistra / Destra', 'Esquerda / Direita', '左 / 右', '左 / 右', '왼쪽 / 오른쪽', 'बाएँ / दाएँ', 'يسار / يمين'],
+    ['Straight ahead', 'Todo recto', 'Tout droit', 'Geradeaus', 'Sempre dritto', 'Em frente', '一直走', 'まっすぐ', '직진', 'सीधे', 'إلى الأمام مباشرة'],
+    ['Train station', 'Estación de tren', 'Gare', 'Bahnhof', 'Stazione ferroviaria', 'Estação de trem', '火车站', '駅', '기차역', 'रेलवे स्टेशन', 'محطة القطار'],
+    ['Airport', 'Aeropuerto', 'Aéroport', 'Flughafen', 'Aeroporto', 'Aeroporto', '机场', '空港', '공항', 'हवाई अड्डा', 'المطار'],
+    ['I’m lost', 'Estoy perdido', 'Je suis perdu', 'Ich habe mich verlaufen', 'Mi sono perso', 'Estou perdido', '我迷路了', '道に迷いました', '길을 잃었어요', 'मैं रास्ता भटक गया हूँ', 'أنا تائه'],
+  ],
+  '🍽️ Food': [
+    ['I’m hungry', 'Tengo hambre', 'J’ai faim', 'Ich habe Hunger', 'Ho fame', 'Estou com fome', '我饿了', 'お腹がすきました', '배고파요', 'मुझे भूख लगी है', 'أنا جائع'],
+    ['Water, please', 'Agua, por favor', 'De l’eau, s’il vous plaît', 'Wasser, bitte', 'Acqua, per favore', 'Água, por favor', '请给我水', 'お水をください', '물 주세요', 'पानी, कृपया', 'ماء من فضلك'],
+    ['The menu, please', 'La carta, por favor', 'La carte, s’il vous plaît', 'Die Speisekarte, bitte', 'Il menù, per favore', 'O cardápio, por favor', '请给我菜单', 'メニューをください', '메뉴판 주세요', 'मेन्यू दीजिए', 'القائمة من فضلك'],
+    ['The check, please', 'La cuenta, por favor', 'L’addition, s’il vous plaît', 'Die Rechnung, bitte', 'Il conto, per favore', 'A conta, por favor', '请结账', 'お会計をお願いします', '계산서 주세요', 'बिल दीजिए', 'الحساب من فضلك'],
+    ['Delicious!', '¡Delicioso!', 'Délicieux !', 'Lecker!', 'Delizioso!', 'Delicioso!', '好吃！', 'おいしい！', '맛있어요!', 'स्वादिष्ट!', 'لذيذ!'],
+    ['I’m allergic to …', 'Soy alérgico a …', 'Je suis allergique à …', 'Ich bin allergisch gegen …', 'Sono allergico a …', 'Sou alérgico a …', '我对…过敏', '…アレルギーがあります', '저는 …알레르기가 있어요', 'मुझे … से एलर्जी है', 'عندي حساسية من …'],
+    ['I’m vegetarian', 'Soy vegetariano', 'Je suis végétarien', 'Ich bin Vegetarier', 'Sono vegetariano', 'Sou vegetariano', '我吃素', '私はベジタリアンです', '저는 채식주의자예요', 'मैं शाकाहारी हूँ', 'أنا نباتي'],
+  ],
+  '🚨 Emergency': [
+    ['Help!', '¡Ayuda!', 'Au secours !', 'Hilfe!', 'Aiuto!', 'Socorro!', '救命！', '助けて！', '도와주세요!', 'बचाओ!', 'النجدة!'],
+    ['Call the police', 'Llame a la policía', 'Appelez la police', 'Rufen Sie die Polizei', 'Chiami la polizia', 'Chame a polícia', '请报警', '警察を呼んでください', '경찰을 불러 주세요', 'पुलिस को बुलाइए', 'اتصل بالشرطة'],
+    ['I need a doctor', 'Necesito un médico', 'J’ai besoin d’un médecin', 'Ich brauche einen Arzt', 'Ho bisogno di un medico', 'Preciso de um médico', '我需要医生', '医者が必要です', '의사가 필요해요', 'मुझे डॉक्टर चाहिए', 'أحتاج إلى طبيب'],
+    ['Where is the hospital?', '¿Dónde está el hospital?', 'Où est l’hôpital ?', 'Wo ist das Krankenhaus?', 'Dov’è l’ospedale?', 'Onde fica o hospital?', '医院在哪里？', '病院はどこですか？', '병원이 어디예요?', 'अस्पताल कहाँ है?', 'أين المستشفى؟'],
+  ],
+  '🎉 Friends & fun': [
+    ['Let’s play!', '¡Vamos a jugar!', 'On joue !', 'Lass uns spielen!', 'Giochiamo!', 'Vamos brincar!', '我们一起玩吧！', '遊ぼう！', '같이 놀자!', 'चलो खेलते हैं!', 'هيا نلعب!'],
+    ['I love it!', '¡Me encanta!', 'J’adore !', 'Ich liebe es!', 'Lo adoro!', 'Eu adoro!', '我很喜欢！', '大好き！', '정말 좋아요!', 'मुझे यह बहुत पसंद है!', 'أحبه!'],
+    ['Happy birthday!', '¡Feliz cumpleaños!', 'Joyeux anniversaire !', 'Alles Gute zum Geburtstag!', 'Buon compleanno!', 'Feliz aniversário!', '生日快乐！', 'お誕生日おめでとう！', '생일 축하해요!', 'जन्मदिन मुबारक हो!', 'عيد ميلاد سعيد!'],
+    ['See you later!', '¡Hasta luego!', 'À plus tard !', 'Bis später!', 'A dopo!', 'Até logo!', '回头见！', 'またね！', '나중에 봐요!', 'फिर मिलेंगे!', 'أراك لاحقا!'],
+    ['One, two, three, four, five', 'Uno, dos, tres, cuatro, cinco', 'Un, deux, trois, quatre, cinq', 'Eins, zwei, drei, vier, fünf', 'Uno, due, tre, quattro, cinque', 'Um, dois, três, quatro, cinco', '一，二，三，四，五', 'いち、に、さん、し、ご', '하나, 둘, 셋, 넷, 다섯', 'एक, दो, तीन, चार, पाँच', 'واحد، اثنان، ثلاثة، أربعة، خمسة'],
+    ['Six, seven, eight, nine, ten', 'Seis, siete, ocho, nueve, diez', 'Six, sept, huit, neuf, dix', 'Sechs, sieben, acht, neun, zehn', 'Sei, sette, otto, nove, dieci', 'Seis, sete, oito, nove, dez', '六，七，八，九，十', 'ろく、なな、はち、きゅう、じゅう', '여섯, 일곱, 여덟, 아홉, 열', 'छह, सात, आठ, नौ, दस', 'ستة، سبعة، ثمانية، تسعة، عشرة'],
+  ],
+};
+const speakIn = (text, code) => { if (!Speak.ok) return UI.toast('Speaking isn’t available'); const L = ALL_LANGS.find(l => l[0] === code); speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text.replace(/…/g, '')); u.lang = L ? L[2] : code; u.rate = 0.9; const vv = speechSynthesis.getVoices().find(x => x.lang.replace('_', '-').toLowerCase().startsWith(u.lang.toLowerCase().slice(0, 2))); if (vv) u.voice = vv; speechSynthesis.speak(u); };
+Apps.reg({
+  id: 'translate', name: 'Translate', icon: '🌐', color: 'linear-gradient(135deg,#4285F4,#1A47B8)', group: 'learn', keys: 'language spanish french chinese japanese korean phrasebook', blurb: 'Phrasebook + live translate',
+  mount(v, ctx) {
+    let tab = Prefs.get('trTab', 'live');
+    const body = h('div'); v.append(UI.tabs([['live', '✍️ Translate'], ['book', '📗 Phrasebook (offline)'], ['hist', '🕘 Saved']], tab, t => { tab = t; Prefs.set('trTab', t); show(); }), body);
+    function show() { body.innerHTML = ''; ({ live, book, hist })[tab](); }
+    const sel = (val, list) => h('select', null, list.map(([c, n, , f]) => h('option', { value: c, selected: c === val }, f + ' ' + n)));
+    function phraseLookup(text, from, to) { const t = text.trim().toLowerCase().replace(/[.!?¿¡]+$/, ''); const cols = ['en', ...PB_LANGS.map(l => l[0])]; const fi = cols.indexOf(from), ti = cols.indexOf(to); if (fi < 0 || ti < 0) return null; for (const g in PHRASES) for (const row of PHRASES[g]) if (row[fi].toLowerCase().replace(/[’']/g, "'").replace(/[.!?¿¡]+$/, '') === t.replace(/[’']/g, "'")) return row[ti]; return null; }
+    async function online(text, from, to) {
+      const r = await fetch('https://api.mymemory.translated.net/get?mt=1&q=' + encodeURIComponent(text) + '&langpair=' + from + '|' + to); const d = await r.json();
+      let out = d.responseData && d.responseData.translatedText || ''; const bad = s => !s || /MYMEMORY WARNING|testvalue|INVALID|QUERY LENGTH/i.test(s);
+      if (bad(out) || (d.responseData.match || 0) < 0.99) { const mt = (d.matches || []).find(m => m['created-by'] === 'MT!' && !bad(m.translation)); if (mt) out = mt.translation; }
+      if (/MYMEMORY WARNING/i.test(out)) throw new Error('The free translator is busy for today. The phrasebook still works.');
+      if (bad(out)) throw new Error('Could not translate that.'); return out.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+    }
+    function live() {
+      const from = sel(Prefs.get('trFrom', 'en'), ALL_LANGS), to = sel(Prefs.get('trTo', 'es'), ALL_LANGS);
+      const inp = h('textarea', { placeholder: 'Type something to translate', 'aria-label': 'Text to translate' }), out = h('div', { class: 'tout', 'aria-live': 'polite' }), note = h('div', { class: 'small muted' });
+      if (ctx.param && !Prefs.get('trParamUsed' + ctx.param)) { inp.value = ctx.param; }
+      from.onchange = () => Prefs.set('trFrom', from.value); to.onchange = () => { Prefs.set('trTo', to.value); if (inp.value.trim()) go(); };
+      const go = async () => {
+        const t = inp.value.trim(); if (!t) return; if (from.value === to.value) { out.textContent = t; return; }
+        const pb = phraseLookup(t, from.value, to.value); out.textContent = '…'; note.textContent = '';
+        let res = pb, how = pb ? '📗 From the offline phrasebook' : '';
+        if (!pb) { if (!navigator.onLine) { out.textContent = ''; note.textContent = '📴 New sentences need internet. Try the Phrasebook tab — it works offline.'; return; } try { res = await online(t, from.value, to.value); how = '🌐 Online translation (MyMemory)'; } catch (e) { out.textContent = ''; note.textContent = e.message; return; } }
+        out.textContent = res; note.textContent = how;
+        const H = Prefs.get('trHist', []); H.unshift({ src: t, out: res, from: from.value, to: to.value, at: Date.now() }); Prefs.set('trHist', H.slice(0, 100));
+      };
+      body.append(h('div', { class: 'langbar' }, from, h('button', { class: 'btn', 'aria-label': 'Swap languages', onclick: () => { const a = from.value; from.value = to.value; to.value = a; Prefs.set('trFrom', from.value); Prefs.set('trTo', to.value); if (out.textContent && out.textContent !== '…') { inp.value = out.textContent; go(); } } }, '⇄'), to),
+        h('div', { class: 'tbox' }, inp, h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: () => speakIn(inp.value, from.value) }, '🔊'), h('button', { class: 'btn sm ghost', onclick: () => { inp.value = ''; out.textContent = ''; note.textContent = ''; } }, 'Clear'), h('span', { class: 'sp' }), h('button', { class: 'btn pri', onclick: go }, 'Translate'))),
+        h('div', { class: 'tbox mt' }, out, h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: () => out.textContent && speakIn(out.textContent, to.value) }, '🔊 Say it'), h('button', { class: 'btn sm', onclick: () => out.textContent && copyText(out.textContent) }, '📋 Copy'), h('span', { class: 'sp' })), note),
+        h('p', { class: 'tiny muted mt' }, 'Online translations send just the words you typed to MyMemory. Every translation is saved under “Saved” so you can see it offline.'));
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } });
+      if (inp.value) go();
+    }
+    function book() {
+      let lang = Prefs.get('pbLang', 'es'); const li = PB_LANGS.findIndex(l => l[0] === lang) + 1;
+      body.append(h('div', { class: 'chips mb' }, PB_LANGS.map(([c, n, , f]) => h('button', { class: 'chip', 'aria-pressed': String(c === lang), onclick: () => { Prefs.set('pbLang', c); show(); } }, f + ' ' + n))));
+      for (const g in PHRASES) body.append(h('div', { class: 'sec' }, g), h('div', { class: 'list' }, PHRASES[g].map(row => h('div', { class: 'phr' }, h('div', { class: 't' }, h('b', { lang }, row[li]), h('small', null, row[0])), h('button', { class: 'ib', 'aria-label': 'Say it', onclick: () => speakIn(row[li], lang) }, '🔊')))));
+      body.append(h('p', { class: 'tiny muted mt' }, 'The phrasebook works with no internet. If 🔊 is silent, add the language’s voice in iPhone Settings → Accessibility → Spoken Content → Voices.'));
+    }
+    function hist() {
+      const H = Prefs.get('trHist', []); const L = c => (ALL_LANGS.find(l => l[0] === c) || [c, c, c, ''])[3];
+      if (!H.length) { body.append(UI.empty('🕘', 'Nothing saved yet', 'Translations you make show up here, even offline.')); return; }
+      body.append(h('div', { class: 'list' }, H.map(x => h('div', { class: 'phr' }, h('div', { class: 't' }, h('b', null, x.out), h('small', null, L(x.from) + ' ' + x.src + ' → ' + L(x.to))), h('button', { class: 'ib', 'aria-label': 'Say it', onclick: () => speakIn(x.out, x.to) }, '🔊')))),
+        h('button', { class: 'btn ghost mt', onclick: () => { Prefs.set('trHist', []); show(); } }, 'Clear saved'));
+    }
+    show();
+  },
+});
+
+/* ---- 46-bible.js ---- */
+/* ===== Bible: three public-domain translations, fully offline ===== */
+addCSS(`
+.bk{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media (min-width:640px){.bk{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.bk button{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:10px 12px;text-align:left;font-weight:650;font-size:15px;color:var(--ink)}
+.chg{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.chg button{aspect-ratio:1/1;border:1px solid var(--line);background:var(--surface);border-radius:12px;font-weight:700;font-size:16px;color:var(--ink)}
+.chg button.read{background:var(--accent-soft)}
+.scripture{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px 18px 22px;line-height:1.75;font-family:Georgia,"Iowan Old Style","Times New Roman",serif;color:var(--ink)}
+.scripture h2{font-family:var(--round);font-size:26px;margin-bottom:10px}
+.vs{cursor:pointer;border-radius:4px;padding:1px 0;-webkit-tap-highlight-color:transparent}
+.vs sup{font-family:var(--font);font-size:.62em;font-weight:800;color:var(--accent);margin-right:3px}
+.vs.sel{text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:2px;text-underline-offset:4px}
+.vs.hl-y{background:#FFF1A6}.vs.hl-g{background:#C9F5D0}.vs.hl-b{background:#CFE3FF}.vs.hl-p{background:#FFD6E8}
+:root[data-theme="dark"] .vs[class*="hl-"]{color:#111}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .vs[class*="hl-"]{color:#111}}
+.vsbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--bot) + 16px);z-index:40;display:flex;gap:6px;align-items:center;padding:8px;border-radius:18px;background:var(--surface);border:1px solid var(--line);box-shadow:0 10px 30px rgba(0,0,0,.25);max-width:calc(100% - 24px);overflow-x:auto}
+.vsbar .sw2{width:30px;height:30px;border-radius:15px;border:2px solid var(--line);flex:0 0 auto}
+`);
+const VOTD_REFS = [[42, 3, 16], [18, 23, 1], [49, 4, 13], [23, 29, 11], [19, 3, 5], [44, 8, 28], [22, 40, 31], [5, 1, 9], [39, 11, 28], [18, 46, 1], [49, 4, 6], [45, 13, 4], [47, 5, 22], [18, 118, 24], [39, 5, 14], [48, 2, 8], [54, 1, 7], [57, 11, 1], [18, 119, 105], [22, 41, 10], [39, 6, 33], [44, 12, 2], [59, 5, 7], [19, 17, 17], [50, 3, 23], [18, 37, 4], [24, 3, 22], [39, 19, 26], [42, 14, 27], [61, 4, 19], [18, 139, 14], [48, 4, 32], [39, 7, 12], [44, 15, 13], [58, 1, 5], [18, 27, 1], [35, 3, 17], [32, 6, 8], [4, 31, 6], [22, 26, 3]];
+const Bible = {
+  T: [['NHEB', 'New Heart English (modern)'], ['KJV', 'King James Version (classic)'], ['BBE', 'Basic English (easy words)']],
+  cache: {},
+  tr() { return Prefs.get('bibleTr', 'NHEB'); },
+  load(id = this.tr()) { return this.cache[id] || (this.cache[id] = fetch('data/bible/' + id + '.json').then(r => { if (!r.ok) throw new Error('missing'); return r.json(); }).catch(e => { delete this.cache[id]; throw e; })); },
+  ref(B, b, c, v) { return B.b[b][0] + ' ' + c + (v ? ':' + v : ''); },
+  async votd() {
+    const today = ymd(new Date()), tr = this.tr(), saved = Prefs.get('votd', null); if (saved && saved.d === today && saved.tr === tr) return saved;
+    const B = await this.load(tr), [b, c, v] = VOTD_REFS[Math.floor(Date.now() / 86400e3) % VOTD_REFS.length]; const text = B.b[b][1][c - 1][v - 1];
+    const out = { d: today, tr, ref: this.ref(B, b, c, v) + ' (' + tr + ')', text, b, c, v }; Prefs.set('votd', out); return out;
+  },
+};
+Apps.reg({
+  id: 'bible', name: 'Bible', icon: '✝️', color: 'linear-gradient(135deg,#C9A227,#7A4E12)', group: 'learn', keys: 'scripture verse god jesus psalms gospel church', blurb: 'Read offline, 3 translations',
+  async mount(v, ctx) {
+    let B; const body = h('div'); v.append(body);
+    const marks = () => Prefs.get('bibleMarks', []), hl = () => Prefs.get('bibleHL', {});
+    try { B = await Bible.load(); } catch (e) { v.append(UI.empty('📥', 'The Bible isn’t saved yet', 'Connect to Wi-Fi once — Super One saves it for offline reading.')); return; }
+    const size = () => Prefs.get('bibleSize', 19);
+    async function switchTr(id) { Prefs.set('bibleTr', id); try { B = await Bible.load(id); } catch (e) { UI.toast('That translation isn’t saved yet'); } }
+    function trMenu(after) { UI.menu('Translation', Bible.T.map(([id, n]) => ({ icon: Bible.tr() === id ? '✓' : '📖', label: n, run: async () => { await switchTr(id); after(); } }))); }
+    async function home() {
+      if (ctx._bar) ctx._bar(); body.innerHTML = ''; ctx.setTitle('Bible'); ctx.setBack(null);
+      ctx.setActions(h('button', { class: 'btn ghost sm', onclick: () => trMenu(home) }, Bible.tr()), h('button', { class: 'ib', 'aria-label': 'Search', html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">' + ICON_PATHS.search + '</svg>', onclick: () => search('') }));
+      const vd = await Bible.votd().catch(() => null), last = Prefs.get('bibleLast', null);
+      if (vd) body.append(h('button', { class: 'card', style: { display: 'block', width: '100%', textAlign: 'left', background: 'linear-gradient(135deg,#FFF6D8,var(--surface))', color: 'var(--ink)' }, onclick: () => chapter(vd.b, vd.c, vd.v) }, h('div', { class: 'tiny', style: { fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#9A6B00' } }, '✨ Verse of the day'), h('p', { style: { fontFamily: 'Georgia,serif', fontSize: '19px', lineHeight: 1.5, margin: '8px 0' } }, '“' + vd.text + '”'), h('b', null, vd.ref)));
+      if (last) body.append(h('button', { class: 'btn wide mt', onclick: () => chapter(last.b, last.c) }, '📖 Continue reading: ' + B.b[last.b][0] + ' ' + last.c));
+      const mk = marks(); if (mk.length) body.append(h('div', { class: 'sec' }, '🔖 Bookmarks'), h('div', { class: 'list' }, mk.slice(0, 8).map(m => h('button', { class: 'li', onclick: () => chapter(m.b, m.c, m.v) }, h('span', { class: 'ic' }, '🔖'), h('span', { class: 't' }, h('b', null, B.b[m.b][0] + ' ' + m.c + ':' + m.v), h('small', null, (B.b[m.b][1][m.c - 1] || [])[m.v - 1] || '')), h('span', { class: 'chev' }, '›')))));
+      body.append(h('div', { class: 'sec' }, 'Old Testament'), h('div', { class: 'bk' }, B.b.slice(0, 39).map((bk, i) => h('button', { onclick: () => chapters(i) }, bk[0]))),
+        h('div', { class: 'sec' }, 'New Testament'), h('div', { class: 'bk' }, B.b.slice(39).map((bk, i) => h('button', { onclick: () => chapters(i + 39) }, bk[0]))),
+        h('p', { class: 'tiny muted mt2' }, 'Public-domain texts: New Heart English Bible, King James Version (1769), Bible in Basic English. Saved on your device.'));
+    }
+    function chapters(b) {
+      if (ctx._bar) ctx._bar(); body.innerHTML = ''; ctx.setTitle(B.b[b][0]); ctx.setBack(() => { home(); return true; }); const read = Prefs.get('bibleRead', {});
+      body.append(h('div', { class: 'chg' }, B.b[b][1].map((_, i) => h('button', { class: read[b + ':' + (i + 1)] ? 'read' : '', onclick: () => chapter(b, i + 1) }, i + 1))));
+    }
+    function chapter(b, c, focus) {
+      if (ctx._bar) ctx._bar(); body.innerHTML = ''; const bk = B.b[b], verses = bk[1][c - 1]; ctx.setTitle(bk[0] + ' ' + c); ctx.setBack(() => { chapters(b); return true; });
+      Prefs.set('bibleLast', { b, c }); const read = Prefs.get('bibleRead', {}); read[b + ':' + c] = 1; Prefs.set('bibleRead', read);
+      ctx.setActions(h('button', { class: 'btn ghost sm', onclick: () => trMenu(() => chapter(b, c)) }, Bible.tr()), h('button', { class: 'ib', 'aria-label': 'Text size and reading', html: SVG.more, onclick: () => UI.menu('Reading', [
+        { icon: '🔊', label: 'Read this chapter aloud', run: () => readAloud(verses, 0) },
+        { icon: '🔠', label: 'Bigger text', run: () => { Prefs.set('bibleSize', Math.min(30, size() + 2)); chapter(b, c); } },
+        { icon: '🔡', label: 'Smaller text', run: () => { Prefs.set('bibleSize', Math.max(14, size() - 2)); chapter(b, c); } },
+      ]) }));
+      const H = hl(); let sel = new Set();
+      const sc = h('div', { class: 'scripture', style: { fontSize: size() + 'px' } }, h('h2', null, bk[0] + ' ' + c));
+      verses.forEach((t, i) => { const k = b + ':' + c + ':' + (i + 1); const s = h('span', { class: 'vs' + (H[k] ? ' hl-' + H[k] : ''), 'data-v': i + 1 }, h('sup', null, i + 1), t + ' '); s.onclick = () => { sel.has(i + 1) ? sel.delete(i + 1) : sel.add(i + 1); s.classList.toggle('sel'); bar(); }; sc.append(s); });
+      const nav = h('div', { class: 'row mt', style: { justifyContent: 'space-between' } },
+        h('button', { class: 'btn', disabled: b === 0 && c === 1, onclick: () => c > 1 ? chapter(b, c - 1) : chapter(b - 1, B.b[b - 1][1].length) }, '‹ Previous'),
+        h('button', { class: 'btn', disabled: b === B.b.length - 1 && c === bk[1].length, onclick: () => c < bk[1].length ? chapter(b, c + 1) : chapter(b + 1, 1) }, 'Next ›'));
+      body.append(sc, nav); scrollTo(0, 0);
+      if (focus) setTimeout(() => { const el = sc.querySelector('[data-v="' + focus + '"]'); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('hl-y'); setTimeout(() => { if (!H[b + ':' + c + ':' + focus]) el.classList.remove('hl-y'); }, 1600); } }, 60);
+      let sx = null; sc.addEventListener('touchstart', e => sx = e.touches[0].clientX, { passive: true }); sc.addEventListener('touchend', e => { if (sx == null) return; const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 90) $$('button', nav)[dx < 0 ? 1 : 0].click(); sx = null; });
+      let barEl = null;
+      function bar() {
+        if (barEl) barEl.remove(); barEl = null; if (!sel.size) return; const vs = [...sel].sort((a, b2) => a - b2), ref = bk[0] + ' ' + c + ':' + (vs.length > 1 ? vs[0] + '–' + vs[vs.length - 1] : vs[0]), text = vs.map(n => verses[n - 1]).join(' ');
+        const setHL = col => { const H2 = hl(); vs.forEach(n => { const k = b + ':' + c + ':' + n; if (col) H2[k] = col; else delete H2[k]; }); Prefs.set('bibleHL', H2); chapter(b, c); };
+        barEl = h('div', { class: 'vsbar' }, ['y', 'g', 'b', 'p'].map(col => h('button', { class: 'sw2 vs hl-' + col, 'aria-label': 'Highlight', onclick: () => setHL(col) })), h('button', { class: 'btn sm', onclick: () => setHL(null) }, '✕'),
+          h('button', { class: 'btn sm', onclick: () => { const m = marks().filter(x => !(x.b === b && x.c === c && x.v === vs[0])); m.unshift({ b, c, v: vs[0] }); Prefs.set('bibleMarks', m.slice(0, 100)); UI.toast('Bookmarked ' + ref); } }, '🔖'),
+          h('button', { class: 'btn sm', onclick: () => shareText('“' + text + '” — ' + ref + ' (' + Bible.tr() + ')', ref) }, '📤'),
+          h('button', { class: 'btn sm', onclick: () => readAloud(verses, vs[0] - 1, vs[vs.length - 1]) }, '🔊'),
+          h('button', { class: 'btn sm', onclick: async () => { const decks = await Cards.decks(); let d = decks.find(x => x.name === 'Memory verses'); if (!d) { d = { id: uid(), name: 'Memory verses', emoji: '✝️', color: DECK_COLORS[3], created: Date.now() }; await DB.put('decks', d); } await DB.put('cards', { id: uid(), deck: d.id, front: ref, back: text, box: 0, due: 0, created: Date.now() }); UI.toast('Added to Flashcards → Memory verses'); } }, '🗂️'));
+        document.body.append(barEl);
+      }
+      ctx._bar = () => { if (barEl) barEl.remove(); };
+    }
+    function readAloud(verses, from, to) { if (!Speak.ok) return UI.toast('Reading aloud isn’t available'); speechSynthesis.cancel(); const end = to || verses.length; for (let i = from; i < end; i++) { const u = new SpeechSynthesisUtterance(verses[i]); u.rate = 0.95; u.lang = 'en-US'; speechSynthesis.speak(u); } UI.toast('Reading… leave the page to stop'); }
+    function search(q0) {
+      body.innerHTML = ''; ctx.setTitle('Search'); ctx.setBack(() => { home(); return true; });
+      const inp = h('input', { type: 'search', placeholder: 'Words like “love” or “shepherd”', value: q0 }), res = h('div', { class: 'mt' });
+      const run = () => { const q = inp.value.trim().toLowerCase(); res.innerHTML = ''; if (q.length < 3) return; const hits = []; B.b.forEach((bk, bi) => bk[1].forEach((ch, ci) => ch.forEach((t, vi) => { if (hits.length < 200 && t.toLowerCase().includes(q)) hits.push([bi, ci + 1, vi + 1, t]); })));
+        res.append(h('p', { class: 'small muted' }, (hits.length >= 200 ? '200+' : hits.length) + ' verses found'), h('div', { class: 'list' }, hits.map(([bi, c, vv, t]) => { const i = t.toLowerCase().indexOf(q); return h('button', { class: 'li', onclick: () => chapter(bi, c, vv) }, h('span', { class: 't' }, h('b', null, B.b[bi][0] + ' ' + c + ':' + vv), h('small', { style: { whiteSpace: 'normal' } }, t.slice(0, i), h('mark', null, t.slice(i, i + q.length)), t.slice(i + q.length)))); }))); };
+      inp.addEventListener('input', debounce(run, 250)); body.append(h('div', { class: 'search' }, inp), res); if (q0) run(); else setTimeout(() => inp.focus(), 60);
+    }
+    if (ctx.param && ctx.param.startsWith('search:')) search(ctx.param.slice(7)); else home();
+    return () => { if (window.speechSynthesis) speechSynthesis.cancel(); if (ctx._bar) ctx._bar(); };
   },
 });
 
