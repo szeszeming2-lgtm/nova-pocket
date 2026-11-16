@@ -1,5 +1,5 @@
 // Super One service worker: saves the app (and then the dictionary + map) so it opens with no internet.
-const CORE_V = 'np-core-1b93123209a6', DATA_V = 'np-data-ec8cfcba76d3';
+const CORE_V = 'np-core-989c9f7e6db8', DATA_V = 'np-data-ec8cfcba76d3';
 const CORE = ["index.html", "app.js", "style.css", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png", "favicon.png", "data/world.json", "data/countries.json"], DATA = ["data/dict/0.json", "data/dict/a.json", "data/dict/b.json", "data/dict/c.json", "data/dict/d.json", "data/dict/e.json", "data/dict/f.json", "data/dict/g.json", "data/dict/h.json", "data/dict/i.json", "data/dict/index.json", "data/dict/j.json", "data/dict/k.json", "data/dict/l.json", "data/dict/m.json", "data/dict/n.json", "data/dict/o.json", "data/dict/p.json", "data/dict/q.json", "data/dict/r.json", "data/dict/s.json", "data/dict/t.json", "data/dict/u.json", "data/dict/v.json", "data/dict/w.json", "data/dict/x.json", "data/dict/y.json", "data/dict/z.json", "data/bible/BBE.json", "data/bible/KJV.json", "data/bible/NHEB.json"];
 const tell = msg => self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then(cs => cs.forEach(c => c.postMessage(msg)));
 self.addEventListener('install', event => {

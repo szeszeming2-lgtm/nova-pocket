@@ -1,4 +1,4 @@
-window.NP_VERSION='27be149fe8';
+window.NP_VERSION='bb7516d633';
 /* ---- 00-core.js ---- */
 'use strict';
 /* ===== Super One core: helpers, storage, dialogs, files, sound ===== */
@@ -566,6 +566,8 @@ main#view.enter{animation:appIn .3s cubic-bezier(.2,.8,.2,1)}
 .wd{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:14px;min-height:150px;min-width:0;border:1px solid rgba(255,255,255,.22);font:inherit;color:#fff}
 .wd:active{transform:scale(.98)}
 .wd.wide{grid-column:span 2;min-height:0}
+.wd.hmw{position:relative;padding-right:76px}
+.wd.hmw::after{content:"🏠";position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:44px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.25))}
 .wd .k{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;opacity:.8;display:flex;align-items:center;gap:6px}
 .wd .big{font-size:40px;font-weight:300;line-height:1.05;margin-top:6px;font-family:var(--round)}
 .wd .t1{font-size:16px;font-weight:700;margin-top:6px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
@@ -654,7 +656,7 @@ const Home = {
     el.style.background = (WALLS[w] || WALLS.aurora)[1];
   },
   favs() { return Prefs.get('favs', ['calendar', 'notes', 'music', 'games']).filter(id => Apps.byId[id]).slice(0, 4); },
-  widgetsOn() { return Prefs.get('widgets', { weather: true, next: true, todo: true, verse: true, news: true }); },
+  widgetsOn() { const w = Prefs.get('widgets', { weather: true, next: true, todo: true, verse: true, news: true }); if (w.home === undefined) w.home = true; return w; },
 };
 Shell.tile = function (a, cls = 'app') {
   const ico = h('span', { class: 'ico', style: { background: a.color }, html: appIcon(a) });
@@ -694,6 +696,7 @@ Shell.renderHome = function () {
     const s = q.value.trim().toLowerCase(); results.innerHTML = ''; widgets.hidden = rest.hidden = fy.hidden = !!s; if (!s) return;
     const list = h('div', { class: 'list' }), row = (ic, bg, b, sm, go) => h('button', { class: 'li', onclick: go }, h('span', { class: 'ic', style: bg ? { background: bg } : null, html: ic }), h('span', { class: 't' }, h('b', null, b), h('small', null, sm)), h('span', { class: 'chev' }, '›'));
     for (const a of Apps.list) if ((a.name + ' ' + (a.keys || '')).toLowerCase().includes(s)) list.append(row(appIcon(a), a.color, a.name, a.blurb || '', () => this.go(a.id)));
+    if (/^(take me |go |get )?(my )?(home|house)/.test(s) && typeof GoHome !== 'undefined') list.prepend(row('🏠', 'linear-gradient(135deg,#56CCF2,#2F80ED)', 'Take me home', GoHome.isSet() ? 'Directions to your house' : 'Set your home first', () => GoHome.go()));
     if (/^[a-z][a-z '\-]*$/i.test(s)) list.append(row('📖', null, 'Look up “' + s + '”', 'Dictionary', () => this.go('dict', s)));
     if (s.length > 2 && Apps.byId.bible) list.append(row('✝️', null, 'Search the Bible for “' + s + '”', 'Bible', () => this.go('bible', 'search:' + s)));
     if (s.length > 1 && Apps.byId.translate) list.append(row('🌐', null, 'Translate “' + s + '”', 'Translate', () => this.go('translate', s)));
@@ -715,6 +718,8 @@ Shell.fillWidgets = async function (el) {
     on.verse && typeof Bible !== 'undefined' ? Bible.votd().catch(() => null) : null,
     on.news && typeof News !== 'undefined' ? News.peek().catch(() => null) : null,
   ]);
+  if (on.home && typeof GoHome !== 'undefined') { const set = GoHome.isSet(), m = set ? (GoHome.MODES.find(x => x[0] === GoHome.get().mode) || GoHome.MODES[0]) : null;
+    el.append(onLongPress(h('button', { class: 'wd glass wide hmw', onclick: () => GoHome.go() }, h('span', { class: 'k' }, '🏠 Home'), h('div', { class: 't1' }, set ? 'Take me home' : 'Set your home'), h('div', { class: 't2' }, set ? m[1] + ' · one tap for directions · hold to change' : 'Then one tap gives you directions home')), () => GoHome.setup())); }
   if (on.weather) el.append(wx ? card('', '⛅ Weather', 'weather', h('div', { class: 'big' }, wx.icon + ' ' + wx.temp), h('div', { class: 't2' }, '📍 ' + wx.place)) : card('', '⛅ Weather', 'weather', h('div', { class: 'big' }, '☀️'), h('div', { class: 't1' }, 'Pick your place'), h('div', { class: 't2' }, 'Saved for offline')));
   if (on.next) { const d = new Date(); el.append(card('', '📅 ' + fmtDay(d, { weekday: 'short' }), 'calendar', h('div', { class: 'big' }, d.getDate()), h('div', { class: 't1' }, ev ? ev.title : 'Free day'), h('div', { class: 't2' }, ev ? ev.when : 'Nothing planned'))); }
   if (on.todo) { const end = new Date(); end.setHours(23, 59, 59); const open = (due || []).filter(r => !r.done).sort((a, b) => (a.due || '9').localeCompare(b.due || '9')); const nDue = open.filter(r => r.due && Rem.dueDate(r) <= end).length;
@@ -738,6 +743,7 @@ Shell.fillForYou = async function (el) {
     const bl = Prefs.get('bibleLast', null); if (bl && Apps.byId.bible) add(46, '✝️', 'Keep reading the Bible', 'Pick up where you stopped', () => this.go('bible'));
     const comics = (await DB.all('comics').catch(() => [])).filter(c => c.opened && c.kind === 'images' && c.last < c.pages.length - 1).sort((a, b) => b.opened - a.opened)[0]; if (comics) add(54, '💥', 'Keep reading ' + comics.title, 'Page ' + (comics.last + 1) + ' of ' + comics.pages.length, () => this.go('comics'));
     const fresh = Apps.list.filter(a => !opens[a.id]); if (fresh.length) { const a = fresh[hashStr(today) % fresh.length]; add(44, a.icon, 'Try ' + a.name, a.blurb || 'You haven’t opened it yet', () => this.go(a.id)); }
+    if (!Prefs.get('links', []).length && Apps.byId.links) add(50, '🔗', 'Add your music & video links', 'Spotify, YouTube, Netflix, your games…', () => this.go('links'));
     const lv = Prefs.get('learnBest', {}); if (!Object.keys(lv).some(k => k.startsWith('times'))) add(36, '✖️', 'Master a times table', 'Get 10 out of 10 for a star', () => this.go('learn'));
   } catch (e) { console.warn(e); }
   T.sort((a, b) => b.score - a.score);
@@ -754,10 +760,11 @@ function editHome() {
   const favBox = h('div', { class: 'chips' });
   const drawFavs = () => { favBox.innerHTML = ''; for (const a of Apps.list) favBox.append(h('button', { class: 'chip', 'aria-pressed': String(favs.includes(a.id)), onclick: () => { if (favs.includes(a.id)) favs = favs.filter(x => x !== a.id); else if (favs.length < 4) favs.push(a.id); else UI.toast('Pick up to 4 — tap one to remove it first'); Prefs.set('favs', favs); drawFavs(); } }, a.icon + ' ' + a.name)); };
   drawFavs();
-  const W = [['weather', '⛅ Weather'], ['next', '📅 Next up'], ['todo', '☑️ To do'], ['verse', '✝️ Verse of the day'], ['news', '📰 Top story']];
+  const W = [['home', '🏠 Take me home'], ['weather', '⛅ Weather'], ['next', '📅 Next up'], ['todo', '☑️ To do'], ['verse', '✝️ Verse of the day'], ['news', '📰 Top story']];
   const wBox = h('div', { class: 'chips' }, W.map(([k, l]) => { const b = h('button', { class: 'chip', 'aria-pressed': String(!!on[k]) }, l); b.onclick = () => { on[k] = !on[k]; Prefs.set('widgets', on); b.setAttribute('aria-pressed', String(!!on[k])); }; return b; }));
   UI.sheet({ title: 'Edit home screen', onClose: () => { if (!Shell.cur) Shell.route(); }, body: h('div', null, h('div', { class: 'sec', style: { marginTop: 0 } }, 'Wallpaper'), wp, h('div', { class: 'sec' }, 'Favorites dock (up to 4)'), favBox, h('div', { class: 'sec' }, 'Widgets'), wBox) });
 }
+document.addEventListener('home-changed', () => { if (!Shell.cur) Shell.route(); });
 
 /* ---- 10-calendar.js ---- */
 /* ===== Calendar ===== */
@@ -1802,7 +1809,8 @@ Apps.reg({
         for (const f of files) { const dur = await new Promise(r => { const a = new Audio(), u = URL.createObjectURL(f); a.onloadedmetadata = () => { r(a.duration); URL.revokeObjectURL(u); }; a.onerror = () => r(0); a.src = u; setTimeout(() => r(0), 5000); }); await DB.put('songs', { id: uid(), title: f.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' '), blob: f, type: f.type, dur, size: f.size, created: Date.now(), src: 'import' }); n++; }
         UI.toast('Added ' + n + ' song' + (n > 1 ? 's' : '')); draw();
       };
-      el.append(h('div', { class: 'row mb' }, h('button', { class: 'btn pri', onclick: () => addLink(draw) }, '🔗 Add from a link'), h('button', { class: 'btn', onclick: add }, '＋ From Files')), h('p', { class: 'tiny muted', style: { margin: '-4px 2px 10px' } }, 'Paste a link to a song file (mp3, m4a…). I save it for offline if the website allows, or keep the link to play when you’re online.'), list);
+      if (typeof Links !== 'undefined') el.append(Links.row('Music', '🎧 Your music apps'));
+      el.append(h('div', { class: 'sec' }, '🎵 My songs'), h('div', { class: 'row mb' }, h('button', { class: 'btn pri', onclick: () => addLink(draw) }, '🔗 Add from a link'), h('button', { class: 'btn', onclick: add }, '＋ From Files')), h('p', { class: 'tiny muted', style: { margin: '-4px 2px 10px' } }, 'Paste a link to a song file (mp3, m4a…). I save it for offline if the website allows, or keep the link to play when you’re online.'), list);
       async function draw() {
         const all = (await DB.all('songs')).sort((a, b) => a.title.localeCompare(b.title)); list.innerHTML = '';
         if (!all.length) { list.append(UI.empty('🎧', 'No songs yet', 'Add music files from Files, or make your own with Piano or Beats and save them here.')); return; }
@@ -2315,11 +2323,12 @@ Apps.reg({
       v.innerHTML = ''; ctx.setTitle('Videos'); ctx.setBack(null); if (urlNow) { URL.revokeObjectURL(urlNow); urlNow = null; }
       ctx.setActions(h('button', { class: 'btn ghost sm', onclick: add }, '＋ Add'));
       const all = (await DB.all('media')).filter(m => m.kind === 'video').sort((a, b) => b.created - a.created);
-      if (!all.length) { v.append(UI.empty('🎬', 'No videos yet', 'Add videos from your library, record one, or paste a link to a video file.'), h('div', { class: 'center' }, h('button', { class: 'btn pri', onclick: add }, '＋ Add a video'))); return; }
+      const watch = () => typeof Links !== 'undefined' ? Links.row('Videos', '📺 Watch online') : '';
+      if (!all.length) { v.append(UI.empty('🎬', 'No videos yet', 'Add videos from your library, record one, or paste a link to a video file.'), h('div', { class: 'center' }, h('button', { class: 'btn pri', onclick: add }, '＋ Add a video')), watch()); return; }
       const thumb = m => h('div', { class: 'vthumb' }, m.thumb ? h('img', { src: m.thumb, alt: '' }) : '🎬', m.dur ? h('span', { class: 'd' }, fmtDur(m.dur)) : null, pos(m.id) && m.dur ? h('span', { class: 'pg', style: { width: (100 * pos(m.id) / m.dur) + '%' } }) : null);
       const cont = all.filter(m => pos(m.id));
       if (cont.length) v.append(h('div', { class: 'sec', style: { marginTop: '4px' } }, '▶️ Continue watching'), h('div', { class: 'vrow' }, cont.map(m => h('button', { class: 'vcard', onclick: () => play(m, all) }, thumb(m), h('b', null, m.name || 'Video'), h('small', null, fmtDur(m.dur - pos(m.id)) + ' left')))));
-      v.append(h('div', { class: 'sec' }, 'All videos · ' + all.length), h('div', { class: 'vgrid' }, all.map(m => onLongPress(h('button', { class: 'vitem', onclick: () => play(m, all) }, thumb(m), h('b', null, m.name || 'Video'), h('small', null, fmtDay(new Date(m.created)) + (m.size ? ' · ' + fmtSize(m.size) : ''))), () => opts(m)))),
+      v.append(watch(), h('div', { class: 'sec' }, 'All videos · ' + all.length), h('div', { class: 'vgrid' }, all.map(m => onLongPress(h('button', { class: 'vitem', onclick: () => play(m, all) }, thumb(m), h('b', null, m.name || 'Video'), h('small', null, fmtDay(new Date(m.created)) + (m.size ? ' · ' + fmtSize(m.size) : ''))), () => opts(m)))),
         h('p', { class: 'tiny muted center mt' }, 'Press and hold a video for options.'));
     }
     function add() {
@@ -4124,49 +4133,113 @@ EXTRA_GAMES.hopper = el => {
 };
 
 /* ---- 37-links.js ---- */
-/* ===== Links: your favorite websites in one place ===== */
+/* ===== Links: your favorite websites and apps in one place, with recommended ones to add in a tap ===== */
 addCSS(`
 .lgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 8px}
 @media (min-width:640px){.lgrid{grid-template-columns:repeat(6,minmax(0,1fr))}}
-.lnk{display:flex;flex-direction:column;align-items:center;gap:6px;border:0;background:none;padding:0;min-width:0;color:var(--ink)}
-.lnk .lg{width:58px;height:58px;border-radius:16px;display:grid;place-items:center;font-size:28px;color:#fff;font-weight:800;box-shadow:var(--shadow)}
+.lnk{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;border:0;background:none;padding:0;min-width:0;color:var(--ink)}
+.lnk .lg{position:relative;width:58px;height:58px;border-radius:16px;display:grid;place-items:center;font-size:28px;color:#fff;font-weight:800;box-shadow:var(--shadow)}
 .lnk b{font-size:12px;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lnk .plus{position:absolute;right:-6px;top:-6px;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:15px;font-weight:900;line-height:22px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.lnk .plus.on{background:#22A55A}
+.lrow{display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;padding:8px 2px 6px;margin:0 -2px}
+.lrow::-webkit-scrollbar{display:none}
+.lrow .lnk{flex:0 0 68px}
+.recbox{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px 12px 16px;margin-top:8px}
+.recbox .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+.recbox .chips::-webkit-scrollbar{display:none}
+.recbox .chip{flex:0 0 auto}
+.recbox .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
 `);
+const LINK_CATS = [['Music', '🎵'], ['Videos', '🎬'], ['Games', '🎮'], ['My games', '⭐'], ['Comics', '💥'], ['Learning', '🧠'], ['Cubing', '🧊'], ['News', '📰'], ['Tools', '🔧']];
+// [group, emoji, name, web address, app link (opens the phone app if you have it), short note]
 const LINK_IDEAS = [
-  ['Learning', '🧠', 'Khan Academy', 'https://www.khanacademy.org'], ['Learning', '🐱', 'Scratch (make games)', 'https://scratch.mit.edu'], ['Learning', '🦉', 'Duolingo', 'https://www.duolingo.com'],
-  ['Learning', '🚀', 'NASA Space Place', 'https://spaceplace.nasa.gov'], ['Learning', '🦁', 'Nat Geo Kids', 'https://kids.nationalgeographic.com'], ['Learning', '🧩', 'Code.org', 'https://code.org'],
-  ['Cubing', '🧊', 'J Perm (cube tutorials)', 'https://jperm.net'], ['Cubing', '⏱️', 'csTimer', 'https://cstimer.net'], ['Cubing', '🏆', 'World Cube Association', 'https://www.worldcubeassociation.org'],
-  ['Fun', '▶️', 'YouTube Kids', 'https://www.youtubekids.com'], ['Fun', '🎮', 'Roblox', 'https://www.roblox.com'], ['Fun', '🧱', 'Minecraft', 'https://www.minecraft.net'],
-  ['Tools', '🔍', 'Google', 'https://www.google.com'], ['Tools', '📖', 'Wikipedia', 'https://en.wikipedia.org'], ['Tools', '🗺️', 'Google Maps', 'https://maps.google.com'],
+  ['Music', '🟢', 'Spotify', 'https://open.spotify.com', 'spotify://', 'Songs, playlists, podcasts'],
+  ['Music', '🎵', 'Apple Music', 'https://music.apple.com', 'music://', 'The Music app'],
+  ['Music', '▶️', 'YouTube Music', 'https://music.youtube.com', 'youtubemusic://', 'Songs and music videos'],
+  ['Music', '☁️', 'SoundCloud', 'https://soundcloud.com', 'soundcloud://', 'New artists and remixes'],
+  ['Music', '📻', 'Radio Garden', 'https://radio.garden', '', 'Live radio from the whole world'],
+  ['Music', '🎹', 'Chrome Music Lab', 'https://musiclab.chromeexperiments.com', '', 'Make music in fun ways'],
+  ['Music', '🍁', 'CBC Music', 'https://www.cbc.ca/music', '', 'Canadian radio and playlists'],
+  ['Videos', '📺', 'YouTube', 'https://m.youtube.com', 'youtube://', 'Videos of everything'],
+  ['Videos', '🧒', 'YouTube Kids', 'https://www.youtubekids.com', '', 'Videos made for kids'],
+  ['Videos', '🍿', 'Netflix', 'https://www.netflix.com', 'nflx://', 'Shows and movies'],
+  ['Videos', '🏰', 'Disney+', 'https://www.disneyplus.com', 'disneyplus://', 'Disney, Pixar, Marvel, Star Wars'],
+  ['Videos', '📦', 'Prime Video', 'https://www.primevideo.com', 'aiv://', 'Shows and movies'],
+  ['Videos', '🐻', 'PBS Kids Video', 'https://pbskids.org/videos', '', 'Free kids’ shows'],
+  ['Videos', '💡', 'TED-Ed', 'https://ed.ted.com', '', 'Short videos that teach'],
+  ['Videos', '🚀', 'NASA+', 'https://plus.nasa.gov', '', 'Free space videos and launches'],
+  ['Games', '🟥', 'Roblox', 'https://www.roblox.com', 'roblox://', 'Play and make games'],
+  ['Games', '🧱', 'Minecraft', 'https://www.minecraft.net', 'minecraft://', 'Build anything'],
+  ['Games', '🧮', 'Coolmath Games', 'https://www.coolmathgames.com', '', 'Brain games and puzzles'],
+  ['Games', '♟️', 'Chess.com', 'https://www.chess.com', '', 'Play chess with people'],
+  ['Games', '♞', 'Lichess', 'https://lichess.org', '', 'Free chess, no ads'],
+  ['Learning', '🧠', 'Khan Academy', 'https://www.khanacademy.org', '', 'Free lessons for every subject'], ['Learning', '🐱', 'Scratch', 'https://scratch.mit.edu', '', 'Make your own games'], ['Learning', '🦉', 'Duolingo', 'https://www.duolingo.com', 'duolingo://', 'Learn a language'],
+  ['Learning', '🚀', 'NASA Space Place', 'https://spaceplace.nasa.gov', '', 'Space for kids'], ['Learning', '🦁', 'Nat Geo Kids', 'https://kids.nationalgeographic.com', '', 'Animals and the world'], ['Learning', '🧩', 'Code.org', 'https://code.org', '', 'Learn to code'],
+  ['Cubing', '🧊', 'J Perm', 'https://jperm.net', '', 'Cube tutorials'], ['Cubing', '⏱️', 'csTimer', 'https://cstimer.net', '', 'Speedcubing timer'], ['Cubing', '🏆', 'World Cube Association', 'https://www.worldcubeassociation.org', '', 'Competitions and records'],
+  ['News', '🍁', 'CBC Kids News', 'https://www.cbc.ca/kidsnews', '', 'News for kids in Canada'], ['News', '🌍', 'BBC Newsround', 'https://www.bbc.co.uk/newsround', '', 'World news for kids'], ['News', '📰', 'Time for Kids', 'https://www.timeforkids.com', '', 'News stories for kids'], ['News', '🛰️', 'NASA', 'https://www.nasa.gov', '', 'Space news'],
+  ['Tools', '🔍', 'Google', 'https://www.google.com', '', 'Search the web'], ['Tools', '📖', 'Wikipedia', 'https://en.wikipedia.org', '', 'The free encyclopedia'], ['Tools', '🗺️', 'Google Maps', 'https://maps.google.com', 'comgooglemaps://', 'Maps and directions'], ['Tools', '🌐', 'Google Translate', 'https://translate.google.com', '', 'Translate anything'],
 ];
+const Links = {
+  get: () => Prefs.get('links', []), set: l => Prefs.set('links', l),
+  ideas() {
+    const all = LINK_IDEAS.slice();
+    if (typeof MY_GAMES !== 'undefined') for (const [e, n, d, u] of MY_GAMES) all.push(['My games', e, n, u, '', d]);
+    if (typeof COMIC_SITES !== 'undefined') for (const [e, n, d, u] of COMIC_SITES.slice(0, 5)) all.push(['Comics', e, n, u, '', d]);
+    return all;
+  },
+  col: name => 'hsl(' + (hashStr(name.toLowerCase()) % 360) + ' 62% 50%)',
+  has(url) { return this.get().some(l => l.url === url); },
+  add([g, e, n, u, app]) { if (this.has(u)) return false; this.set(this.get().concat({ id: uid(), name: n, url: u, emoji: e, group: g, app: app || '' })); return true; },
+  open(l) { if (!navigator.onLine) UI.toast('Websites need internet'); if (l.app) openOut(l.app, l.url); else window.open(l.url, '_blank', 'noopener'); },
+  tile(name, emoji, onclick, extra) { return h('button', { class: 'lnk', onclick, 'aria-label': name }, h('span', { class: 'lg', style: { background: this.col(name) } }, emoji || name[0].toUpperCase(), extra || null), h('b', null, name)); },
+  // a row of recommended apps/sites that open in one tap (used in Music and Videos)
+  row(group, title) {
+    const list = this.ideas().filter(x => x[0] === group);
+    return h('div', null, h('div', { class: 'sec row nw', style: { justifyContent: 'space-between', alignItems: 'center' } }, h('span', null, title), h('button', { class: 'btn ghost sm', onclick: () => { Prefs.set('linkCat', group); Shell.go('links', 'recs'); } }, '＋ Save to Links')),
+      h('div', { class: 'lrow' }, list.map(([g, e, n, u, app]) => this.tile(n, e, () => this.open({ url: u, app })))),
+      h('p', { class: 'tiny muted', style: { margin: '0 2px 6px' } }, 'Opens the app if you have it, or the website. Needs internet.'));
+  },
+};
 Apps.reg({
-  id: 'links', name: 'Links', icon: '🔗', color: 'linear-gradient(135deg,#43CEA2,#185A9D)', group: 'tools', keys: 'bookmarks websites favorites urls shortcuts', blurb: 'Your favorite websites',
+  id: 'links', name: 'Links', icon: '🔗', color: 'linear-gradient(135deg,#43CEA2,#185A9D)', group: 'tools', keys: 'bookmarks websites favorites urls shortcuts music video apps recommended', blurb: 'Your favorite websites and apps',
   mount(v, ctx) {
-    const get = () => Prefs.get('links', []), set = l => Prefs.set('links', l);
-    const col = name => 'hsl(' + (hashStr(name.toLowerCase()) % 360) + ' 62% 50%)';
+    const get = () => Links.get(), set = l => Links.set(l);
     function draw() {
-      v.innerHTML = ''; const all = get(); ctx.setActions(h('button', { class: 'btn ghost sm', onclick: () => edit(null) }, '＋ Add'));
-      const q = h('input', { type: 'search', placeholder: 'Search your links' }), box = h('div');
-      v.append(h('div', { class: 'search mb' }, q), box);
+      const y = scrollY; v.innerHTML = ''; const all = get(); ctx.setActions(h('button', { class: 'btn ghost sm', onclick: () => edit(null) }, '＋ Add'));
+      const q = h('input', { type: 'search', placeholder: 'Search your links' }), box = h('div'), recs = h('div');
+      if (all.length) v.append(h('div', { class: 'search mb' }, q));
+      v.append(box, recs);
       const paint = () => {
         box.innerHTML = ''; const s = q.value.trim().toLowerCase(), list = all.filter(l => !s || (l.name + ' ' + l.url + ' ' + (l.group || '')).toLowerCase().includes(s));
-        if (!all.length) box.append(UI.empty('🔗', 'No links yet', 'Save websites you visit a lot, or add some good ones to start.'), h('div', { class: 'center' }, h('button', { class: 'btn pri', onclick: ideas }, '✨ Add some good sites')));
+        if (!all.length) box.append(UI.empty('🔗', 'No links yet', 'Tap any app below to add it — music, videos, your games and more. Or tap ＋ Add to paste your own.'));
         const groups = {}; for (const l of list) (groups[l.group || 'My links'] = groups[l.group || 'My links'] || []).push(l);
-        for (const gname in groups) box.append(h('div', { class: 'sec' }, gname), h('div', { class: 'lgrid' }, groups[gname].map(l => onLongPress(h('button', { class: 'lnk', onclick: () => { if (!navigator.onLine) UI.toast('Websites need internet'); window.open(l.url, '_blank', 'noopener'); } }, h('span', { class: 'lg', style: { background: col(l.name) } }, l.emoji || l.name[0].toUpperCase()), h('b', null, l.name)), () => edit(l)))));
-        if (all.length) box.append(h('div', { class: 'row mt2' }, h('button', { class: 'btn sm', onclick: ideas }, '✨ More good sites'), h('span', { class: 'sp tiny muted' }, 'Press and hold a link to change it.')));
+        for (const gname in groups) box.append(h('div', { class: 'sec' }, gname), h('div', { class: 'lgrid' }, groups[gname].map(l => onLongPress(Links.tile(l.name, l.emoji, () => Links.open(l)), () => edit(l)))));
+        if (all.length) box.append(h('p', { class: 'tiny muted mt' }, 'Press and hold a link to change or delete it.'));
       };
-      q.addEventListener('input', paint); paint();
+      q.addEventListener('input', paint); paint(); paintRecs(recs); scrollTo(0, y);
+    }
+    // recommended links, by group: tap to add, tap again to open
+    function paintRecs(el) {
+      el.innerHTML = ''; const ideas = Links.ideas(); let cat = Prefs.get('linkCat', 'Music'); if (!LINK_CATS.some(c => c[0] === cat)) cat = 'Music';
+      const chips = h('div', { class: 'chips', role: 'tablist' }), grid = h('div', { class: 'lgrid mt' }), addAll = h('button', { class: 'btn sm' }), note = h('p', { class: 'tiny muted', style: { margin: '10px 2px 0' } });
+      const show = () => {
+        chips.innerHTML = ''; for (const [c, e] of LINK_CATS) chips.append(h('button', { class: 'chip', role: 'tab', 'aria-pressed': String(c === cat), onclick: () => { cat = c; Prefs.set('linkCat', c); show(); } }, e + ' ' + c));
+        const list = ideas.filter(x => x[0] === cat), left = list.filter(x => !Links.has(x[3]));
+        grid.innerHTML = ''; for (const it of list) { const on = Links.has(it[3]); grid.append(Links.tile(it[2], it[1], () => { if (Links.has(it[3])) return Links.open({ url: it[3], app: it[4] }); Links.add(it); Sfx.good(); UI.toast('Added ' + it[2] + ' ✓'); draw(); }, h('span', { class: 'plus' + (on ? ' on' : '') }, on ? '✓' : '＋'))); }
+        addAll.hidden = !left.length; addAll.textContent = '＋ Add all ' + left.length; addAll.onclick = () => { left.forEach(x => Links.add(x)); UI.toast('Added ' + left.length + ' links ✓'); draw(); };
+        note.textContent = cat === 'My games' ? 'Your own games. Tap ＋ to keep them here.' : '＋ adds it to your links. ✓ means it’s already added — tap to open.';
+      };
+      show();
+      el.append(h('div', { class: 'sec row nw', style: { justifyContent: 'space-between', alignItems: 'center' } }, h('span', null, '✨ Recommended for you'), addAll), h('div', { class: 'recbox' }, chips, grid, note));
+      if (ctx.param === 'recs' && get().length) { ctx.param = null; setTimeout(() => el.scrollIntoView({ block: 'start' }), 60); }
     }
     function edit(l0) {
       const l = Object.assign({ name: '', url: '', emoji: '', group: '' }, l0 || {});
       const n = h('input', { type: 'text', value: l.name, placeholder: 'Name' }), u = h('input', { type: 'url', value: l.url, placeholder: 'https://…', autocapitalize: 'off' }), e = h('input', { type: 'text', value: l.emoji, placeholder: '🙂', maxlength: 4, style: { width: '70px', textAlign: 'center', fontSize: '22px' } }), gr = h('input', { type: 'text', value: l.group, placeholder: 'Group (optional, e.g. School)' });
       UI.sheet({ title: l0 ? 'Edit link' : 'Add a link', body: h('div', { class: 'stack' }, h('div', { class: 'row nw' }, e, n), u, gr, l0 ? h('button', { class: 'btn bad sm', onclick: ev => { set(get().filter(x => x.id !== l.id)); ev.target.closest('.scrim').remove(); draw(); } }, 'Delete link') : null),
-        actions: [{ label: 'Cancel' }, { label: 'Save', cls: 'pri', onClick: c => { let url = u.value.trim(); if (!url) return UI.toast('Paste a web address'); if (!/^[a-z]+:/i.test(url)) url = 'https://' + url; const rec = Object.assign(l, { id: l.id || uid(), name: n.value.trim() || url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0], url, emoji: e.value.trim(), group: gr.value.trim() }); set(get().filter(x => x.id !== rec.id).concat(rec)); c(); draw(); } }] });
+        actions: [{ label: 'Cancel' }, { label: 'Save', cls: 'pri', onClick: c => { let url = u.value.trim(); if (!url) return UI.toast('Paste a web address'); if (!/^[a-z]+:/i.test(url)) url = 'https://' + url; const rec = Object.assign(l, { id: l.id || uid(), name: n.value.trim() || url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0], url, emoji: e.value.trim(), group: gr.value.trim() }); if (l0 && l0.url !== url) rec.app = ''; set(get().filter(x => x.id !== rec.id).concat(rec)); c(); draw(); } }] });
       if (!l0 && navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(t => { if (/^https?:\/\//.test(t) && !u.value) u.value = t.trim(); }).catch(() => { });
-    }
-    function ideas() {
-      const have = new Set(get().map(l => l.url));
-      UI.sheet({ title: 'Good sites to add', body: h('div', { class: 'list' }, LINK_IDEAS.map(([g, e, n, u]) => { const b = h('button', { class: 'li', disabled: have.has(u) }, h('span', { class: 'ic' }, e), h('span', { class: 't' }, h('b', null, n), h('small', null, g)), h('span', { class: 'chev' }, have.has(u) ? '✓' : '＋')); b.onclick = () => { set(get().concat({ id: uid(), name: n, url: u, emoji: e, group: g })); b.disabled = true; b.lastChild.textContent = '✓'; }; return b; })), onClose: draw });
     }
     draw();
   },
@@ -4391,14 +4464,78 @@ const WorldData = {
 const geoHere = () => new Promise((res, rej) => { if (!navigator.geolocation) return rej(new Error('No location on this device')); navigator.geolocation.getCurrentPosition(p => res(p.coords), e => rej(new Error(e.code === 1 ? 'Location is turned off for Super One. Allow it in Settings → Privacy → Location.' : 'Could not find you. Try near a window or outside.')), { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }); });
 const haversine = (a, b, c, d) => { const R = 6371, r = Math.PI / 180, x = Math.sin((c - a) * r / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin((d - b) * r / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
 const fmtKm = km => km < 1 ? Math.round(km * 1000) + ' m' : km < 100 ? km.toFixed(1) + ' km' : Math.round(km).toLocaleString() + ' km';
+/* ===== Take me home: one tap opens directions to your house. The address is kept only on this device. ===== */
+addCSS(`
+.hmarrow{width:150px;height:150px;margin:6px auto 2px;display:block}
+.hmdist{text-align:center;font-size:30px;font-weight:800;font-family:var(--round);margin-top:4px}
+.hmdir{text-align:center;font-size:16px;color:var(--muted);margin-bottom:8px}
+`);
+const GoHome = {
+  MODES: [['driving', '🚗 Car', 'd'], ['walking', '🚶 Walk', 'w'], ['transit', '🚌 Bus/train', 'r']],
+  get() { return Prefs.get('home', null); },
+  isSet() { const s = this.get(); return !!(s && (s.addr || s.lat != null)); },
+  dest() { const s = this.get(); return s.lat != null ? s.lat.toFixed(6) + ',' + s.lon.toFixed(6) : s.addr; },
+  where() { const s = this.get(); return s ? (s.addr || 'Your saved GPS spot') : ''; },
+  bearing(a, b, c, d) { const r = Math.PI / 180, y = Math.sin((d - b) * r) * Math.cos(c * r), x = Math.cos(a * r) * Math.sin(c * r) - Math.sin(a * r) * Math.cos(c * r) * Math.cos((d - b) * r); return (Math.atan2(y, x) / r + 360) % 360; },
+  compass(deg) { return ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'][Math.round(deg / 45) % 8]; },
+  // open the map app with the route from where you are now to home
+  launch() {
+    const s = this.get(), t = encodeURIComponent(this.dest()), m = this.MODES.find(x => x[0] === s.mode) || this.MODES[0];
+    UI.toast('🏠 Opening directions home…');
+    if (s.app === 'apple') { window.open('https://maps.apple.com/?daddr=' + t + '&dirflg=' + m[2], '_blank', 'noopener'); return; }
+    openOut('comgooglemaps://?daddr=' + t + '&directionsmode=' + m[0], 'https://www.google.com/maps/dir/?api=1&destination=' + t + '&travelmode=' + m[0] + '&dir_action=navigate');
+  },
+  go() {
+    if (!this.isSet()) return this.setup(() => this.go());
+    if (navigator.onLine) return this.launch();
+    this.offline();
+  },
+  setup(after) {
+    const s = Object.assign({ addr: '', lat: null, lon: null, mode: 'driving', app: 'google' }, this.get() || {});
+    const addr = h('input', { type: 'text', value: s.addr, placeholder: 'House number, street, city', autocomplete: 'street-address', enterkeyhint: 'done' });
+    const gpsNote = h('div', { class: 'tiny muted' }), gpsB = h('button', { class: 'btn' }, '📍 I’m home right now — save this spot');
+    const paintGps = () => { gpsNote.textContent = s.lat != null ? '✓ GPS spot saved. This is the most exact, and it gives you an arrow home even with no internet.' : 'Most exact: tap this while you are at home.'; };
+    gpsB.onclick = async () => { gpsB.disabled = true; gpsB.textContent = 'Finding you…'; try { const c = await geoHere(); s.lat = c.latitude; s.lon = c.longitude; UI.toast('📍 Home spot saved (±' + fmtKm((c.accuracy || 30) / 1000) + ')'); } catch (e) { UI.toast(e.message, 4500); } gpsB.disabled = false; gpsB.textContent = '📍 I’m home right now — save this spot'; paintGps(); };
+    paintGps();
+    const body = h('div', { class: 'stack' },
+      h('label', { class: 'f' }, h('span', null, 'Your home address'), addr),
+      h('div', { class: 'stack', style: { gap: '6px' } }, gpsB, gpsNote),
+      h('div', { class: 'sec', style: { margin: '6px 0 0' } }, 'How do you go home?'), UI.seg(this.MODES.map(m => [m[0], m[1]]), s.mode, v => { s.mode = v; }),
+      h('div', { class: 'sec', style: { margin: '6px 0 0' } }, 'Open in'), UI.seg([['google', 'Google Maps'], ['apple', 'Apple Maps']], s.app, v => { s.app = v; }),
+      h('p', { class: 'tiny muted' }, '🔒 Saved only on this phone, never on the website. When you tap “Take me home”, the address goes to the map app so it can plan the route.'),
+      this.isSet() ? h('button', { class: 'btn bad sm', onclick: e => { localStorage.removeItem('np.home'); e.target.closest('.scrim').remove(); UI.toast('Home removed'); GoHome.changed(); } }, 'Forget my home') : null);
+    UI.sheet({ title: '🏠 My home', body, actions: [{ label: 'Cancel' }, { label: after ? 'Save & go' : 'Save', cls: 'pri', onClick: c => {
+      s.addr = addr.value.trim(); if (!s.addr && s.lat == null) return UI.toast('Type your address, or tap “I’m home right now”');
+      Prefs.set('home', { addr: s.addr, lat: s.lat, lon: s.lon, mode: s.mode, app: s.app, at: Date.now() }); c(); UI.toast('🏠 Home saved'); this.changed(); if (after) after(); } }] });
+  },
+  changed() { document.dispatchEvent(new CustomEvent('home-changed')); },
+  // no internet: show distance and an arrow pointing home (needs the saved GPS spot)
+  offline() {
+    const s = this.get(), arrow = h('div', { html: '<svg class="hmarrow" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="var(--surface2)" stroke="var(--line)" stroke-width="2"/><g class="nl"><text x="50" y="15" text-anchor="middle" font-size="10" font-weight="800" fill="var(--muted)">N</text></g><g class="ar"><path d="M50 16 L72 70 L50 58 L28 70 Z" fill="#FF3D7F" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></g><circle cx="50" cy="50" r="3" fill="#fff"/></svg>' });
+    const dist = h('div', { class: 'hmdist' }, s.lat != null ? '…' : ''), dir = h('div', { class: 'hmdir' }), svg = arrow.firstChild, arG = svg.querySelector('.ar'), nG = svg.querySelector('.nl');
+    let watch = null, heading = null, brg = null; const onOri = e => { const hd = e.webkitCompassHeading != null ? e.webkitCompassHeading : (e.absolute && e.alpha != null ? 360 - e.alpha : null); if (hd != null) { heading = hd; turn(); } };
+    const turn = () => { if (brg == null) return; const hd = heading || 0; arG.setAttribute('transform', 'rotate(' + ((brg - hd + 360) % 360).toFixed(1) + ' 50 50)'); nG.setAttribute('transform', 'rotate(' + ((360 - hd) % 360).toFixed(1) + ' 50 50)'); };
+    const compB = h('button', { class: 'btn sm' }, '🧭 Point my phone');
+    compB.onclick = async () => { try { if (window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission) { if (await DeviceOrientationEvent.requestPermission() !== 'granted') return UI.toast('Compass not allowed'); } addEventListener('deviceorientationabsolute', onOri); addEventListener('deviceorientation', onOri); compB.textContent = '🧭 Hold your phone flat'; } catch (e) { UI.toast('No compass on this device'); } };
+    const body = h('div', null, h('div', { class: 'note-banner' }, '📴 No internet, so the map app can’t plan the route right now.'));
+    if (s.lat != null) {
+      body.append(arrow, dist, dir, h('div', { class: 'center' }, compB), h('p', { class: 'tiny muted mt center' }, 'The arrow points the straight-line way home. With the compass on, turn until it points up, then walk that way.'));
+      const upd = p => { const c = p.coords; brg = this.bearing(c.latitude, c.longitude, s.lat, s.lon); const km = haversine(c.latitude, c.longitude, s.lat, s.lon);
+        dist.textContent = km < 0.04 ? 'You’re home! 🎉' : fmtKm(km); dir.textContent = km < 0.04 ? '' : 'Home is to the ' + this.compass(brg) + ' (straight line)'; turn(); };
+      if (navigator.geolocation) watch = navigator.geolocation.watchPosition(upd, e => { dist.textContent = '—'; dir.textContent = e.code === 1 ? 'Location is off for Super One. Turn it on in Settings → Privacy → Location.' : 'Can’t find you yet. Try near a window or outside.'; }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+    } else body.append(h('p', { class: 'mt' }, 'Tip: next time you are at home, open 🏠 My home and tap “I’m home right now”. Then this screen shows an arrow and the distance home, even with no internet.'));
+    UI.sheet({ title: '🏠 Take me home', body, onClose: () => { if (watch != null) navigator.geolocation.clearWatch(watch); removeEventListener('deviceorientationabsolute', onOri); removeEventListener('deviceorientation', onOri); },
+      actions: [{ label: '✏️ My home', onClick: c => { c(); this.setup(); } }, { label: 'Open map app anyway', cls: 'pri', onClick: c => { c(); this.launch(); } }] });
+  },
+};
 Apps.reg({
-  id: 'map', name: 'Map', icon: '🗺️', color: 'linear-gradient(135deg,#56CCF2,#2F80ED)', group: 'day', keys: 'world countries gps location places globe geography', blurb: 'World map + your GPS spot',
+  id: 'map', name: 'Map', icon: '🗺️', color: 'linear-gradient(135deg,#56CCF2,#2F80ED)', group: 'day', keys: 'world countries gps location places globe geography home house directions take me home navigate', blurb: 'World map + your GPS spot',
   async mount(v, ctx) {
     const cv = h('canvas', { 'aria-label': 'World map. Drag to move, pinch or use + and − to zoom, tap a country.' }), info = h('div', { class: 'mapinfo' });
     const box = h('div', { class: 'mapbox' }, cv, h('div', { class: 'mapctl' }, h('button', { 'aria-label': 'Zoom in', onclick: () => zoomAt(1.6) }, '+'), h('button', { 'aria-label': 'Zoom out', onclick: () => zoomAt(1 / 1.6) }, '−'), h('button', { 'aria-label': 'Show my location', onclick: locate }, '📍')), info);
     const search = h('input', { type: 'search', placeholder: 'Find a country', 'aria-label': 'Find a country' });
-    const placesBox = h('div');
-    v.append(h('div', { class: 'search mb' }, search), box, h('div', { class: 'row mt' }, h('button', { class: 'btn', onclick: locate }, '📍 Where am I?'), h('button', { class: 'btn', onclick: () => addPlace() }, '⭐ Save a place'), h('button', { class: 'btn', onclick: () => gmaps('') }, '🌍 Google Maps')), placesBox,
+    const placesBox = h('div'), homeBox = h('div');
+    v.append(h('button', { class: 'btn pri mb', style: { width: '100%', fontSize: '18px', minHeight: '52px' }, onclick: () => GoHome.go() }, '🏠 Take me home'), h('div', { class: 'search mb' }, search), box, h('div', { class: 'row mt' }, h('button', { class: 'btn', onclick: locate }, '📍 Where am I?'), h('button', { class: 'btn', onclick: () => addPlace() }, '⭐ Save a place'), h('button', { class: 'btn', onclick: () => gmaps('') }, '🌍 Google Maps')), homeBox, placesBox,
       h('p', { class: 'tiny muted mt' }, 'Your phone’s GPS works without internet. This map shows countries; for streets and directions tap 🌍 Google Maps (needs internet).'));
     let D; try { D = await WorldData.load(); } catch (e) { box.replaceWith(UI.empty('🌐', 'Map not saved yet', 'Open Super One once with internet so it can save the world map.')); return; }
     const g = cv.getContext('2d'); let W = 0, H = 0, dpr = 1, s = 1, tx = 0, ty = 0, sel = null, me = null, places = [], raf = 0;
@@ -4425,6 +4562,7 @@ Apps.reg({
         const fs = clamp(wpx / c.name.length * 1.1, 9, 15); g.font = '650 ' + fs + 'px ' + getComputedStyle(document.body).fontFamily; g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.8)'; g.strokeText(c.name, px, py); g.fillStyle = '#2B2F3A'; g.fillText(c.name, px, py);
       }
       g.font = '22px system-ui'; for (const p of places) { const [x, y] = WorldData.merc(p.lon, p.lat).map(q => q * D.S); const px = x * s + tx, py = y * s + ty; if (px < -20 || px > W + 20 || py < -20 || py > H + 20) continue; g.textBaseline = 'bottom'; g.fillText('📍', px, py + 4); g.font = '700 12px ' + getComputedStyle(document.body).fontFamily; g.lineWidth = 3; g.strokeStyle = '#fff'; g.strokeText(p.name, px, py + 14); g.fillStyle = '#B91C1C'; g.fillText(p.name, px, py + 14); g.font = '22px system-ui'; }
+      const hm = GoHome.get(); if (hm && hm.lat != null) { const [x, y] = WorldData.merc(hm.lon, hm.lat).map(q => q * D.S); const px = x * s + tx, py = y * s + ty; if (px > -20 && px < W + 20 && py > -20 && py < H + 20) { g.font = '24px system-ui'; g.textBaseline = 'bottom'; g.fillText('🏠', px, py + 6); } }
       if (me) { const [x, y] = WorldData.merc(me.lon, me.lat).map(q => q * D.S); const px = x * s + tx, py = y * s + ty; g.fillStyle = 'rgba(10,132,255,.18)'; g.beginPath(); g.arc(px, py, Math.max(10, me.acc / 1000 / 40075 * D.S * s * Math.cos(me.lat * Math.PI / 180) ** -1), 0, 6.283); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.arc(px, py, 9, 0, 6.283); g.fill(); g.fillStyle = '#0A84FF'; g.beginPath(); g.arc(px, py, 6.5, 0, 6.283); g.fill(); }
       const [lo, la] = WorldData.unmerc((W / 2 - tx) / s / D.S, (H / 2 - ty) / s / D.S);
       info.innerHTML = ''; info.append(h('span', null, 'Center: ' + Math.abs(la).toFixed(1) + '°' + (la >= 0 ? 'N' : 'S') + ', ' + Math.abs(lo).toFixed(1) + '°' + (lo >= 0 ? 'E' : 'W') + ' · zoom ' + (s / minS()).toFixed(1) + '×'));
@@ -4468,7 +4606,7 @@ Apps.reg({
     }
     async function locate() {
       UI.toast('Finding you…');
-      try { const c = await geoHere(); me = { lat: c.latitude, lon: c.longitude, acc: c.accuracy || 50 }; const [x, y] = WorldData.merc(me.lon, me.lat).map(q => q * D.S); s = Math.max(s, minS() * 12); tx = W / 2 - x * s; ty = H / 2 - y * s; clampView(); draw(); const k = WorldData.hit(D, x, y); UI.toast('You are ' + (k ? 'in ' + k.name : 'here') + ' (±' + fmtKm(me.acc / 1000) + ')', 3500); paintPlaces(); }
+      try { const c = await geoHere(); me = { lat: c.latitude, lon: c.longitude, acc: c.accuracy || 50 }; const [x, y] = WorldData.merc(me.lon, me.lat).map(q => q * D.S); s = Math.max(s, minS() * 12); tx = W / 2 - x * s; ty = H / 2 - y * s; clampView(); draw(); const k = WorldData.hit(D, x, y); UI.toast('You are ' + (k ? 'in ' + k.name : 'here') + ' (±' + fmtKm(me.acc / 1000) + ')', 3500); paintPlaces(); paintHome(); }
       catch (e) { UI.toast(e.message, 4000); }
     }
     async function addPlace(lat, lon) {
@@ -4480,12 +4618,16 @@ Apps.reg({
       UI.sheet({ title: '📍 ' + p.name, body: h('div', null, h('p', null, Math.abs(p.lat).toFixed(4) + '°' + (p.lat >= 0 ? 'N' : 'S') + ', ' + Math.abs(p.lon).toFixed(4) + '°' + (p.lon >= 0 ? 'E' : 'W')), me ? h('p', null, '📏 ' + fmtKm(haversine(me.lat, me.lon, p.lat, p.lon)) + ' away (straight line)') : null, h('p', { class: 'muted small' }, 'Saved ' + fmtDay(new Date(p.created)))),
         actions: [{ label: 'Delete', cls: 'bad', onClick: async c => { await DB.del('places', p.id); c(); await loadPlaces(); draw(); } }, { label: '🌍 Google', onClick: c => { c(); gmaps(p.lat.toFixed(5) + ',' + p.lon.toFixed(5), p.name); } }, { label: 'Go there', cls: 'pri', onClick: c => { c(); const [x, y] = WorldData.merc(p.lon, p.lat).map(q => q * D.S); s = Math.max(s, minS() * 20); tx = W / 2 - x * s; ty = H / 2 - y * s; clampView(); draw(); } }] });
     }
+    function paintHome() { const hm = GoHome.get(), set = GoHome.isSet(); homeBox.innerHTML = '';
+      homeBox.append(h('div', { class: 'sec' }, '🏠 Home'), h('div', { class: 'list' }, h('button', { class: 'li', onclick: () => GoHome.setup() }, h('span', { class: 'ic' }, '🏠'), h('span', { class: 't' }, h('b', null, set ? GoHome.where() : 'Set your home'), h('small', null, set ? ((GoHome.MODES.find(m => m[0] === hm.mode) || GoHome.MODES[0])[1] + ' · ' + (hm.app === 'apple' ? 'Apple Maps' : 'Google Maps') + (hm.lat != null ? (me ? ' · ' + fmtKm(haversine(me.lat, me.lon, hm.lat, hm.lon)) + ' away' : ' · GPS spot saved') : '')) : 'Then “Take me home” works in one tap')), h('span', { class: 'chev' }, set ? '✏️' : '›')))); }
+    const onHome = () => { paintHome(); draw(); }; document.addEventListener('home-changed', onHome);
     async function loadPlaces() { places = (await DB.all('places')).sort((a, b) => b.created - a.created); paintPlaces(); }
     function paintPlaces() { placesBox.innerHTML = ''; if (!places.length) return; placesBox.append(h('div', { class: 'sec' }, '⭐ My places'), h('div', { class: 'list' }, places.map(p => h('button', { class: 'li', onclick: () => showPlace(p) }, h('span', { class: 'ic' }, '📍'), h('span', { class: 't' }, h('b', null, p.name), h('small', null, me ? fmtKm(haversine(me.lat, me.lon, p.lat, p.lon)) + ' away' : p.lat.toFixed(3) + ', ' + p.lon.toFixed(3))), h('span', { class: 'chev' }, '›'))))); }
     search.addEventListener('keydown', e => { if (e.key !== 'Enter') return; const q2 = search.value.trim().toLowerCase(); if (!q2) return; const c = D.countries.find(c => c.name.toLowerCase() === q2) || D.countries.find(c => c.name.toLowerCase().startsWith(q2)) || D.countries.find(c => c.name.toLowerCase().includes(q2) || (c.f.capital || '').toLowerCase() === q2); if (!c) return UI.toast('No country called “' + search.value + '”'); search.blur(); sel = c; fit(...c.bb, 0.3); setTimeout(() => showCountry(c), 300); });
     const onRs = () => { size(); clampView(); draw(); }; addEventListener('resize', onRs);
-    size(); s = minS(); fit(0, D.S * 0.12, D.S, D.S * 0.82, 0); await loadPlaces();
-    return () => { cancelAnimationFrame(raf); removeEventListener('resize', onRs); clearTimeout(longT); };
+    size(); s = minS(); fit(0, D.S * 0.12, D.S, D.S * 0.82, 0); paintHome(); await loadPlaces();
+    if (ctx.param === 'home') GoHome.go();
+    return () => { cancelAnimationFrame(raf); removeEventListener('resize', onRs); clearTimeout(longT); document.removeEventListener('home-changed', onHome); };
   },
 });
 
