@@ -1,4 +1,4 @@
-window.NP_VERSION='7b7fae5fd6';
+window.NP_VERSION='27be149fe8';
 /* ---- 00-core.js ---- */
 'use strict';
 /* ===== Super One core: helpers, storage, dialogs, files, sound ===== */
@@ -48,8 +48,8 @@ const SVG = {
 
 /* ---------- IndexedDB storage (everything stays on this device) ---------- */
 const DB = (() => {
-  const NAME = 'nova-pocket', VER = 2;
-  const STORES = ['kv', 'notes', 'events', 'reminders', 'decks', 'cards', 'media', 'songs', 'memos', 'places', 'vault', 'files'];
+  const NAME = 'nova-pocket', VER = 3;
+  const STORES = ['kv', 'notes', 'events', 'reminders', 'decks', 'cards', 'media', 'songs', 'memos', 'places', 'vault', 'files', 'comics'];
   let dbp = null;
   function open() {
     return dbp || (dbp = new Promise((res, rej) => {
@@ -310,6 +310,7 @@ const Shell = {
     document.body.classList.toggle('on-home', !a); this.view.classList.remove('enter'); void this.view.offsetWidth; this.view.classList.add('enter');
     if (!a) { this.cur = null; document.title = 'Super One'; this.renderHome(); requestAnimationFrame(() => scrollTo(0, this.scrollMemo.home || 0)); return; }
     this.cur = a; document.title = a.name + ' · Super One';
+    try { const o = Prefs.get('appOpens', {}); o[a.id] = { n: ((o[a.id] || {}).n || 0) + 1, last: Date.now() }; Prefs.set('appOpens', o); } catch (e) { }
     const title = h('h1', null, a.name), acts = h('div', { class: 'acts' });
     this.top.append(h('button', { class: 'back', 'aria-label': 'Back', onclick: () => this.back(), html: SVG.back + '<span>Back</span>' }), title, acts);
     const ctx = {
@@ -450,8 +451,11 @@ const Zip = {
       const size = cd.getUint32(p + 24, true), nl = cd.getUint16(p + 28, true), xl = cd.getUint16(p + 30, true), cl = cd.getUint16(p + 32, true), lo = cd.getUint32(p + 42, true), method = cd.getUint16(p + 10, true);
       const name = dec.decode(new Uint8Array(cd.buffer, cd.byteOffset + p + 46, nl));
       const lh = new DataView(await blob.slice(lo, lo + 30).arrayBuffer()); const start = lo + 30 + lh.getUint16(26, true) + lh.getUint16(28, true);
-      if (method !== 0) throw new Error('This zip was changed by another app and can’t be read.');
-      out.push({ name, blob: blob.slice(start, start + size) }); p += 46 + nl + xl + cl;
+      const csize = cd.getUint32(p + 20, true);
+      if (method === 0) out.push({ name, blob: blob.slice(start, start + size) });
+      else if (method === 8 && typeof DecompressionStream !== 'undefined') { const ds = blob.slice(start, start + csize).stream().pipeThrough(new DecompressionStream('deflate-raw')); out.push({ name, blob: await new Response(ds).blob() }); }
+      else throw new Error('This zip uses a kind of packing I can’t open.');
+      p += 46 + nl + xl + cl;
     }
     return out;
   },
@@ -467,6 +471,7 @@ const Backup = {
         const o = {}; let skip = false;
         for (const k in r) {
           if (r[k] instanceof Blob) { if (!withFiles) { skip = true; break; } const nm = 'files/' + (n++) + '-' + s; files.push({ name: nm, data: r[k] }); o[k] = { $blob: nm, type: r[k].type }; }
+          else if (Array.isArray(r[k]) && r[k].some(x => x instanceof Blob)) { if (!withFiles) { skip = true; break; } o[k] = r[k].map(x => { if (!(x instanceof Blob)) return x; const nm = 'files/' + (n++) + '-' + s; files.push({ name: nm, data: x }); return { $blob: nm, type: x.type }; }); }
           else o[k] = r[k];
         }
         if (!skip) data.stores[s].push(o);
@@ -485,6 +490,7 @@ const Backup = {
       if (!DB.STORES.includes(s)) continue;
       for (const o of data.stores[s]) {
         for (const k in o) if (o[k] && typeof o[k] === 'object' && o[k].$blob) { const b = byName[o[k].$blob]; o[k] = b ? new Blob([b], { type: o[k].type || '' }) : null; }
+        for (const k in o) if (Array.isArray(o[k])) o[k] = o[k].map(x => x && typeof x === 'object' && x.$blob ? (byName[x.$blob] ? new Blob([byName[x.$blob]], { type: x.type || '' }) : null) : x);
         await DB.put(s, o); count++;
       }
     }
@@ -584,6 +590,14 @@ main#view.enter{animation:appIn .3s cubic-bezier(.2,.8,.2,1)}
 .app:active .ico{transform:scale(.9)}
 .app > span:last-child{font-size:12px;font-weight:600;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 4px rgba(0,0,0,.45)}
 @media (max-width:360px){.app .ico{width:52px;height:52px;border-radius:14px}.app .ico svg{width:26px;height:26px}}
+/* for you */
+.fyrow{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 6px;margin:0 -2px}
+.fyrow::-webkit-scrollbar{display:none}
+.fyc{flex:0 0 auto;width:196px;min-height:112px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:14px;border:1px solid rgba(255,255,255,.22);font:inherit;color:#fff}
+.fyc:active{transform:scale(.97)}
+.fyc .e{font-size:28px;line-height:1}
+.fyc b{font-size:15px;line-height:1.25}
+.fyc small{font-size:12.5px;opacity:.85;line-height:1.3}
 .home-note{color:rgba(255,255,255,.85);text-align:center;font-size:12px;margin:22px 0 0;text-shadow:0 1px 4px rgba(0,0,0,.4)}
 .home-banner{display:flex;gap:10px;align-items:center;padding:12px 14px;margin-top:12px;font-size:14px;text-align:left;width:100%;font:inherit;color:#fff}
 .li .ic svg{width:22px;height:22px;color:#fff}
@@ -663,8 +677,9 @@ Shell.renderHome = function () {
   this.paintHello();
   const q = h('input', { type: 'search', placeholder: 'Search apps, notes, words, Bible…', 'aria-label': 'Search', autocomplete: 'off' });
   const results = h('div', { class: 'mt' }), widgets = h('div', { class: 'widgets' }), rest = h('div');
-  v.append(widgets, h('div', { class: 'hsearch' }, h('span', { html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">' + ICON_PATHS.search + '</svg>' }), q), results, rest);
-  this.fillWidgets(widgets);
+  const fy = h('div');
+  v.append(widgets, fy, h('div', { class: 'hsearch' }, h('span', { html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">' + ICON_PATHS.search + '</svg>' }), q), results, rest);
+  this.fillWidgets(widgets); this.fillForYou(fy);
   if (!Offline.standalone() && /iPhone|iPad|iPod/.test(navigator.userAgent) && !Prefs.get('hideInstall'))
     rest.append(h('div', { class: 'home-banner glass' }, h('span', { style: { fontSize: '26px' } }, '📲'), h('span', { style: { flex: 1 } }, h('b', null, 'Put me on your Home Screen. '), 'Tap Share, then “Add to Home Screen”.'),
       h('button', { class: 'ib', style: { color: '#fff' }, 'aria-label': 'Hide', html: SVG.close, onclick: e => { Prefs.set('hideInstall', true); e.currentTarget.parentNode.remove(); } })));
@@ -676,7 +691,7 @@ Shell.renderHome = function () {
   }
   rest.append(h('p', { class: 'home-note' }, Apps.list.length + ' apps · everything you make stays on this device'));
   const doSearch = debounce(async () => {
-    const s = q.value.trim().toLowerCase(); results.innerHTML = ''; widgets.hidden = rest.hidden = !!s; if (!s) return;
+    const s = q.value.trim().toLowerCase(); results.innerHTML = ''; widgets.hidden = rest.hidden = fy.hidden = !!s; if (!s) return;
     const list = h('div', { class: 'list' }), row = (ic, bg, b, sm, go) => h('button', { class: 'li', onclick: go }, h('span', { class: 'ic', style: bg ? { background: bg } : null, html: ic }), h('span', { class: 't' }, h('b', null, b), h('small', null, sm)), h('span', { class: 'chev' }, '›'));
     for (const a of Apps.list) if ((a.name + ' ' + (a.keys || '')).toLowerCase().includes(s)) list.append(row(appIcon(a), a.color, a.name, a.blurb || '', () => this.go(a.id)));
     if (/^[a-z][a-z '\-]*$/i.test(s)) list.append(row('📖', null, 'Look up “' + s + '”', 'Dictionary', () => this.go('dict', s)));
@@ -707,6 +722,28 @@ Shell.fillWidgets = async function (el) {
   if (on.verse) el.append(card('', '✝️ Verse of the day', 'bible', verse ? h('div', { class: 'verse' }, '“' + verse.text + '”') : h('div', { class: 't1' }, 'Open the Bible'), h('div', { class: 't2' }, verse ? verse.ref : 'Saved for offline')));
   if (on.news) el.append(card('wide', '📰 Top story', 'news', h('div', { class: 't1' }, news ? news.title : 'Get today’s news'), h('div', { class: 't2' }, news ? news.src + ' · ' + fmtAgo(news.at) : 'Updates when you have Wi-Fi')));
   if (Player.cur) el.append(h('button', { class: 'wd glass wide', onclick: () => this.go('music') }, h('span', { class: 'k' }, '🎵 Now playing'), h('div', { class: 't1' }, Player.cur.title), h('div', { class: 't2' }, Player.audio.paused ? 'Paused' : 'Playing')));
+};
+Shell.fillForYou = async function (el) {
+  const T = [], add = (score, e, b, sm, go) => T.push({ score: score + (hashStr(ymd(new Date()) + b) % 7), e, b, sm, go }), today = ymd(new Date());
+  const opens = Prefs.get('appOpens', {});
+  try {
+    const cards = await DB.all('cards'); const due = cards.filter(c => Cards.due(c) && c.seen).length;
+    if (due) add(90, '📚', 'Review ' + due + ' flashcard' + (due > 1 ? 's' : ''), 'They’re ready — keep your streak!', () => this.go('cards')); else if (!cards.length) add(32, '🗂️', 'Make your first flashcards', 'Learn anything, a few cards a day', () => this.go('cards'));
+    if (typeof CUBE_CASES !== 'undefined') { const done = Prefs.get('cubeDone', {}); for (const k of ['pll', 'oll', 'f2l']) { const c = CUBE_CASES[k].find(x => !done[x.id]); if (c) { const left = CUBE_CASES[k].filter(x => !done[x.id]).length; add(k === 'pll' ? 72 : k === 'oll' ? 70 : 66, '🧊', 'Learn ' + (k === 'oll' ? 'OLL ' + c.n : k === 'pll' ? c.n + ' perm' : c.name) + ' today', left + ' ' + k.toUpperCase() + ' cases left to learn', () => { Prefs.set('cubeTab', 'all'); Prefs.set('cube119', k); this.go('cfop'); }); break; } } }
+    const sud = Prefs.get('sudoku', null); if (!sud || sud.won) add(58, '🔢', 'Daily Sudoku', 'A fresh puzzle to warm up your brain', () => this.go('games', 'sudoku')); else add(62, '🔢', 'Finish your Sudoku', 'You’re ' + Math.round(100 * sud.cur.filter(Boolean).length / 81) + '% done', () => this.go('games', 'sudoku'));
+    const wod = Prefs.get('wod', null); if (wod && wod.d === today) add(60, '✨', 'Word: ' + wod.word, wod.def.slice(0, 60), () => this.go('dict', wod.word)); else if (typeof Dict !== 'undefined') Dict.wordOfDay().then(w => w && Prefs.set('wod', { d: today, word: w.word, def: w.senses[0][1] })).catch(() => { });
+    const best = Prefs.get('gameBest', {}); const bg = [['snake', '🐍 Snake'], ['meteor', '☄️ Meteor Dash'], ['hopper', '🦘 Sky Hopper'], ['bricks', '🧱 Brick Smash'], ['words', '🔤 Word Scramble']].filter(([k]) => best[k]); if (bg.length) { const [k, n] = bg[hashStr(today) % bg.length]; add(52, '🏆', 'Beat your best in ' + n.slice(2).trim(), 'Your record: ' + best[k], () => this.go('games', k)); }
+    if (!Prefs.get('wxPlaces', []).length) add(55, '⛅', 'Set up Weather', 'Pick your town for forecasts', () => this.go('weather'));
+    const last = await DB.kget('lastBackup', 0), n = (await DB.count('notes')) + (await DB.count('cards')) + (await DB.count('media')); if (n > 5 && Date.now() - last > 14 * 86400e3) add(64, '💾', 'Back up your stuff', last ? 'Last backup ' + fmtAgo(last) : 'Never backed up yet', () => this.settings());
+    const bl = Prefs.get('bibleLast', null); if (bl && Apps.byId.bible) add(46, '✝️', 'Keep reading the Bible', 'Pick up where you stopped', () => this.go('bible'));
+    const comics = (await DB.all('comics').catch(() => [])).filter(c => c.opened && c.kind === 'images' && c.last < c.pages.length - 1).sort((a, b) => b.opened - a.opened)[0]; if (comics) add(54, '💥', 'Keep reading ' + comics.title, 'Page ' + (comics.last + 1) + ' of ' + comics.pages.length, () => this.go('comics'));
+    const fresh = Apps.list.filter(a => !opens[a.id]); if (fresh.length) { const a = fresh[hashStr(today) % fresh.length]; add(44, a.icon, 'Try ' + a.name, a.blurb || 'You haven’t opened it yet', () => this.go(a.id)); }
+    const lv = Prefs.get('learnBest', {}); if (!Object.keys(lv).some(k => k.startsWith('times'))) add(36, '✖️', 'Master a times table', 'Get 10 out of 10 for a star', () => this.go('learn'));
+  } catch (e) { console.warn(e); }
+  T.sort((a, b) => b.score - a.score);
+  if (T.length) el.append(h('div', { class: 'home-sec', style: { marginTop: '18px' } }, '✨ For you'), h('div', { class: 'fyrow' }, T.slice(0, 6).map(t => h('button', { class: 'fyc glass', onclick: t.go }, h('span', { class: 'e' }, t.e), h('b', null, t.b), h('small', null, t.sm)))));
+  const recent = Object.entries(opens).filter(([id]) => Apps.byId[id]).sort((a, b) => b[1].last - a[1].last).slice(0, 4);
+  if (recent.length >= 2) el.append(h('div', { class: 'home-sec' }, '🕘 Jump back in'), h('div', { class: 'dock glass', style: { marginTop: 0 } }, recent.map(([id]) => this.tile(Apps.byId[id]))));
 };
 function editHome() {
   let wall = Prefs.get('wall', 'aurora'), favs = Home.favs(), on = Home.widgetsOn();
@@ -1648,6 +1685,42 @@ function composeTune(def) {
   ev.push({ k: 'n', inst: def.arp, m: deg(def.prog[0]), t: bars * bar, d: spb * 3, v: 0.5 }, { k: 'n', inst: 'bass', m: deg(def.prog[0]) - 24, t: bars * bar, d: spb * 3, v: 0.7 });
   return { ev, len: bars * bar + spb * 4 };
 }
+const MUSIC_BLOCKED = /(^|\.)(spotify\.com|music\.apple\.com|itunes\.apple\.com|youtube\.com|youtu\.be|music\.youtube\.com|soundcloud\.com|tiktok\.com|deezer\.com|tidal\.com|pandora\.com|music\.amazon\.com|amazon\.com|instagram\.com)$/i;
+function addLink(done) {
+  const inp = h('input', { type: 'url', placeholder: 'https://…/song.mp3', autocapitalize: 'off', autocomplete: 'off' }), name = h('input', { type: 'text', placeholder: 'Song name (optional)' }), msg = h('div', { class: 'small mt' }), bar = h('i', { style: { width: '0%' } }), prog = h('div', { class: 'prog mt', hidden: true }, bar);
+  let ctrl = null;
+  const go = async () => {
+    let u; try { u = new URL(inp.value.trim()); } catch (e) { msg.textContent = 'That doesn’t look like a web link.'; return; }
+    if (!/^https?:$/.test(u.protocol)) { msg.textContent = 'Use a link that starts with https://'; return; }
+    if (MUSIC_BLOCKED.test(u.hostname.replace(/^www\.|^m\./, ''))) { msg.innerHTML = ''; msg.append(h('div', { class: 'note-banner', style: { margin: 0 } }, '🚫 ' + u.hostname.replace(/^www\./, '') + ' songs are protected — other apps can’t save or play them, and the rules don’t allow it. Listen in that app instead, or use its own “download” button.')); return; }
+    if (!navigator.onLine) { msg.textContent = 'You need internet to add a link.'; return; }
+    const title = name.value.trim() || decodeURIComponent(u.pathname.split('/').pop() || 'Song').replace(/\.[^.]+$/, '').replace(/[_+]+/g, ' ') || 'Song';
+    msg.textContent = 'Getting the song…'; prog.hidden = false; ctrl = new AbortController();
+    try {
+      const r = await fetch(u.href, { signal: ctrl.signal }); if (!r.ok) throw new Error('The website said ' + r.status + '.');
+      const type = (r.headers.get('content-type') || '').split(';')[0];
+      if (!/^audio\//.test(type) && !/\.(mp3|m4a|aac|wav|ogg|oga|opus|flac)(\?|$)/i.test(u.pathname)) throw new Error('That link is a web page, not a song file. Look for a link that ends in .mp3 or .m4a.');
+      const total = +r.headers.get('content-length') || 0, rd = r.body.getReader(), parts = []; let got = 0;
+      for (; ;) { const { done: d, value } = await rd.read(); if (d) break; parts.push(value); got += value.length; bar.style.width = total ? (100 * got / total) + '%' : Math.min(95, got / 1e5) + '%'; msg.textContent = 'Saving… ' + fmtSize(got) + (total ? ' of ' + fmtSize(total) : ''); }
+      const blob = new Blob(parts, { type: /^audio\//.test(type) ? type : 'audio/mpeg' });
+      const dur = await new Promise(res => { const a = new Audio(), x = URL.createObjectURL(blob); a.onloadedmetadata = () => { res(a.duration); URL.revokeObjectURL(x); }; a.onerror = () => res(0); a.src = x; setTimeout(() => res(0), 5000); });
+      await DB.put('songs', { id: uid(), title, blob, type: blob.type, dur, size: blob.size, link: u.href, created: Date.now(), src: 'link' }); Sfx.good(); UI.toast('Saved for offline ✅'); s.close(); done && done();
+    } catch (e) {
+      prog.hidden = true;
+      if (e.name === 'AbortError') { msg.textContent = 'Stopped.'; return; }
+      if (e instanceof TypeError) {
+        msg.textContent = 'Checking if it can play from the link…';
+        const ok = await new Promise(res => { const a = new Audio(); a.preload = 'metadata'; a.onloadedmetadata = () => res(a.duration || 1); a.onerror = () => res(0); setTimeout(() => res(0), 9000); a.src = u.href; });
+        if (!ok) { msg.textContent = 'That link doesn’t lead to a song I can play. Look for a link that ends in .mp3 or .m4a.'; return; }
+        await DB.put('songs', { id: uid(), title, link: u.href, dur: isFinite(ok) ? ok : 0, created: Date.now(), src: 'link' }); UI.toast('Added as a web link — plays when you’re online 🔗'); s.close(); done && done(); return;
+      }
+      msg.textContent = e.message;
+    }
+  };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+  const s = UI.sheet({ title: 'Add a song from a link', onClose: () => ctrl && ctrl.abort(), body: h('div', { class: 'stack' }, inp, name, prog, msg), actions: [{ label: 'Cancel' }, { label: '🔗 Add', cls: 'pri', onClick: () => go() }] });
+  if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(t => { if (/^https?:\/\//.test(t) && !inp.value) inp.value = t.trim(); }).catch(() => { });
+}
 const tuneCache = {};
 async function renderTune(def) {
   if (tuneCache[def.id]) return tuneCache[def.id];
@@ -1664,9 +1737,11 @@ const Player = {
   async playList(list, i) { this.queue = list; this.idx = i; await this.load(true); },
   async load(play) {
     const t = this.cur; if (!t) return; this.loading = true; this.emit();
-    let blob = t.blob; if (!blob && t.make) { try { blob = await t.make(); } catch (e) { UI.toast('Could not play that'); this.loading = false; return; } }
+    let blob = t.blob; if (!blob && !t.link && t.make) { try { blob = await t.make(); } catch (e) { UI.toast('Could not play that'); this.loading = false; return; } }
     if (this.cur !== t) return;
-    if (this.url) URL.revokeObjectURL(this.url); this.url = URL.createObjectURL(blob); this.audio.src = this.url; this.loading = false;
+    if (this.url) URL.revokeObjectURL(this.url); this.url = null;
+    if (t.link && !blob) { if (!navigator.onLine) UI.toast('This song is a web link — it needs internet'); this.audio.src = t.link; } else { this.url = URL.createObjectURL(blob); this.audio.src = this.url; }
+    this.loading = false;
     if (play) { try { await this.audio.play(); } catch (e) { } }
     if ('mediaSession' in navigator) { try { navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist || 'Super One', album: 'Super One' }); } catch (e) { } }
     this.emit();
@@ -1692,6 +1767,7 @@ const Player = {
   },
 };
 ['play', 'pause', 'ended', 'loadedmetadata'].forEach(k => Player.audio.addEventListener(k, () => { if (k === 'ended') Player.next(true); else Player.emit(); }));
+Player.audio.addEventListener('error', () => { if (Player.cur && Player.cur.link) UI.toast(navigator.onLine ? 'That link won’t play. It may have moved.' : 'Needs internet to play'); });
 Player.audio.preload = 'auto'; Player.audio.setAttribute('playsinline', '');
 if ('mediaSession' in navigator) { const ms = navigator.mediaSession; try { ms.setActionHandler('play', () => Player.toggle()); ms.setActionHandler('pause', () => Player.toggle()); ms.setActionHandler('nexttrack', () => Player.next()); ms.setActionHandler('previoustrack', () => Player.prev()); } catch (e) { } }
 addEventListener('hashchange', () => setTimeout(() => Player.paintMini(), 0));
@@ -1726,17 +1802,17 @@ Apps.reg({
         for (const f of files) { const dur = await new Promise(r => { const a = new Audio(), u = URL.createObjectURL(f); a.onloadedmetadata = () => { r(a.duration); URL.revokeObjectURL(u); }; a.onerror = () => r(0); a.src = u; setTimeout(() => r(0), 5000); }); await DB.put('songs', { id: uid(), title: f.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' '), blob: f, type: f.type, dur, size: f.size, created: Date.now(), src: 'import' }); n++; }
         UI.toast('Added ' + n + ' song' + (n > 1 ? 's' : '')); draw();
       };
-      el.append(h('div', { class: 'row mb' }, h('button', { class: 'btn pri', onclick: add }, '＋ Add songs'), h('span', { class: 'small muted sp' }, 'From Files: mp3, m4a, wav. They stay on this device.')), list);
+      el.append(h('div', { class: 'row mb' }, h('button', { class: 'btn pri', onclick: () => addLink(draw) }, '🔗 Add from a link'), h('button', { class: 'btn', onclick: add }, '＋ From Files')), h('p', { class: 'tiny muted', style: { margin: '-4px 2px 10px' } }, 'Paste a link to a song file (mp3, m4a…). I save it for offline if the website allows, or keep the link to play when you’re online.'), list);
       async function draw() {
         const all = (await DB.all('songs')).sort((a, b) => a.title.localeCompare(b.title)); list.innerHTML = '';
         if (!all.length) { list.append(UI.empty('🎧', 'No songs yet', 'Add music files from Files, or make your own with Piano or Beats and save them here.')); return; }
-        const q = all.map(s => ({ id: s.id, title: s.title, blob: s.blob, dur: s.dur, icon: s.src === 'made' ? '🎹' : '🎵', artist: s.src === 'made' ? 'Made by you' : '' }));
+        const q = all.map(s => ({ id: s.id, title: s.title, blob: s.blob, link: s.link, dur: s.dur, icon: s.src === 'made' ? '🎹' : s.link && !s.blob ? '🔗' : '🎵', artist: s.src === 'made' ? 'Made by you' : s.link && !s.blob ? 'Web link · needs internet' : '' }));
         list.append(h('div', { class: 'list' }, all.map((s, i) => h('div', { class: 'li song' + (Player.cur && Player.cur.id === s.id ? ' playing' : '') },
           h('button', { class: 'ic', style: { border: 0 }, 'aria-label': 'Play ' + s.title, onclick: () => Player.playList(q, i) }, Player.cur && Player.cur.id === s.id && !Player.audio.paused ? '🔊' : (s.src === 'made' ? '🎹' : '🎵')),
-          h('button', { class: 't', style: { border: 0, background: 'none', textAlign: 'left', padding: 0 }, onclick: () => Player.playList(q, i) }, h('b', null, s.title), h('small', null, fmtDur(s.dur) + (s.size ? ' · ' + fmtSize(s.size) : ''))),
+          h('button', { class: 't', style: { border: 0, background: 'none', textAlign: 'left', padding: 0 }, onclick: () => Player.playList(q, i) }, h('b', null, s.title), h('small', null, (s.link && !s.blob ? '🔗 Web link · ' : '') + (s.dur ? fmtDur(s.dur) : '') + (s.size ? ' · ' + fmtSize(s.size) : ''))),
           h('button', { class: 'ib', 'aria-label': 'Song options', html: SVG.more, onclick: () => UI.menu(s.title, [
             { icon: '✏️', label: 'Rename', run: async () => { const t = await UI.prompt('Song name', { value: s.title }); if (t && t.trim()) { s.title = t.trim(); await DB.put('songs', s); draw(); } } },
-            { icon: '📤', label: 'Share or save', run: () => saveFile(s.blob, s.title + (s.type && s.type.includes('wav') ? '.wav' : s.type && s.type.includes('mp4') ? '.m4a' : '.mp3')) },
+            s.blob && { icon: '📤', label: 'Share or save', run: () => saveFile(s.blob, s.title + (s.type && s.type.includes('wav') ? '.wav' : s.type && s.type.includes('mp4') ? '.m4a' : '.mp3')) },
             { icon: '🗑️', label: 'Delete', danger: true, run: async () => { if (await UI.ask('Delete “' + s.title + '”?', { ok: 'Delete', danger: true })) { if (Player.cur && Player.cur.id === s.id) Player.stop(); await DB.del('songs', s.id); draw(); } } },
           ]) })))));
       }
@@ -2309,6 +2385,161 @@ Apps.reg({
   },
 });
 
+/* ---- 26-comics.js ---- */
+/* ===== Comics: read comic books (.cbz, pictures, PDF), make your own comic, comic websites ===== */
+addCSS(`
+.cshelf{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (min-width:640px){.cshelf{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.cbook{border:0;background:none;padding:0;text-align:left;min-width:0;color:var(--ink)}
+.cbook .cv{aspect-ratio:2/3;border-radius:10px;overflow:hidden;background:var(--surface2);display:grid;place-items:center;font-size:40px;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+.cbook .cv img{width:100%;height:100%;object-fit:cover}
+.cbook b{display:block;font-size:13px;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cbook small{font-size:11px;color:var(--muted)}
+.creader{position:fixed;inset:0;z-index:55;background:#0B0B0F;display:flex;flex-direction:column;color:#fff}
+.creader .bar{display:flex;align-items:center;gap:6px;padding:calc(var(--top) + 6px) 10px 6px;background:rgba(0,0,0,.6)}
+.creader .bar .ib{color:#fff}
+.creader .pg{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;touch-action:pan-x pan-y pinch-zoom}
+.creader .pg img{max-width:100%;max-height:100%;object-fit:contain;user-select:none;-webkit-user-select:none}
+.creader .pg.fit-w img{max-height:none;width:100%}
+.creader .bot{display:flex;align-items:center;gap:10px;padding:8px 14px calc(var(--bot) + 10px);background:rgba(0,0,0,.6)}
+.creader input[type=range]{flex:1;accent-color:#fff}
+.maker canvas{width:100%;max-width:520px;display:block;margin:0 auto;border-radius:10px;box-shadow:var(--shadow);touch-action:none;background:#fff}
+`);
+const COMIC_SITES = [
+  ['📰', 'GoComics', 'Daily comic strips', 'https://www.gocomics.com'],
+  ['🐶', 'Peanuts', 'Charlie Brown & Snoopy strips', 'https://www.peanuts.com/comics'],
+  ['📱', 'WEBTOON', 'Scrolling comics on your phone', 'https://www.webtoons.com'],
+  ['📚', 'Tapas', 'Web comics and stories', 'https://tapas.io'],
+  ['🦸', 'DC Kids', 'Superheroes for kids', 'https://www.dckids.com'],
+  ['🕸️', 'Marvel HQ', 'Marvel videos and games for kids', 'https://marvelhq.com'],
+  ['🏛️', 'Digital Comic Museum', 'Free old comics (public domain)', 'https://digitalcomicmuseum.com'],
+  ['📖', 'Comic Book Plus', 'Free classic comics (public domain)', 'https://comicbookplus.com'],
+];
+const IMG_RE = /\.(jpe?g|png|gif|webp|bmp)$/i;
+Apps.reg({
+  id: 'comics', name: 'Comics', icon: '💥', color: 'linear-gradient(135deg,#FFE259,#FF6A3D)', group: 'play', keys: 'comic books manga cbz read make strip', blurb: 'Read and make comics',
+  mount(v, ctx) {
+    let tab = Prefs.get('comicTab', 'shelf'), stop = null;
+    const body = h('div');
+    v.append(UI.tabs([['shelf', '📖 My comics'], ['make', '✏️ Make a comic'], ['sites', '🌐 Comic sites']], tab, t => { tab = t; Prefs.set('comicTab', t); show(); }), body);
+    function show() { if (stop) stop(); stop = null; body.innerHTML = ''; ctx.setActions(); const r = ({ shelf, make, sites })[tab](); stop = typeof r === 'function' ? r : null; }
+    async function shelf() {
+      ctx.setActions(h('button', { class: 'btn ghost sm', onclick: importMenu }, '＋ Add'));
+      const all = (await DB.all('comics')).sort((a, b) => (b.opened || b.created) - (a.opened || a.created));
+      if (!all.length) { body.append(UI.empty('💥', 'No comics yet', 'Add a comic book file (.cbz), a PDF, or pick pictures to turn into a comic. Or make your own!'), h('div', { class: 'row', style: { justifyContent: 'center' } }, h('button', { class: 'btn pri', onclick: importMenu }, '＋ Add a comic'), h('button', { class: 'btn', onclick: () => { tab = 'make'; show(); } }, '✏️ Make one'))); return; }
+      body.append(h('div', { class: 'cshelf' }, all.map(c => onLongPress(h('button', { class: 'cbook', onclick: () => read(c) }, h('div', { class: 'cv' }, c.cover ? h('img', { src: c.cover, alt: '' }) : (c.kind === 'pdf' ? '📕' : '💥')), h('b', null, c.title), h('small', null, c.kind === 'pdf' ? 'PDF' : (c.last ? 'Page ' + (c.last + 1) + ' of ' : '') + c.pages.length + ' pages')),
+        () => UI.menu(c.title, [
+          { icon: '✏️', label: 'Rename', run: async () => { const t = await UI.prompt('Comic name', { value: c.title }); if (t && t.trim()) { c.title = t.trim(); await DB.put('comics', c); show(); } } },
+          { icon: '🗑️', label: 'Delete', danger: true, run: async () => { if (await UI.ask('Delete “' + c.title + '”?', { ok: 'Delete', danger: true })) { await DB.del('comics', c.id); show(); } } },
+        ])))), h('p', { class: 'tiny muted center mt' }, 'Press and hold a comic to rename or delete it.'));
+    }
+    function importMenu() {
+      UI.menu('Add a comic', [
+        { icon: '🗂️', label: 'Comic book file (.cbz)', sub: 'Pages packed in a zip', run: async () => { const [f] = await pickFiles('.cbz,.zip,application/zip,application/x-cbz', { multiple: false }); if (f) addCbz(f); } },
+        { icon: '🖼️', label: 'Pick pictures as pages', sub: 'Choose them in page order', run: async () => { const fs = await pickFiles('image/*'); if (fs.length) save(fs[0].name.replace(/\.[^.]+$/, '') || 'My comic', fs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))); } },
+        { icon: '📕', label: 'PDF comic', run: async () => { const [f] = await pickFiles('application/pdf,.pdf', { multiple: false }); if (f) { await DB.put('comics', { id: uid(), title: f.name.replace(/\.pdf$/i, ''), kind: 'pdf', pages: [f], created: Date.now() }); show(); } } },
+      ]);
+    }
+    async function addCbz(f) {
+      UI.toast('Opening comic…');
+      try { const ents = (await Zip.read(f)).filter(e => IMG_RE.test(e.name) && !/__MACOSX|\/\./.test(e.name)).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        if (!ents.length) throw new Error('No pictures found in that file.');
+        await save(f.name.replace(/\.(cbz|zip)$/i, ''), ents.map(e => new Blob([e.blob], { type: /png$/i.test(e.name) ? 'image/png' : /webp$/i.test(e.name) ? 'image/webp' : /gif$/i.test(e.name) ? 'image/gif' : 'image/jpeg' })));
+      } catch (e) { UI.toast(e.message, 4000); }
+    }
+    async function save(title, pages) { const th = await imageThumb(pages[0], 360); await DB.put('comics', { id: uid(), title, kind: 'images', pages, cover: th && th.url, last: 0, created: Date.now() }); UI.toast('Added “' + title + '” (' + pages.length + ' pages)'); show(); }
+    function read(c) {
+      if (c.kind === 'pdf') { const u = URL.createObjectURL(new Blob([c.pages[0]], { type: 'application/pdf' })); UI.sheet({ title: c.title, onClose: () => URL.revokeObjectURL(u), body: h('iframe', { src: u, title: c.title, style: { width: '100%', height: '70vh', border: 0, background: '#fff', borderRadius: '10px' } }), actions: [{ label: '📤 Open in Books / Files', cls: 'pri', onClick: () => saveFile(c.pages[0], c.title + '.pdf') }] }); return; }
+      let i = clamp(c.last || 0, 0, c.pages.length - 1), url = null, fitW = Prefs.get('comicFitW', false);
+      const img = h('img', { alt: 'Page' }), pg = h('div', { class: 'pg' + (fitW ? ' fit-w' : '') }, img), count = h('span', { style: { minWidth: '70px', textAlign: 'center', fontWeight: 600 } }), slider = h('input', { type: 'range', min: 1, max: c.pages.length, value: i + 1, 'aria-label': 'Page' });
+      const showP = () => { if (url) URL.revokeObjectURL(url); url = URL.createObjectURL(c.pages[i]); img.src = url; count.textContent = (i + 1) + ' / ' + c.pages.length; slider.value = i + 1; pg.scrollTop = 0; c.last = i; c.opened = Date.now(); DB.put('comics', c); };
+      const go = d => { const n = clamp(i + d, 0, c.pages.length - 1); if (n !== i) { i = n; showP(); } else if (d > 0) UI.toast('The end! 🎉'); };
+      const close = () => { if (url) URL.revokeObjectURL(url); el.remove(); removeEventListener('keydown', key); show(); };
+      slider.oninput = () => { i = slider.value - 1; showP(); };
+      const el = h('div', { class: 'creader', role: 'dialog', 'aria-label': c.title }, h('div', { class: 'bar' }, h('button', { class: 'ib', 'aria-label': 'Close', html: SVG.close, onclick: close }), h('b', { style: { flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, c.title), h('button', { class: 'btn sm', onclick: () => { fitW = !fitW; Prefs.set('comicFitW', fitW); pg.classList.toggle('fit-w', fitW); } }, '↔ Fit')), pg, h('div', { class: 'bot' }, h('button', { class: 'ib', 'aria-label': 'Previous page', onclick: () => go(-1) }, '‹'), slider, count, h('button', { class: 'ib', 'aria-label': 'Next page', onclick: () => go(1) }, '›')));
+      pg.addEventListener('click', e => { const r = pg.getBoundingClientRect(); if (e.clientX - r.left < r.width * 0.3) go(-1); else if (e.clientX - r.left > r.width * 0.7) go(1); });
+      let sx = null; pg.addEventListener('touchstart', e => { sx = e.touches.length === 1 ? e.touches[0].clientX : null; }, { passive: true }); pg.addEventListener('touchend', e => { if (sx == null) return; const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 60 && (window.visualViewport ? visualViewport.scale <= 1.01 : true)) go(dx < 0 ? 1 : -1); sx = null; });
+      const key = e => { if (e.key === 'ArrowRight' || e.key === ' ') go(1); else if (e.key === 'ArrowLeft') go(-1); else if (e.key === 'Escape') close(); };
+      addEventListener('keydown', key); document.body.append(el); showP();
+    }
+    function sites() {
+      body.append(h('p', { class: 'muted small' }, 'Great places to read comics online (needs internet).'), h('div', { class: 'list' }, COMIC_SITES.map(([e, n, d, u]) => h('button', { class: 'li', onclick: () => window.open(u, '_blank', 'noopener') }, h('span', { class: 'ic' }, e), h('span', { class: 't' }, h('b', null, n), h('small', null, d)), h('span', { class: 'chev' }, '↗')))),
+        h('p', { class: 'tiny muted mt' }, 'Tip: free classic comics from Digital Comic Museum and Comic Book Plus download as .cbz files — add them here under “My comics” to read offline.'));
+    }
+    /* ---------- comic maker ---------- */
+    function make() {
+      const W = 1080, H = 1350, LAYOUTS = { '1': [[0, 0, 1, 1]], '2': [[0, 0, 1, .5], [0, .5, 1, .5]], '3': [[0, 0, 1, 1 / 3], [0, 1 / 3, 1, 1 / 3], [0, 2 / 3, 1, 1 / 3]], '2x2': [[0, 0, .5, .5], [.5, 0, .5, .5], [0, .5, .5, .5], [.5, .5, .5, .5]], '1+2': [[0, 0, 1, .5], [0, .5, .5, .5], [.5, .5, .5, .5]], '2x3': [[0, 0, .5, 1 / 3], [.5, 0, .5, 1 / 3], [0, 1 / 3, .5, 1 / 3], [.5, 1 / 3, .5, 1 / 3], [0, 2 / 3, .5, 1 / 3], [.5, 2 / 3, .5, 1 / 3]] };
+      let doc = Prefs.get('comicDraft', null) || { layout: '2x2', title: 'My comic', panels: {} }, sel = 0, selItem = -1, photos = {};
+      const BG = ['#FFFFFF', '#FFF4C2', '#D6F5FF', '#E3FFD6', '#FFE0EC', '#EDE3FF', '#20222B'];
+      const cv = h('canvas', { width: W, height: H, 'aria-label': 'Comic page' }), g = cv.getContext('2d');
+      const tools = h('div', { class: 'row mt', style: { justifyContent: 'center' } }), lay = h('div', { class: 'chips', style: { justifyContent: 'center' } });
+      body.append(h('div', { class: 'maker' }, lay, h('div', { class: 'mt' }, cv), tools), h('p', { class: 'tiny muted center mt' }, 'Tap a panel, then add characters, speech bubbles or a photo. Drag things to move them.'));
+      const P = k => (doc.panels[k] = doc.panels[k] || { bg: '#FFFFFF', items: [] });
+      const rect = k => { const [x, y, w, hh] = LAYOUTS[doc.layout][k], m = 22; return [x * W + m, y * H + m, w * W - 2 * m, hh * H - 2 * m]; };
+      const save = debounce(() => { const d = JSON.parse(JSON.stringify(doc)); Prefs.set('comicDraft', d); }, 300);
+      async function loadPhotos() { for (const k in doc.panels) { const p = doc.panels[k]; if (p.photo && !photos[p.photo]) { const m = await DB.get('media', p.photo); if (m) { const im = new Image(); im.src = URL.createObjectURL(m.blob); await new Promise(r => { im.onload = r; im.onerror = r; }); photos[p.photo] = im; } } } draw(); }
+      function bubble(x, y, w, hh, text, kind) {
+        g.save(); g.fillStyle = '#fff'; g.strokeStyle = '#111'; g.lineWidth = 5;
+        if (kind === 'think') { g.beginPath(); g.ellipse(x, y, w / 2, hh / 2, 0, 0, 6.283); g.fill(); g.stroke(); [[.35, .62, 16], [.42, .75, 10]].forEach(([a, b, r]) => { g.beginPath(); g.arc(x - w * (a - .5) * 2 * .5 - w * .2, y + hh * b - hh * .1, r, 0, 6.283); g.fill(); g.stroke(); }); }
+        else if (kind === 'shout') { g.beginPath(); for (let i = 0; i < 24; i++) { const a = i / 24 * 6.283, r = i % 2 ? 1 : 1.18; g.lineTo(x + Math.cos(a) * w / 2 * r, y + Math.sin(a) * hh / 2 * r); } g.closePath(); g.fillStyle = '#FFE14D'; g.fill(); g.stroke(); }
+        else if (kind === 'caption') { g.fillStyle = '#FFF3A8'; g.fillRect(x - w / 2, y - hh / 2, w, hh); g.strokeRect(x - w / 2, y - hh / 2, w, hh); }
+        else { g.beginPath(); g.ellipse(x, y, w / 2, hh / 2, 0, 0, 6.283); g.moveTo(x - w * .12, y + hh * .42); g.lineTo(x - w * .25, y + hh * .85); g.lineTo(x + w * .02, y + hh * .47); g.fill(); g.stroke(); g.beginPath(); g.ellipse(x, y, w / 2 - 3, hh / 2 - 3, 0, 0, 6.283); g.fill(); }
+        g.fillStyle = '#111'; g.textAlign = 'center'; g.textBaseline = 'middle'; const fs = Math.max(22, Math.min(44, hh / 3.2)); g.font = (kind === 'shout' ? '900 ' : '700 ') + fs + 'px "Comic Sans MS","Chalkboard SE","Marker Felt",sans-serif';
+        const words = String(text).split(/\s+/), lines = []; let line = ''; for (const wd of words) { const t = line ? line + ' ' + wd : wd; if (g.measureText(t).width > w * .78 && line) { lines.push(line); line = wd; } else line = t; } lines.push(line);
+        lines.forEach((l, i) => g.fillText(kind === 'shout' ? l.toUpperCase() : l, x, y + (i - (lines.length - 1) / 2) * fs * 1.15)); g.restore();
+      }
+      function draw() {
+        g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+        LAYOUTS[doc.layout].forEach((_, k) => {
+          const [x, y, w, hh] = rect(k), p = P(k); g.save(); g.beginPath(); g.rect(x, y, w, hh); g.clip(); g.fillStyle = p.bg; g.fillRect(x, y, w, hh);
+          const ph = p.photo && photos[p.photo]; if (ph) { const s2 = Math.max(w / ph.width, hh / ph.height); g.drawImage(ph, x + (w - ph.width * s2) / 2, y + (hh - ph.height * s2) / 2, ph.width * s2, ph.height * s2); }
+          p.items.forEach((it, j) => { const cx = x + it.x * w, cy = y + it.y * hh;
+            if (it.t === 'emoji') { g.font = (90 * it.s) + 'px system-ui,"Apple Color Emoji"'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(it.e, cx, cy); }
+            else bubble(cx, cy, 300 * it.s, (it.k === 'caption' ? 90 : 170) * it.s, it.text, it.k);
+            if (k === sel && j === selItem) { g.strokeStyle = '#3B82F6'; g.setLineDash([12, 8]); g.lineWidth = 4; const r = it.t === 'emoji' ? 60 * it.s : 170 * it.s; g.strokeRect(cx - r, cy - r * (it.t === 'emoji' ? 1 : .6), r * 2, r * (it.t === 'emoji' ? 2 : 1.2)); g.setLineDash([]); } });
+          g.restore(); g.lineWidth = 10; g.strokeStyle = '#111'; g.strokeRect(x, y, w, hh);
+          if (k === sel) { g.lineWidth = 6; g.strokeStyle = '#3B82F6'; g.strokeRect(x - 8, y - 8, w + 16, hh + 16); }
+        });
+        tools.innerHTML = ''; if (sel < 0) return; const p = P(sel), it = p.items[selItem];
+        const add = item => { p.items.push(Object.assign({ x: .5, y: .45, s: 1 }, item)); selItem = p.items.length - 1; save(); draw(); };
+        tools.append(...[
+          h('button', { class: 'btn sm', onclick: () => { const s2 = UI.sheet({ title: 'Pick a character', body: h('div', { class: 'stickers' }, STICKERS.concat('🧑‍🚀🦸🦹🧙🧚🧛🧜🧞🧟🥷🤴👸🐕🐈🐲🦖🦕👾'.match(/\p{Extended_Pictographic}(‍\p{Extended_Pictographic})?/gu)).map(e => h('button', { onclick: () => { s2.close(); add({ t: 'emoji', e, y: .62 }); } }, e))) }); } }, '😀 Character'),
+          h('button', { class: 'btn sm', onclick: async () => { const t = await UI.prompt('What do they say?', { placeholder: 'Hi!', ok: 'Add' }); if (t) add({ t: 'bubble', k: 'speech', text: t, y: .25 }); } }, '💬 Speech'),
+          h('button', { class: 'btn sm', onclick: async () => { const t = await UI.prompt('What do they think?', { ok: 'Add' }); if (t) add({ t: 'bubble', k: 'think', text: t, y: .25 }); } }, '💭 Think'),
+          h('button', { class: 'btn sm', onclick: async () => { const t = await UI.prompt('Sound effect', { value: 'POW!', ok: 'Add' }); if (t) add({ t: 'bubble', k: 'shout', text: t, s: .9 }); } }, '💥 Boom'),
+          h('button', { class: 'btn sm', onclick: async () => { const t = await UI.prompt('Caption', { placeholder: 'Meanwhile…', ok: 'Add' }); if (t) add({ t: 'bubble', k: 'caption', text: t, y: .1 }); } }, '📝 Caption'),
+          h('button', { class: 'btn sm', onclick: async () => { const [f] = await pickFiles('image/*', { multiple: false }); if (!f) return; const [rec] = [await (async () => { await Media.add([f]); return (await DB.all('media')).sort((a, b) => b.created - a.created)[0]; })()]; p.photo = rec.id; save(); loadPhotos(); } }, '🖼️ Photo'),
+          h('button', { class: 'btn sm', onclick: () => { p.bg = BG[(BG.indexOf(p.bg) + 1) % BG.length]; save(); draw(); } }, '🎨 Color'),
+          it ? h('button', { class: 'btn sm', onclick: () => { it.s = Math.min(3, it.s * 1.2); save(); draw(); } }, '＋') : null,
+          it ? h('button', { class: 'btn sm', onclick: () => { it.s = Math.max(.4, it.s / 1.2); save(); draw(); } }, '－') : null,
+          it ? h('button', { class: 'btn sm bad', onclick: () => { p.items.splice(selItem, 1); selItem = -1; save(); draw(); } }, '🗑️') : null].filter(Boolean));
+      }
+      lay.append(...Object.keys(LAYOUTS).map(k => h('button', { class: 'chip', 'aria-pressed': String(k === doc.layout), onclick: e => { doc.layout = k; sel = 0; selItem = -1; $$('.chip', lay).forEach(b => b.setAttribute('aria-pressed', String(b === e.currentTarget))); save(); draw(); } }, { '1': '▢ 1', '2': '▤ 2', '3': '☰ 3', '2x2': '⊞ 4', '1+2': '⊟ 3', '2x3': '▦ 6' }[k])));
+      const pt = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]; };
+      let drag = null;
+      cv.addEventListener('pointerdown', e => {
+        const [px, py] = pt(e); const k = LAYOUTS[doc.layout].findIndex((_, j) => { const [x, y, w, hh] = rect(j); return px >= x && px <= x + w && py >= y && py <= y + hh; }); if (k < 0) return;
+        sel = k; const [x, y, w, hh] = rect(k), p = P(k); selItem = -1;
+        for (let j = p.items.length - 1; j >= 0; j--) { const it = p.items[j], r = it.t === 'emoji' ? 60 * it.s : 150 * it.s; if (Math.abs(x + it.x * w - px) < r && Math.abs(y + it.y * hh - py) < r * .8) { selItem = j; drag = { k, j, ox: px - (x + it.x * w), oy: py - (y + it.y * hh) }; cv.setPointerCapture(e.pointerId); break; } }
+        draw();
+      });
+      cv.addEventListener('pointermove', e => { if (!drag) return; const [px, py] = pt(e), [x, y, w, hh] = rect(drag.k), it = P(drag.k).items[drag.j]; it.x = clamp((px - drag.ox - x) / w, 0, 1); it.y = clamp((py - drag.oy - y) / hh, 0, 1); draw(); });
+      cv.addEventListener('pointerup', () => { if (drag) save(); drag = null; });
+      ctx.setActions(h('button', { class: 'btn ghost sm', onclick: async () => { if (await UI.ask('Start a new blank comic?', { ok: 'New comic' })) { doc = { layout: '2x2', title: 'My comic', panels: {} }; sel = 0; selItem = -1; Prefs.set('comicDraft', null); draw(); } } }, 'New'),
+        h('button', { class: 'btn pri sm', onclick: async () => { selItem = -1; sel = -1; draw(); const t = await UI.prompt('Name your comic', { value: doc.title, ok: 'Save' }); sel = 0; if (!t) { draw(); return; } doc.title = t; const blob = await new Promise(r => cv.toBlob(r, 'image/png')); await Media.addCanvas(cv, t, 'drawing'); await save2(t, blob); draw(); } }, 'Save'));
+      async function save2(t, blob) { const th = await imageThumb(cv, 360); await DB.put('comics', { id: uid(), title: t, kind: 'images', pages: [blob], cover: th && th.url, last: 0, created: Date.now() }); UI.toast('Saved to My comics and Photos 🎉'); }
+      draw(); loadPhotos();
+      return () => { for (const k in photos) URL.revokeObjectURL(photos[k].src); };
+    }
+    show();
+    return () => { if (stop) stop(); };
+  },
+});
+
+/* ---- 28-cube-cases.js ---- */
+/* ===== All 119 CFOP cases (41 F2L, 57 OLL, 21 PLL): every algorithm and scramble-style setup checked in the cube simulator by tools/gen_cfop.py ===== */
+const CUBE_CASES = {"f2l":[{"id":"f2l1","n":1,"name":"F2L 1","group":"Both on top","look":"The white corner is above its slot, white facing up. Its edge is on the top right, green side up.","alg":"R U2 R' U' R U R'","len":7,"setups":["U R2 U' R2 U R2 F2 U2 F2 D R2 D' R F2 U2 F2 R' U2","D' R2 D R2 D' R2 F2 D2 F2 U' R2 D2 U' L U2 F2 U2 L' U2"]},{"id":"f2l2","n":2,"name":"F2L 2","group":"Both on top","look":"The white corner is above its slot, white facing up. Its edge is on the top right, orange side up.","alg":"U2 F2 U2 F U F' U F2","len":8,"setups":["U2 F2 L2 U' L2 U L2 D' L2 D F U' F' U2 F U F' U F2","L2 D2 U2 L2 D F2 D' L2 F2 D' F' D F' D2 U2 L2 F U' F'"]},{"id":"f2l3","n":3,"name":"F2L 3","group":"Both on top","look":"The white corner is above its slot, white facing up. Its edge is on the top front, green side up.","alg":"U2 R2 U2 R' U' R U' R2","len":8,"setups":["R2 D F2 L2 D L2 D' L2 U L2 U' F2 R D' L' F2 L D R","D F2 D' F2 U L2 F2 D2 F2 U L2 U' L D2 F2 D2 L' D' U'"]},{"id":"f2l4","n":4,"name":"F2L 4","group":"Both on top","look":"The white corner is above its slot, white facing up. Its edge is on the top front, orange side up.","alg":"F' U2 F U F' U' F","len":7,"setups":["U' F2 U F2 U' F2 R2 U2 R2 D' F2 D F' R2 U2 R2 F U2","D F2 U' R2 U R2 D2 F2 U' R2 U F2 D2 F' D2 R2 D2 F' R2"]},{"id":"f2l5","n":5,"name":"F2L 5","group":"Both on top","look":"The white corner is above its slot, white facing up. Its edge is on the top left, green side up.","alg":"U2 R U R2 F R F'","len":7,"setups":["U2 F2 L2 U' L2 D L2 D' L2 F2 U' R2 D' R' F2 U2 F2 R'","F2 D L2 D' L2 U' F2 U2 L2 U R2 D R2 U2 L' D2 F2 D2 L'"]},{"id":"f2l6","n":6,"name":"F2L 6","group":"Both on top","look":"The white corner is above its slot, white facing up. Its edge is on the top left, orange side up.","alg":"U' F' U' L F' L' F2","len":7,"setups":["U' F2 U' F2 L2 U2 L2 D F2 D2 L2 D L2 F L2 U2 L2 F U'","D' R2 D' R2 U2 F2 U' F2 D2 F2 R2 D' R2 F L2 U2 L2 F U'"]},{"id":"f2l7","n":7,"name":"F2L 7","group":"Both on top","look":"The white corner is above its slot, white facing up. Its edge is on the top back, green side up.","alg":"U R U2 R2 F R F'","len":7,"setups":["D F2 D' F2 L2 D2 R2 U R2 D2 F2 U F2 L' U2 F2 U2 L' U","U L2 D F2 D2 L2 D F2 U2 F2 L2 U' F2 L' U2 F2 U2 L' U"]},{"id":"f2l8","n":8,"name":"F2L 8","group":"Both on top","look":"The white corner is above its slot, white facing up. Its edge is on the top back, orange side up.","alg":"F' L' U2 L F","len":5,"setups":["U F2 L2 D F2 U' R2 U2 R2 F2 D' L2 F2 U F' L2 U2 L2 F","D' F2 L2 U' F2 D R2 D2 R2 F2 U L2 F2 D' F' R2 U2 R2 F"]},{"id":"f2l9","n":9,"name":"F2L 9","group":"Both on top","look":"The white corner is above its slot, white facing right. Its edge is on the top right, green side up.","alg":"U' R U' R' U R U R'","len":8,"setups":["R2 U F2 R2 F2 U' R2 U R2 D' F2 D R' F2 R' F2 U' R'","F2 U' L2 D R2 D' L2 D' U' F2 D U' R' F2 R' F2 U' R'"]},{"id":"f2l10","n":10,"name":"F2L 10","group":"Both on top","look":"The white corner is above its slot, white facing right. Its edge is on the top right, orange side up.","alg":"R U' R' U2 F' U' F","len":7,"setups":["R2 U' L2 U R2 U2 F2 U2 F2 U' L2 U F' D F' D' U F U'","R2 D' B2 U F2 L2 U' B2 D2 F2 D' F' D F' D' U F U'"]},{"id":"f2l11","n":11,"name":"F2L 11","group":"Both on top","look":"The white corner is above its slot, white facing right. Its edge is on the top front, green side up.","alg":"R' U2 R2 U R2 U R","len":7,"setups":["R2 D' R2 U2 F2 U F2 U R2 D L R' U' R' U L' U","R2 U' L2 F2 U2 R2 D' F2 D2 U R2 D' L' R U R' U L' U"]},{"id":"f2l12","n":12,"name":"F2L 12","group":"Both on top","look":"The white corner is above its slot, white facing right. Its edge is on the top front, orange side up.","alg":"U' F' U F","len":4,"setups":["L2 D' L2 F2 D2 F2 D F2 U2 R2 U R2 U F U' F2 D F' U","D L2 U' L2 D2 F2 U' F2 D' F2 U2 F2 L2 F' L2 F L2 F' D2"]},{"id":"f2l13","n":13,"name":"F2L 13","group":"Both on top","look":"The white corner is above its slot, white facing right. Its edge is on the top left, green side up.","alg":"F2 U' L' U L F2","len":6,"setups":["U R2 D' L2 D R2 D U F2 D' U L F2 L F2 U L F2","R2 D2 L2 D' U' R2 D F2 D' R2 U L2 R D2 F2 L F2 D R"]},{"id":"f2l14","n":14,"name":"F2L 14","group":"Both on top","look":"The white corner is above its slot, white facing right. Its edge is on the top left, orange side up.","alg":"U2 F' L' U' L U2 F","len":7,"setups":["R2 U2 F2 U' F2 U' F2 U2 F2 U R2 F R' F' U' F' U F R","F2 D R2 D' R2 F2 U' L2 D2 L2 U' F' L2 F D2 F' L2 U F"]},{"id":"f2l15","n":15,"name":"F2L 15","group":"Both on top","look":"The white corner is above its slot, white facing right. Its edge is on the top back, green side up.","alg":"R U R'","len":3,"setups":["U2 L2 U' L2 U' L2 U' R2 U' L2 U F U R' U R U2 F' R2","U' F2 U F2 D' F2 D2 R2 U2 R2 D' L' R U' R U' L U' R2"]},{"id":"f2l16","n":16,"name":"F2L 16","group":"Both on top","look":"The white corner is above its slot, white facing right. Its edge is on the top back, orange side up.","alg":"R2 U2 F R2 F' U2 R2","len":7,"setups":["D' R2 U R2 U F2 U' R2 U' R2 D R2 F' R2 F R2 U2 F U2","U2 R2 U' F2 U' F2 U2 R2 U F2 U' B U' F U B' F U"]},{"id":"f2l17","n":17,"name":"F2L 17","group":"Both on top","look":"The white corner is above its slot, white facing you. Its edge is on the top right, green side up.","alg":"U R U' R'","len":4,"setups":["R2 D L2 U' L2 U' L2 D L2 U L2 F2 U L D2 R' D2 L D2","F2 R2 D R2 D' F2 D' F2 D F2 D R2 D' L' F2 L D2 R' D2"]},{"id":"f2l18","n":18,"name":"F2L 18","group":"Both on top","look":"The white corner is above its slot, white facing you. Its edge is on the top right, orange side up.","alg":"F U2 F2 U' F2 U' F'","len":7,"setups":["F2 U L2 U2 F2 U' F2 U' L2 U' F2 U' L' U F' U F U2 L","D2 F2 U L2 U L2 U2 L2 U L2 F2 D2 L U F' U F U2 L'"]},{"id":"f2l19","n":19,"name":"F2L 19","group":"Both on top","look":"The white corner is above its slot, white facing you. Its edge is on the top front, green side up.","alg":"F' U F U2 R U R'","len":7,"setups":["F2 D L2 D2 U L2 F2 U R2 U2 R2 D R D' R D U' R' U","D2 L2 B2 U2 L2 D F2 D R2 D' L2 U' R U' L U' L R' D"]},{"id":"f2l20","n":20,"name":"F2L 20","group":"Both on top","look":"The white corner is above its slot, white facing you. Its edge is on the top front, orange side up.","alg":"U F' U F U' F' U' F","len":8,"setups":["L2 D U2 R2 U R2 F2 U F2 D2 F' L2 F L2 D F'","F2 U' R2 F2 R2 U F2 U' F2 D R2 D' F R2 F R2 U F"]},{"id":"f2l21","n":21,"name":"F2L 21","group":"Both on top","look":"The white corner is above its slot, white facing you. Its edge is on the top left, green side up.","alg":"F2 U2 R' F2 R U2 F2","len":7,"setups":["U' R2 D' L2 D L2 R2 U F2 U' L2 U R U2 F2 R' D2 L D2","L2 D' L2 D F2 D F2 U' R2 D' F2 U R F2 R' F2 U2 R' U2"]},{"id":"f2l22","n":22,"name":"F2L 22","group":"Both on top","look":"The white corner is above its slot, white facing you. Its edge is on the top left, orange side up.","alg":"F' U' F","len":3,"setups":["D2 R2 D' R2 D' F2 U' L2 U2 L2 R U' F U' F' U2 R' F2","D2 F2 R2 B2 U' L2 U' L2 B2 U' R' U' F U' F' U2 R' F2"]},{"id":"f2l23","n":23,"name":"F2L 23","group":"Both on top","look":"The white corner is above its slot, white facing you. Its edge is on the top back, green side up.","alg":"F2 L' U' L U F2","len":6,"setups":["R2 U R2 F2 D2 R2 U' R2 U F2 D' R F2 R D2 R' F2 U' R'","U R2 D R2 U' L2 F2 U2 F2 L2 U R F2 R D2 R' F2 U' R'"]},{"id":"f2l24","n":24,"name":"F2L 24","group":"Both on top","look":"The white corner is above its slot, white facing you. Its edge is on the top back, orange side up.","alg":"F' U L' U' L U2 F","len":7,"setups":["D2 F2 L2 D U2 F2 U F2 L2 R2 D2 U F R2 U2 F' R2 D' F'","D2 F2 L2 U' L2 U L2 D' U L2 R2 U' F R2 U2 F' R2 D' F'"]},{"id":"f2l25","n":25,"name":"F2L 25","group":"Edge in the slot","look":"The white corner is above its slot, white facing up. Its edge is in its slot.","alg":"R2 U R2 U R2 U2 R2","len":7,"setups":["U R2 D' F2 D2 R2 D' F2 R2 D2 L2 D L2 F2 D","U2 L2 U' F2 U F2 U2 R2 U' L2 U R2 F2 U F2"]},{"id":"f2l26","n":26,"name":"F2L 26","group":"Edge in the slot","look":"The white corner is above its slot, white facing up. Its edge is in its slot but flipped.","alg":"R U' R' F' U2 F","len":6,"setups":["L2 F2 U' F2 U L2 D' L2 D L2 F2 R F2 R' F' R F' U' R'","U F2 R2 U' F2 U2 R2 U F2 U2 R2 F' R' D' F2 D F R U2"]},{"id":"f2l27","n":27,"name":"F2L 27","group":"Edge in the slot","look":"The white corner is above its slot, white facing right. Its edge is in its slot.","alg":"U2 F' L' U2 L U2 F","len":7,"setups":["R2 U R2 U' R2 U2 F2 U R2 U R2 U2 F2 L' U R2 U' L U'","R2 U R2 U F2 U2 R2 D' F2 D R2 U2 F2 L' U R2 U' L U'"]},{"id":"f2l28","n":28,"name":"F2L 28","group":"Edge in the slot","look":"The white corner is above its slot, white facing right. Its edge is in its slot but flipped.","alg":"U F' U' F U' R U R'","len":8,"setups":["R2 U' R2 D' U' F2 D U F2 R2 U' R' F' R U2 R' U R' F","R2 D' F2 D U' F2 U2 R2 U2 R2 U' R' F' R U2 R' U R' F"]},{"id":"f2l29","n":29,"name":"F2L 29","group":"Edge in the slot","look":"The white corner is above its slot, white facing you. Its edge is in its slot.","alg":"U' F' U2 L' U2 L F","len":7,"setups":["F2 D' L2 D F2 D2 L2 D' R2 U' R2 D2 F2 R U' L2 U R' D","F2 D' L2 U' F2 U2 L2 U L2 U' L2 U2 F2 R U' L2 U R' D"]},{"id":"f2l30","n":30,"name":"F2L 30","group":"Edge in the slot","look":"The white corner is above its slot, white facing you. Its edge is in its slot but flipped.","alg":"U' R U R' U F' U' F","len":8,"setups":["F2 D' L2 F2 U F2 D' L2 D2 F2 U2 R U R' U F' U' F U'","F2 U' F2 R2 D' U2 F2 D F2 U2 R' U R' U F' U' F U'"]},{"id":"f2l31","n":31,"name":"F2L 31","group":"Corner in the slot","look":"The white corner is in its slot, white facing down. Its edge is on the top front, green side up.","alg":"F' U2 F U2 R U R'","len":7,"setups":["L2 F2 R2 U' L2 U R2 F2 L2 U' F2 U2 L U2 F2 U2 L' U'","D' R2 D' L2 D' U2 L2 R2 U' R2 D' R' F2 U2 F2 R' U'"]},{"id":"f2l32","n":32,"name":"F2L 32","group":"Corner in the slot","look":"The white corner is in its slot, white facing down. Its edge is on the top front, orange side up.","alg":"F U2 L F L' U2 F'","len":7,"setups":["U' F2 U L2 R2 U' L2 D2 U' R2 D2 F R2 U2 R2 F U2","L2 D' U F2 D' F2 R2 D2 F2 D2 F2 U' L2 F U2 R2 U2 F' R2"]},{"id":"f2l33","n":33,"name":"F2L 33","group":"Corner in the slot","look":"The white corner is in its slot, white facing you. Its edge is on the top front, green side up.","alg":"U' R U' R2 F R F'","len":7,"setups":["U' L2 F2 D F2 U' R2 U2 R2 F2 D' L U2 L' U2 L' F2 U' L2","U' L2 F2 U L2 U' F2 U2 F2 L2 U' L U2 L' U2 L' F2 U' L2"]},{"id":"f2l34","n":34,"name":"F2L 34","group":"Corner in the slot","look":"The white corner is in its slot, white facing you. Its edge is on the top front, orange side up.","alg":"U R' F R F2 U' F","len":7,"setups":["R2 U R2 D R2 D' R2 F2 U' F2 R2 U' R' F U2 F' U2 R' F'","R2 D B2 D B2 D' B2 R2 U' R2 B2 D' R' F U2 F' U2 R' F'"]},{"id":"f2l35","n":35,"name":"F2L 35","group":"Corner in the slot","look":"The white corner is in its slot, white facing right. Its edge is on the top front, green side up.","alg":"U F' U F R U R'","len":7,"setups":["L2 U' R2 U2 F2 U F2 U L2 R2 U L2 R' D' L F2 L D R","F2 U R2 U R2 U R2 U2 R2 U F2 R' D' L F2 L' D R"]},{"id":"f2l36","n":36,"name":"F2L 36","group":"Corner in the slot","look":"The white corner is in its slot, white facing right. Its edge is on the top front, orange side up.","alg":"R U2 R' F' U2 F","len":6,"setups":["U' R2 D' F2 U2 F2 D F2 U2 R2 U2 F R2 F R2 U2 F","U' R2 U R2 D R2 D' U' F2 R2 U2 F R2 F R2 U2 F"]},{"id":"f2l37","n":37,"name":"F2L 37","group":"Both in the slot","look":"The white corner is in its slot, white facing down. Its edge is in its slot but flipped.","alg":"R U' R U2 F R2 F' U2 R2","len":9,"setups":["R2 U2 R2 F2 D2 L2 D L2 D F2 U' R' F R F' U R U2 R'","D U R2 D F2 R2 D2 R2 F2 D2 R F' D' F2 D R F U'"]},{"id":"f2l38","n":38,"name":"F2L 38","group":"Both in the slot","look":"The white corner is in its slot, white facing you. Its edge is in its slot.","alg":"R U' R' F2 L' U' L U F2","len":9,"setups":["F2 U R2 U' F2 U R2 U' F2 D L U' R2 U L' D'","F2 D' F2 D2 U' L2 D' R2 D R2 D' R' D L2 D' R U"]},{"id":"f2l39","n":39,"name":"F2L 39","group":"Both in the slot","look":"The white corner is in its slot, white facing you. Its edge is in its slot but flipped.","alg":"F' L' U2 L F R U R'","len":8,"setups":["D' L2 U F2 U' L2 U2 F2 D' L2 D2 F U' F' R' F2 R F2 U'","D' F2 D2 R2 U R2 F2 D L2 D' F D' F' R U L2 U2 R'"]},{"id":"f2l40","n":40,"name":"F2L 40","group":"Both in the slot","look":"The white corner is in its slot, white facing right. Its edge is in its slot.","alg":"R U2 R U R' U R U2 R2","len":9,"setups":["L2 U' L2 U R2 U' L2 U L2 U' L' U R2 U' L U","L2 U' L2 U R2 U' L2 D F2 U' F2 D' U L U R2 U' L U"]},{"id":"f2l41","n":41,"name":"F2L 41","group":"Both in the slot","look":"The white corner is in its slot, white facing right. Its edge is in its slot but flipped.","alg":"R U' R' F' L' U2 L F","len":8,"setups":["F2 L2 R2 U R2 D R2 U' R2 D2 L' D L' F' R F' R U2 R2","B2 D2 L2 D2 L2 U B2 U R2 U' B' D' B R F' R F D U'"]}],"oll":[{"id":"oll1","n":1,"name":"Dot","alg":"R U2 R2 F R F' U2 R' F R F'","len":11,"setups":["U' L2 U F2 D F2 U' F' D' L' F U F R' F R F2 L'","U2 F' L F L' U2 F' L F L2 U2 L"]},{"id":"oll2","n":2,"name":"Dot","alg":"F R U R' U' F' f R U R' U' f'","len":12,"setups":["R2 F2 U2 F2 R2 U R2 D' F2 L F L' U F2 D R F' R U2","L2 F2 D R2 U' R2 U F2 R' F' R D' L' F U2 F' U' L'"]},{"id":"oll3","n":3,"name":"Dot","alg":"f R U R' U' f' U' F R U R' U' F'","len":13,"setups":["L2 U F2 U F2 U2 L2 U' L F L' F2 U L' U L F U' F","R2 D R2 D' F2 U F2 U2 R U2 R2 U2 R F R F2 U2 F R"]},{"id":"oll4","n":4,"name":"Dot","alg":"f R U R' U' f' U F R U R' U' F'","len":13,"setups":["R2 U R2 F2 U F2 R2 U' R F' L' U2 L2 F' L' F R' F R2","F2 R2 U' R2 U F2 U R' U F' U R' F' U F2 R U' R"]},{"id":"oll5","n":5,"name":"Square","alg":"r' U2 R U R' U r","len":7,"setups":["F2 R2 U2 R2 F2 R2 U2 L F' R F' L' U2 R","R2 F2 L2 U2 L2 F2 L2 U2 L' F' R F' L' U2 R"]},{"id":"oll6","n":6,"name":"Square","alg":"r U2 R' U' R U' r'","len":7,"setups":["U2 F2 D' R2 D F2 U2 F2 D' R2 D F L D L D' L2 F","L2 D2 R2 U' R2 U F2 D' F2 D' L2 F' L D L D' L2 F"]},{"id":"oll7","n":7,"name":"Lightning","alg":"r U R' U R U2 r'","len":7,"setups":["R2 D2 U2 L2 R2 D2 U2 L' F2 R' F' R F' L'","R2 D2 L2 F2 L2 D2 L2 F2 R D2 L' F' R F' L'"]},{"id":"oll8","n":8,"name":"Lightning","alg":"r' U' R U' R' U2 r","len":7,"setups":["D2 U2 R2 F2 R2 D2 R2 F2 L D2 R F L' F R U2","F2 D' U L2 U2 L2 D U' F' R' F R F2 L' U2 L"]},{"id":"oll9","n":9,"name":"Fish","alg":"R U R' U' R' F R2 U R' U' F'","len":11,"setups":["L2 U F2 D' L2 D L2 U' F2 L2 F U F' R' U' F2 U F R","L2 U F2 U' F2 D F2 D' F2 L2 F U F' R' U' F2 U F R"]},{"id":"oll10","n":10,"name":"Fish","alg":"R U R' U R' F R F' R U2 R'","len":11,"setups":["L2 D' L2 D F2 U' F2 U2 R' F2 L2 F' U2 L2 F L2 U2 F' R","U' R2 U2 L2 D' R2 F2 D' R' F2 D' L D' L' F R F' L2 U'"]},{"id":"oll11","n":11,"name":"Lightning","alg":"r U R' U R' F R F' R U2 r'","len":11,"setups":["F2 R2 U' R2 U R2 U L2 F' R2 F L2 R2 F L F L' U'","D' F2 U L2 U' L2 D2 R2 D' R' F L F L' F R2 F R F2"]},{"id":"oll12","n":12,"name":"Lightning","alg":"M' R' U' R U' R' U2 R U' R r'","len":11,"setups":["R2 F2 U' F2 R2 D' F2 D F' R' F' R' F R' F' U R2","R2 F2 D' L2 F2 U' F2 U L' F' L' F' L F' L' D R2"]},{"id":"oll13","n":13,"name":"Knight","alg":"F U R U' R2 F' R U R U' R'","len":11,"setups":["U F2 U F2 U' F2 U2 F L F' U F' U' L' U F'","F2 U F2 D' F2 D2 R2 U' R2 F' U2 F R' D' R F' U2 F'"]},{"id":"oll14","n":14,"name":"Knight","alg":"R' F R U R' F' R F U' F'","len":10,"setups":["R2 D' R2 U R2 U' R2 D R2 F D U R U' R' D' F' R2","F2 D2 B2 D B2 U' B2 U B2 R B2 L B' L' B' R' D F2"]},{"id":"oll15","n":15,"name":"Knight","alg":"r' U' r R' U' R U r' U r","len":10,"setups":["U L2 F2 L2 U2 L2 F2 L2 U' R' F' U' F2 U R F U' F' U2","U2 F2 L2 F2 U2 F2 L2 F2 U' F' L' U' L2 U F L U' L' U"]},{"id":"oll16","n":16,"name":"Knight","alg":"r U r' R U R' U' r U' r'","len":10,"setups":["U L2 F2 L2 U2 L2 F2 L2 U L F U F2 U' L' F' U F","L2 F2 D R2 F2 U F2 U' R2 F2 R' F' R D' L' F U F' L'"]},{"id":"oll17","n":17,"name":"Dot","alg":"R U R' U R' F R F' U2 R' F R F'","len":13,"setups":["F2 U' F2 U F2 U' F2 U' L2 F2 U R' F' R U' F2 L' F L'","F2 U2 L2 F2 U' L2 U' L2 U L2 U2 R' F' R U' F2 L' F L'"]},{"id":"oll18","n":18,"name":"Dot","alg":"r U R' U R U2 r2 U' R U' R' U2 r","len":13,"setups":["F2 U2 R2 U' F2 U' R2 U F2 U L R F' R U' F2 U' F2 U L'","F2 U2 R2 U' F2 U' R2 U F2 U L R F' R D' L2 U' L2 D L'"]},{"id":"oll19","n":19,"name":"Dot","alg":"M U R U R' U' M' R' F R F'","len":11,"setups":["U' L2 D L2 U R2 U2 F U F' L' U L2 R F' R D' L'","L2 D R2 D' L2 U' L2 D L' F' L' F U L R F' R D' L'"]},{"id":"oll20","n":20,"name":"Dot","alg":"r U R' U' M2 U R U' R' U' M'","len":11,"setups":["U F2 D2 U2 L2 F2 R2 D R2 F2 L2 D2 L R' F L' R U2 F2","U' R2 U L2 F2 R2 D L2 U2 L2 R2 D L' R F U2 F2 L' R"]},{"id":"oll21","n":21,"name":"Cross","alg":"R U2 R' U' R U R' U' R U' R'","len":11,"setups":["D2 F2 U F2 D U F2 U R2 D F2 R U2 F2 R' U2 R2 F2 R","D U L2 U L2 D2 F2 U R2 D F2 R U2 F2 R' U2 R2 F2 R"]},{"id":"oll22","n":22,"name":"Cross","alg":"R U2 R2 U' R2 U' R2 U2 R","len":9,"setups":["D' U2 R2 D' F2 D' F2 L2 D2 R2 D F U' F' L2 U F' L2 F","U B2 U' B2 U' L2 B2 U2 B2 U F U' F' L2 U F' L2 F"]},{"id":"oll23","n":23,"name":"Cross","alg":"R2 D' R U2 R' D R U2 R","len":9,"setups":["L2 U' L2 U F2 D U2 F2 D2 U2 R' U L2 U' R D L2","R2 D U' L2 R2 D' F2 R2 U' R2 U F2 R D L2 D' R U R2"]},{"id":"oll24","n":24,"name":"Cross","alg":"r U R' U' r' F R F'","len":8,"setups":["D' R2 D' L2 U' F2 U2 F2 U' F2 L2 D2 R' F2 L' D2 L F2 R'","F2 D L2 D' L2 D L2 U' L2 D' L2 R' D L2 D' R U F2"]},{"id":"oll25","n":25,"name":"Cross","alg":"F' r U R' U' r' F R","len":8,"setups":["R2 D U2 R2 D L2 D2 U2 R' D' L2 D R","D U' L2 B2 U F2 D' R2 B' D F2 D' B'"]},{"id":"oll26","n":26,"name":"Cross","alg":"R U2 R' U' R U' R'","len":7,"setups":["D2 U' L2 F2 R2 D R2 F2 L2 D2 U2 R U R' U L F2 L'","D2 U' R2 F2 L2 D L2 F2 R2 D2 U' F U F2 U' F2 U F"]},{"id":"oll27","n":27,"name":"Cross","alg":"R U R' U R U2 R'","len":7,"setups":["F2 L2 U2 L2 F2 L2 U2 L' F2 L' U' R U' R'","F2 D2 R2 F2 L2 D L2 F2 R2 D2 U F U' F U' F' U2 F"]},{"id":"oll28","n":28,"name":"Corners done","alg":"r U R' U' r' R U R U' R'","len":10,"setups":["R2 U R2 U F2 L2 U2 L2 F2 L2 U2 L' R' F' R2 F' L' R'","L2 F2 D R2 D' U2 F2 R2 U' F2 U' L R F' R2 F' L R'"]},{"id":"oll29","n":29,"name":"Awkward","alg":"R U R' U' R U' R' F' U' F R U R'","len":13,"setups":["L2 D L2 F2 L2 D' L2 R2 U' R2 D' F D F R2 U R F' R","R2 U' L2 B2 L2 F2 L2 U R2 B2 L2 F D F R2 U R F' R"]},{"id":"oll30","n":30,"name":"Awkward","alg":"F R' F R2 U' R' U' R U R' F2","len":11,"setups":["U L2 D R2 D' L2 D R2 D' F U' F' U F R' F R F2","R2 B2 U' R2 U B2 R2 U L2 U' F2 R' B' R2 B R F2 U L2"]},{"id":"oll31","n":31,"name":"P shape","alg":"R' U' F U R U' R' F' R","len":9,"setups":["U' R2 D R2 F2 L2 D' L2 F2 D' F2 U L F' D' F D L' F2","D' F2 U L2 B2 R2 U' B2 L2 U' F2 U L F' D' F D L' F2"]},{"id":"oll32","n":32,"name":"P shape","alg":"L U F' U' L' U L F L'","len":9,"setups":["U L2 D' L2 F2 R2 D R2 F2 D F2 U' R' F D F' D' R F2","D F2 U' R2 B2 L2 D L2 B2 U R2 D' R' F D F' D' R F2"]},{"id":"oll33","n":33,"name":"T shape","alg":"R U R' U' R' F R F'","len":8,"setups":["D R2 D' R2 U R2 U' R2 F2 U2 F U L' U2 L U' F","F2 U F2 D R2 U' R2 D' U F R' F2 R F' U' F2"]},{"id":"oll34","n":34,"name":"C shape","alg":"R U R2 U' R' F R U R U' F'","len":11,"setups":["U2 L2 D' L2 D F2 U' F2 U' F' U2 L2 U L U' L U2 F","F2 L2 F2 U' L2 U F2 L2 U' F' U F' R' F R F U' F"]},{"id":"oll35","n":35,"name":"Fish","alg":"R U2 R2 F R F' R U2 R'","len":9,"setups":["D2 U2 L2 R2 D2 U2 L2 R' U2 R' F R' F' R2 U2 R'","L2 D2 U2 L2 R2 D2 U2 R' U2 R' F R' F' R2 U2 R'"]},{"id":"oll36","n":36,"name":"W shape","alg":"L' U' L U' L' U L U L F' L' F","len":12,"setups":["D' L2 D F2 L2 U L2 F2 D' L2 D F' L U' L' U L' F","U' F2 U F2 L2 U L2 F2 U' F2 U F' L U' L' U L' F"]},{"id":"oll37","n":37,"name":"Fish","alg":"F R' F' R U R U' R'","len":8,"setups":["R2 D' U2 F2 U' F2 D U' R F R2 F' R'","D' U F2 D R2 U' R2 F' R' F2 R F"]},{"id":"oll38","n":38,"name":"W shape","alg":"R U R' U R U' R' U' R' F R F'","len":12,"setups":["U2 R2 F2 U2 R2 F2 R2 U R2 U' R2 U F' R' U R U' R F'","R2 F2 U' F2 U F2 R2 U' F2 U R2 U' F' R' U R U' R F'"]},{"id":"oll39","n":39,"name":"Lightning","alg":"L F' L' U' L U F U' L'","len":9,"setups":["R2 U F2 U' F2 U' R2 U F2 U F R U' L' U L R' F","F2 U F2 U L2 U' F2 U' F2 U L2 F' R2 U' L' U L R2 F"]},{"id":"oll40","n":40,"name":"Lightning","alg":"R' F R U R' U' F' U R","len":9,"setups":["F2 U2 F2 L2 U2 L2 U L2 U L2 U2 F' L' U' L U F' U F2","L2 U' F2 U F2 U L2 U' F2 U' F' L' U R U' L R' F'"]},{"id":"oll41","n":41,"name":"Awkward","alg":"R U R' U R U2 R' F R U R' U' F'","len":13,"setups":["U F2 R2 F2 U F2 R2 F2 U2 F U R' U' R2 U R U' F'","U2 F2 R2 F2 U' F2 R2 F2 U' F U2 R' U2 R2 U2 R U2 F'"]},{"id":"oll42","n":42,"name":"Awkward","alg":"R' U' R U' R' U2 R F R U R' U' F'","len":13,"setups":["L2 F2 L2 U' L2 F2 L2 U' R' F' U' F U' L R' F2 L' R2","R2 F2 R2 U' R2 F2 R2 U' R' F' U' F U' L R' F2 L' R2"]},{"id":"oll43","n":43,"name":"P shape","alg":"F' U' L' U L F","len":6,"setups":["F2 L2 D2 U2 L2 R2 D2 U2 R2 F L' U' L U F","F2 L2 R2 D2 U2 L2 R2 D2 U2 F L' U' L U F"]},{"id":"oll44","n":44,"name":"P shape","alg":"F U R U' R' F'","len":6,"setups":["F2 L2 R2 D2 U2 L2 R2 D2 U2 F' R U R' U' F'","F2 R2 D2 U2 L2 R2 D2 U2 L2 F' R U R' U' F'"]},{"id":"oll45","n":45,"name":"T shape","alg":"F R U R' U' F'","len":6,"setups":["F2 L2 D2 U2 L2 R2 D2 U2 R2 F' U R U' R' F'","F2 L2 R2 D2 U2 L2 R2 D2 U2 F' U R U' R' F'"]},{"id":"oll46","n":46,"name":"C shape","alg":"R' U' R' F R F' U R","len":8,"setups":["R2 U' F2 D' F2 U F2 L F L' F2 D R F' R","L2 D2 U2 L2 R2 D2 U2 R F' L' U L U' F R"]},{"id":"oll47","n":47,"name":"Small L","alg":"R' U' R' F R F' R' F R F' U R","len":12,"setups":["F2 D F2 U' F2 D R2 U R D' R2 U' F' R' U F2 D' F","L2 D2 F2 L2 B2 U R2 B2 U2 L F L2 U2 L2 F' D' L2 U2 L"]},{"id":"oll48","n":48,"name":"Small L","alg":"F R U R' U' R U R' U' F'","len":10,"setups":["U R2 U' R2 F2 D F2 R2 U R U' F' U F' D' F2 R2 U' R'","F2 L2 R2 D2 U2 L2 R2 D2 U2 F' U R U' R' U R U' R' F'"]},{"id":"oll49","n":49,"name":"Small L","alg":"r U' r2 U r2 U r2 U' r","len":9,"setups":["R2 F2 U2 R2 F2 R2 U2 R2 F' R2 F2 L F' R2 F2 L'","L2 F2 R2 U2 R2 F2 R2 U2 F2 R2 F R2 F2 L' F' R2 F2 L'"]},{"id":"oll50","n":50,"name":"Small L","alg":"r' U r2 U' r2 U' r2 U r'","len":9,"setups":["U2 L2 F2 U2 L2 F2 L2 U2 L2 F L2 F2 R' F L2 F2 R U2","R2 D2 U2 L2 R2 D2 U2 L' F' L2 F U2 F U2 F' L"]},{"id":"oll51","n":51,"name":"Line","alg":"F U R U' R' U R U' R' F'","len":10,"setups":["F2 L2 R2 D2 U2 L2 R2 D2 U2 F' R U R' U' R U R' U' F'","D' U' F2 D2 R2 D' U' R2 U2 F' R U R' U' R U R' U' F'"]},{"id":"oll52","n":52,"name":"Line","alg":"R U R' U R U' B U' B' R'","len":10,"setups":["L2 D2 U2 L2 R2 D2 U2 R F' L F' L' F U' F U R","L2 D2 U2 L2 R2 D2 U2 R F' U' F U' R U R' U R"]},{"id":"oll53","n":53,"name":"Small L","alg":"r' U' R U' R' U R U' R' U2 r","len":11,"setups":["R2 D R2 D' F2 R2 U' R2 U F' R' F R F2 U2 L F' L' F","R2 U F2 U' F2 R2 D' F2 D F' R' F R F2 U2 L F' L' F"]},{"id":"oll54","n":54,"name":"Small L","alg":"r U R' U R U' R' U R U2 r'","len":11,"setups":["U F2 U' L2 U' L2 U2 F2 L2 F' L' F L2 U L2 U2 L U L","D B2 D' R2 U R2 U F2 D B2 R' D' U R U' F' R U F'"]},{"id":"oll55","n":55,"name":"Line","alg":"R' F R U R U' R2 F' R2 U' R' U R U R'","len":15,"setups":["F2 U' F2 D R2 D' R2 F R' U R' U' F' U R' U' R","U' B2 D2 L2 U R2 U' L2 R2 D' L' U' L D' B' U L U' B'"]},{"id":"oll56","n":56,"name":"Line","alg":"r' U' r U' R' U R U' R' U R r' U r","len":14,"setups":["U' F2 U2 F2 L2 U' L2 D F2 U2 R F R' F' D' U2 F' U2 F'","U' R2 L' F2 L D2 R2 F' L2 F' U2 L2 U' R' F R2 D2 R' L2 U' F2 U2 D' F2 R2 U' R2 F2"]},{"id":"oll57","n":57,"name":"Corners done","alg":"R U R' U' M' U R U' r'","len":9,"setups":["R2 F2 U F2 R2 F2 U' F D' U R' F2 R D U' F","F2 U L2 R2 U' R2 U L R' F' R2 F L R' U' F2"]}],"pll":[{"id":"pll-Aa","n":"Aa","name":"Aa perm","alg":"R' F R' B2 R F' R' B2 R2","len":9,"setups":["U' F D L R2 F F' R2 L' D' F D' L2 U F2 U' L2 U F2 L2 D","U2 L' U L2 R D' D R' L2 U' L U2 F2 L2 D R2 D' L2 D R2 D' F2"]},{"id":"pll-Ab","n":"Ab","name":"Ab perm","alg":"R2 B2 R F R' B2 R F' R","len":9,"setups":["U' L2 D F2 U' F2 F2 U R2 U F2 U' F2 R2 D' F2 L2 U","L2 D' R' L U R2 R2 U R L' D L2 U D R2 D' R2 U' F2 U R2 U F2 U2"]},{"id":"pll-E","n":"E","name":"E perm","alg":"R' U L' D2 L U' R L' U R' D2 R U' L","len":14,"setups":["R2 U F2 U2 F2 R2 U F2 U F2 U2 R2 U' R2 U2","L2 U' L2 U2 F2 U F2 U L2 F2 U2 F2 U L2 U2"]},{"id":"pll-F","n":"F","name":"F perm","alg":"R' U' F' R U R' U' R' F R2 U' R' U' R U R' U R","len":18,"setups":["R2 D' F2 R2 U2 R2 U' F2 U F2 D' F2 D2 R2 U","R2 U R2 F2 U2 F2 U R2 D' F2 D F2 U2 R2 U'"]},{"id":"pll-Ga","n":"Ga","name":"Ga perm","alg":"R2 U R' U R' U' R U' R2 U' D R' U R D'","len":15,"setups":["U2 F2 L2 D R2 D' R2 U R2 U' L2 R2 F2 U'","U2 F2 L2 U F2 D' F2 D R2 U' L2 R2 F2 U'"]},{"id":"pll-Gb","n":"Gb","name":"Gb perm","alg":"R' U' R U D' R2 U R' U R U' R U' R2 D","len":15,"setups":["U F2 L2 R2 U R2 U' R2 D R2 D' L2 F2 U2","U F2 L2 R2 U R2 D' F2 D F2 U' L2 F2 U2"]},{"id":"pll-Gc","n":"Gc","name":"Gc perm","alg":"R2 U' R U' R U R' U R2 U D' R U' R' D","len":15,"setups":["F2 R2 U' F2 D F2 D' L2 U L2 R2 F2 U'","F2 R2 D' L2 D L2 U' L2 U L2 R2 F2 U'"]},{"id":"pll-Gd","n":"Gd","name":"Gd perm","alg":"R U R' U' D R2 U' R U' R' U R' U R2 D'","len":15,"setups":["U F2 L2 R2 U' L2 U L2 D' L2 D R2 F2","U F2 L2 R2 U' L2 D F2 D' F2 U R2 F2"]},{"id":"pll-H","n":"H","name":"H perm","alg":"M2 U M2 U2 M2 U M2","len":7,"setups":["U' F' L' R' D2 F F' D2 R L F D' L2 U2 L2 F2 U D F2 R2 U2 R2","F' D' R2 U R' F2 F2 R U' R2 D F R2 L2 D R2 L2 U2 R2 L2 D R2 L2"]},{"id":"pll-Ja","n":"Ja","name":"Ja perm","alg":"L' U' L F L' U' L U L F' L2 U L","len":13,"setups":["R U R2 F' L' U U' L F R2 U' R' F2 U' F2 D F2 D' L2 U L2 F2 U2","U2 L2 F' R' F L' L F' R F' U2 F2 L2 F2 U' L2 U' F2 D F2 D' L2 F2 U2"]},{"id":"pll-Jb","n":"Jb","name":"Jb perm","alg":"R U R' F' R U R' U' R' F R2 U' R'","len":13,"setups":["R F2 U F' L D2 D2 L' F U' F2 R U D' R2 U R2 U' R2 D R2 U' R2","F2 U2 F2 R L2 U2 U2 R L2 U' D2 L2 D F2 U' F2 U2 L2 D R2"]},{"id":"pll-Na","n":"Na","name":"Na perm","alg":"R U R' U R U R' F' R U R' U' R' F R2 U' R' U2 R U' R'","len":21,"setups":["L2 F2 U2 F2 U' F2 L2 U2 L2 U' F2 U2 L2 U'","F2 R2 U2 R2 U' R2 F2 U2 F2 U' R2 U2 F2 U"]},{"id":"pll-Nb","n":"Nb","name":"Nb perm","alg":"R' U R U' R' F' U' F R U R' F R' F' R U' R","len":17,"setups":["F2 L2 U2 L2 U L2 F2 U2 F2 U L2 U2 F2 U'","R2 F2 U2 F2 U F2 R2 U2 R2 D' F2 D2 R2 D'"]},{"id":"pll-Ra","n":"Ra","name":"Ra perm","alg":"R U' R' U' R U R D R' U' R D' R' U2 R'","len":15,"setups":["F2 U L2 U2 F2 U' F2 R2 U' L2 U R2 U2 F2 U2","L2 U' L2 U' F2 U2 L2 U L2 U' L2 U L2 U F2"]},{"id":"pll-Rb","n":"Rb","name":"Rb perm","alg":"R2 F R U R U' R' F' R U2 R' U2 R","len":13,"setups":["U2 F2 U' R2 U2 F2 U F2 L2 U R2 U' L2 U2 F2","R2 D' U' L2 U R2 U' L2 F2 U' F2 U2 R2 D R2"]},{"id":"pll-T","n":"T","name":"T perm","alg":"R U R' U' R' F R2 U' R' U' R U R' F'","len":14,"setups":["R F' U' D2 U2 R R' U' D2 F R U R2 U' R2 F2 U' F2 D R2 D'","D F L U2 D2 R R' U2 D2 L' F U D' L2 F2 U' F2 U2 D' L2 F2 D R2 U' R2"]},{"id":"pll-Ua","n":"Ua","name":"Ua perm","alg":"R U' R U R U R U' R' U' R2","len":11,"setups":["R D' F2 L' D2 F F' D2 L F2 D R D2 L2 D' R2 L2 U L2 U' R2 L2 D' R2","F2 D' L R2 D R R' D' L' D2 F2 L2 F2 D2 F2 L2 F2 R2 D F2"]},{"id":"pll-Ub","n":"Ub","name":"Ub perm","alg":"R2 U R U R' U' R' U' R' U R'","len":11,"setups":["R L R U' F2 U U' F2 U L D' R2 F2 R2 D2 R2 F2 R2 D' R2 L2","U F' R' L D U U' D' R L' F' D2 R2 F2 L2 D' L2 F2 R2 U' D2 F2 U'"]},{"id":"pll-V","n":"V","name":"V perm","alg":"R U' R U R' D R D' R U' D R2 U R2 D' R2","len":16,"setups":["F2 D F2 D2 L2 U' L2 D F2 L2 U2 L2 U F2 U'","F2 U R2 U2 R2 F2 D R2 U' R2 D2 F2 D F2 U'"]},{"id":"pll-Y","n":"Y","name":"Y perm","alg":"F R U' R' U' R U R' F' R U R' U' R' F R F'","len":17,"setups":["R2 D2 F2 U' L2 D L2 R2 D R2 U' F2 U2 R2 U","F2 U2 L2 U L2 D L2 R2 D R2 D' L2 U2 F2 D'"]},{"id":"pll-Z","n":"Z","name":"Z perm","alg":"M' U M2 U M2 U M' U2 M2","len":9,"setups":["U' R2 F2 U R2 U' F2 R2 F2 U' F2 U F2","L2 F2 U' L2 U F2 L2 F2 D R2 U' R2 D'"]}]};
+
 /* ---- 29-cube-data.js ---- */
 /* ===== Cube data: engine, CFOP solver, word moves, lessons and scramble setups (from the user's CFOP Coach, simulator-checked) ===== */
 const Cube = (() => {
@@ -2679,11 +2910,12 @@ Apps.reg({
       if (stopPlay) stopPlay(); if (timerOff) { timerOff(); timerOff = null; }
       v.innerHTML = ''; ctx.setTitle('CFOP Learner'); ctx.setBack(null); ctx.setActions();
       const body = h('div', { class: 'cube-wrap' });
-      v.append(UI.tabs([['f2l', 'F2L'], ['oll', 'OLL'], ['pll', 'PLL'], ['solve', '🎲 Solve with me'], ['timer', '⏱️ Timer']], tab, t => { tab = t; Prefs.set('cubeTab', t); fill(); }), body);
+      v.append(UI.tabs([['f2l', 'F2L'], ['oll', 'OLL'], ['pll', 'PLL'], ['all', '📚 All 119'], ['solve', '🎲 Solve with me'], ['timer', '⏱️ Timer']], tab, t => { tab = t; Prefs.set('cubeTab', t); fill(); }), body);
       function fill() {
         body.innerHTML = ''; if (timerOff) { timerOff(); timerOff = null; }
         if (tab === 'timer') return timerOff = timer(body);
         if (tab === 'solve') return practice(body);
+        if (tab === 'all') return allCases(body);
         const SUB = { f2l: 'White cross on the bottom. Each case fills the front-right slot: pair a white corner with its edge, then drop them in together.', oll: 'Two looks: first make a yellow cross, then turn the yellow corners to face up.', pll: 'Two looks: first fix the top corners, then the top edges. The top is already all yellow.' };
         body.append(h('p', { class: 'muted small', style: { margin: '0 2px 10px' } }, SUB[tab]), holdTip());
         const groups = {}; for (const l of C.LESSONS.filter(x => x.t === tab)) (groups[l.g] = groups[l.g] || []).push(l);
@@ -2747,6 +2979,49 @@ Apps.reg({
       addEventListener('keydown', onKey); const onRs = () => view.draw(); addEventListener('resize', onRs);
       stopPlay = () => { auto = false; Speak.stop(); removeEventListener('keydown', onKey); removeEventListener('resize', onRs); stopPlay = null; };
       requestAnimationFrame(() => show(0, false)); setTimeout(() => view.draw(), 60);
+    }
+    /* ---------- all 119 cases (41 F2L + 57 OLL + 21 PLL) ---------- */
+    function topView(st, mode) {
+      const COL = { U: '#FFD500', D: '#F4F6F9', F: '#009E60', B: '#0051BA', R: '#FF5800', L: '#C41E3A' }, m = {};
+      for (const s of st.st) if (s.p[1] === 2) m[s.p.join() + '|' + s.n.join()] = s.c;
+      const col = c => mode === 'oll' ? (c === 'U' ? COL.U : '#5B6070') : COL[c];
+      let g = '';
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) { const x = -2 + 2 * c, z = -2 + 2 * r; g += '<rect x="' + (14 + c * 24) + '" y="' + (14 + r * 24) + '" width="22" height="22" rx="4" fill="' + col(m[x + ',2,' + z + '|0,1,0']) + '"/>'; }
+      for (let i = 0; i < 3; i++) { const x = -2 + 2 * i;
+        g += '<rect x="' + (14 + i * 24) + '" y="2" width="22" height="10" rx="3" fill="' + col(m[x + ',2,-2|0,0,-1']) + '"/>';
+        g += '<rect x="' + (14 + i * 24) + '" y="88" width="22" height="10" rx="3" fill="' + col(m[x + ',2,2|0,0,1']) + '"/>';
+        g += '<rect x="2" y="' + (14 + i * 24) + '" width="10" height="22" rx="3" fill="' + col(m['-2,2,' + x + '|-1,0,0']) + '"/>';
+        g += '<rect x="88" y="' + (14 + i * 24) + '" width="10" height="22" rx="3" fill="' + col(m['2,2,' + x + '|1,0,0']) + '"/>'; }
+      return '<svg viewBox="0 0 100 100" width="96" height="96" role="img" aria-label="Top of the cube">' + g + '</svg>';
+    }
+    function allCases(el) {
+      let kind = Prefs.get('cube119', 'oll'); const done = Prefs.get('cubeDone', {});
+      const box = h('div');
+      el.append(h('p', { class: 'muted small', style: { margin: '0 2px 10px' } }, 'Every CFOP case: 41 F2L, 57 OLL and 21 PLL. Each one starts from a solved cube with a real scramble, then shows the moves in words and arrows.'), holdTip(),
+        UI.seg([['f2l', 'F2L · 41'], ['oll', 'OLL · 57'], ['pll', 'PLL · 21']], kind, k => { kind = k; Prefs.set('cube119', k); draw(); }), box);
+      function draw() {
+        box.innerHTML = ''; const list = CUBE_CASES[kind], learned = list.filter(c => done[c.id]).length;
+        box.append(h('p', { class: 'small muted mt' }, learned + ' of ' + list.length + ' learned ✓'));
+        const groups = {}; for (const c of list) (groups[c.group || c.name.split(' ')[0]] = groups[c.group || c.name.split(' ')[0]] || []).push(c);
+        const G = kind === 'oll' ? (() => { const g = {}; for (const c of list) (g[c.name] = g[c.name] || []).push(c); return g; })() : kind === 'pll' ? { 'All PLL cases': list } : groups;
+        for (const gname in G) box.append(h('div', { class: 'sec' }, gname), h('div', { class: 'lessons' }, G[gname].map(c => {
+          const st = E.applyAlg(E.solved(3), c.setups[0]);
+          return h('button', { class: 'lesson', onclick: () => caseLesson(c, kind) }, done[c.id] ? h('span', { class: 'ok', 'aria-label': 'learned' }, '✓') : null, kind === 'f2l' ? cubeThumb(st) : h('span', { html: topView(st, kind) }), h('b', null, kind === 'oll' ? 'OLL ' + c.n : kind === 'pll' ? c.n + ' perm' : c.name), h('small', null, c.len + ' moves'));
+        })));
+      }
+      draw();
+    }
+    function caseLesson(c, kind) {
+      const build = fol => {
+        const steps = []; let setupEnd = 0; const setup = pick(c.setups);
+        if (fol) { steps.push({ k: 'say', text: C.LINES.setup, label: 'Solved → case' }); E.tokenize(setup).forEach(t => steps.push({ k: 'move', tok: t })); setupEnd = steps.length; steps.push({ k: 'say', text: C.LINES.ready, label: 'Solve it' }); }
+        const look = kind === 'f2l' ? c.look : kind === 'oll' ? 'OLL ' + c.n + ' (' + c.name + '). Turn the top until the yellow pattern matches the picture.' : c.name + '. Turn the top until the sides match the picture.';
+        steps.push({ k: 'say', text: look }, { k: 'say', text: c.len + ' moves. Watch the pink arrow.' });
+        E.tokenize(c.alg).forEach(t => steps.push({ k: 'move', tok: t }));
+        steps.push({ k: 'say', text: kind === 'f2l' ? 'The pair is in! Try the next case.' : kind === 'oll' ? 'The whole top is yellow now. Nice!' : 'Solved! Great job.', end: true });
+        return { title: kind === 'oll' ? 'OLL ' + c.n : kind === 'pll' ? c.n + ' perm' : c.name, init: fol ? E.solved(3) : E.applyAlg(E.solved(3), setup), steps, setupEnd, rebuild: build, onEnd: () => { const d = Prefs.get('cubeDone', {}); d[c.id] = 1; Prefs.set('cubeDone', d); } };
+      };
+      player(build(follow));
     }
     function lesson(l) {
       const build = fol => {
@@ -3246,6 +3521,26 @@ addCSS(`
 .slide button.blank{visibility:hidden}
 `);
 const EXTRA_GAMES = {};
+const MY_GAMES = [
+  ['🏟️', 'Nova Arcade (all your games + friends)', 'Your game hub', 'https://claude.ai/artifact/GzogvAQESpamhyH1a6uWUE'],
+  ['🦸', 'Capeborn', '3D superhero · offline app', 'https://szeszeming2-lgtm.github.io/capeborn/', 1],
+  ['🏝️', 'Hollowsky', '3D adventure · offline app', 'https://szeszeming2-lgtm.github.io/hollowsky/', 1],
+  ['⚔️', 'Anime Legends: Islands', 'Open world', 'https://szeszeming2-lgtm.github.io/anime-legends-arena/', 1],
+  ['🟢', 'Slimeborn', '3D RPG', 'https://claude.ai/artifact/H5aqkxbP2AbCJjSX8nLKQ7'],
+  ['👑', 'Misfit Sovereign', '3D RPG · 2 players', 'https://claude.ai/artifact/Fm2VkxhWFvH1q7ZrsE48Am'],
+  ['🏮', 'Lanternbound', 'Adventure RPG', 'https://claude.ai/artifact/HVJfmd44xXB7TX77Swn8Tr'],
+  ['💥', 'Hero Surge', '3D action', 'https://claude.ai/artifact/5e8RkbEBwa6H45uj1BrpeG'],
+  ['🎨', 'Creative Whatever You Want', 'Sandbox', 'https://claude.ai/artifact/KLpN2jFRgPdbTK6gVsPQCB'],
+  ['🧸', 'Chibi Studio', 'Character creator', 'https://claude.ai/artifact/8dH3QufDgvUn8V4U7FSgMq'],
+  ['🗡️', 'Say & Slay', 'Word RPG', 'https://claude.ai/artifact/Dw71tjHt7gtYaczjvXWKrW'],
+  ['🔮', 'Star Orb Saga', '3D action', 'https://claude.ai/artifact/8n7DkyxKjGxVVRX86XqqEP'],
+  ['🌙', 'Hollow Moon', '3D action', 'https://claude.ai/artifact/KFfwNheQQ56X1DDLeiWgD4'],
+  ['🚗', 'Roadster Over Manhattan', 'Flying car', 'https://claude.ai/artifact/AkX8iiaxTumZQFtkdYM6z8'],
+  ['🗡', 'Shadow Monarch Ascent', '3D action', 'https://claude.ai/artifact/7m593d8nggE5GJrHikhdFv'],
+  ['🧊', 'Quarter Turn', 'Rubik’s cube puzzle', 'https://claude.ai/artifact/YaVWbAdbYcNL1WwWNK6ikH'],
+  ['🦸‍♂️', 'Capeborn (Claude link)', '3D superhero', 'https://claude.ai/artifact/UpbieWc5vi9o7n4VdLHvi3'],
+  ['🏝', 'Hollowsky (Claude link, co-op)', '3D adventure · play with friends', 'https://claude.ai/artifact/YZkGzjrrr1XRucVDZMhx3D'],
+];
 function GameBest(k, val, lower) { const all = Prefs.get('gameBest', {}); if (val == null) return all[k]; if (all[k] == null || (lower ? val < all[k] : val > all[k])) { all[k] = val; Prefs.set('gameBest', all); return true; } return false; }
 const GAMES = [
   ['meteor', '☄️', 'Meteor Dash', 'Dodge space rocks, grab stars', 'linear-gradient(135deg,#3A1C71,#D76D77)'],
@@ -3264,7 +3559,8 @@ Apps.reg({
     function home() {
       if (cleanup) { cleanup(); cleanup = null; } v.innerHTML = ''; ctx.setTitle('Games'); ctx.setBack(null); ctx.setActions();
       v.append(h('div', { class: 'stack' }, GAMES.map(([id, e, n, d, c]) => h('button', { class: 'gcard', style: { background: c }, onclick: () => open(id, n) }, h('span', { class: 'e' }, e), h('span', null, h('b', null, n), h('small', null, d + (best(id) != null ? ' · Best: ' + (id === 'sudoku' || id === 'memory' || id === 'slide' ? fmtDur(best(id)) : best(id)) : '')))))),
-        h('div', { class: 'sec' }, '🕹️ Your big 3D games'), h('div', { class: 'list' }, [['🦸', 'Capeborn', 'Superhero adventure', 'https://szeszeming2-lgtm.github.io/capeborn/'], ['🏝️', 'Hollowsky', '1000 floating isles', 'https://szeszeming2-lgtm.github.io/hollowsky/']].map(([e, n, d, u]) => h('button', { class: 'li', onclick: () => window.open(u, '_blank', 'noopener') }, h('span', { class: 'ic' }, e), h('span', { class: 't' }, h('b', null, n), h('small', null, d + ' · opens in Safari')), h('span', { class: 'chev' }, '↗')))));
+        h('div', { class: 'sec' }, '🕹️ All your games (' + MY_GAMES.length + ')'), h('p', { class: 'tiny muted', style: { margin: '0 4px 8px' } }, 'Your own big games. They open in Safari. ⚡ = works offline after the first visit; the others open on claude.ai.'),
+        h('div', { class: 'list' }, MY_GAMES.map(([e, n, g, u, off]) => h('button', { class: 'li', onclick: () => window.open(u, '_blank', 'noopener') }, h('span', { class: 'ic' }, e), h('span', { class: 't' }, h('b', null, n + (off ? ' ⚡' : '')), h('small', null, g)), h('span', { class: 'chev' }, '↗')))));
     }
     function open(id, name) {
       if (cleanup) cleanup(); v.innerHTML = ''; ctx.setTitle(name); ctx.setBack(() => { home(); return true; }); ctx.setActions();
@@ -3454,7 +3750,7 @@ Apps.reg({
       function draw() { grid.innerHTML = ''; tiles.forEach((x, i) => grid.append(h('button', { class: x ? '' : 'blank', 'aria-label': x ? 'Tile ' + x : 'Empty', onclick: () => tap(i) }, x || ''))); paint(); }
       deal(); return () => clearInterval(timer);
     }
-    home();
+    const g0 = ctx.param && GAMES.find(g => g[0] === ctx.param); if (g0) open(g0[0], g0[2]); else home();
     return () => { if (cleanup) cleanup(); };
   },
 });
@@ -3827,6 +4123,118 @@ EXTRA_GAMES.hopper = el => {
   return () => { run = false; cancelAnimationFrame(raf); removeEventListener('keydown', kd); document.removeEventListener('visibilitychange', vis); };
 };
 
+/* ---- 37-links.js ---- */
+/* ===== Links: your favorite websites in one place ===== */
+addCSS(`
+.lgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 8px}
+@media (min-width:640px){.lgrid{grid-template-columns:repeat(6,minmax(0,1fr))}}
+.lnk{display:flex;flex-direction:column;align-items:center;gap:6px;border:0;background:none;padding:0;min-width:0;color:var(--ink)}
+.lnk .lg{width:58px;height:58px;border-radius:16px;display:grid;place-items:center;font-size:28px;color:#fff;font-weight:800;box-shadow:var(--shadow)}
+.lnk b{font-size:12px;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+`);
+const LINK_IDEAS = [
+  ['Learning', '🧠', 'Khan Academy', 'https://www.khanacademy.org'], ['Learning', '🐱', 'Scratch (make games)', 'https://scratch.mit.edu'], ['Learning', '🦉', 'Duolingo', 'https://www.duolingo.com'],
+  ['Learning', '🚀', 'NASA Space Place', 'https://spaceplace.nasa.gov'], ['Learning', '🦁', 'Nat Geo Kids', 'https://kids.nationalgeographic.com'], ['Learning', '🧩', 'Code.org', 'https://code.org'],
+  ['Cubing', '🧊', 'J Perm (cube tutorials)', 'https://jperm.net'], ['Cubing', '⏱️', 'csTimer', 'https://cstimer.net'], ['Cubing', '🏆', 'World Cube Association', 'https://www.worldcubeassociation.org'],
+  ['Fun', '▶️', 'YouTube Kids', 'https://www.youtubekids.com'], ['Fun', '🎮', 'Roblox', 'https://www.roblox.com'], ['Fun', '🧱', 'Minecraft', 'https://www.minecraft.net'],
+  ['Tools', '🔍', 'Google', 'https://www.google.com'], ['Tools', '📖', 'Wikipedia', 'https://en.wikipedia.org'], ['Tools', '🗺️', 'Google Maps', 'https://maps.google.com'],
+];
+Apps.reg({
+  id: 'links', name: 'Links', icon: '🔗', color: 'linear-gradient(135deg,#43CEA2,#185A9D)', group: 'tools', keys: 'bookmarks websites favorites urls shortcuts', blurb: 'Your favorite websites',
+  mount(v, ctx) {
+    const get = () => Prefs.get('links', []), set = l => Prefs.set('links', l);
+    const col = name => 'hsl(' + (hashStr(name.toLowerCase()) % 360) + ' 62% 50%)';
+    function draw() {
+      v.innerHTML = ''; const all = get(); ctx.setActions(h('button', { class: 'btn ghost sm', onclick: () => edit(null) }, '＋ Add'));
+      const q = h('input', { type: 'search', placeholder: 'Search your links' }), box = h('div');
+      v.append(h('div', { class: 'search mb' }, q), box);
+      const paint = () => {
+        box.innerHTML = ''; const s = q.value.trim().toLowerCase(), list = all.filter(l => !s || (l.name + ' ' + l.url + ' ' + (l.group || '')).toLowerCase().includes(s));
+        if (!all.length) box.append(UI.empty('🔗', 'No links yet', 'Save websites you visit a lot, or add some good ones to start.'), h('div', { class: 'center' }, h('button', { class: 'btn pri', onclick: ideas }, '✨ Add some good sites')));
+        const groups = {}; for (const l of list) (groups[l.group || 'My links'] = groups[l.group || 'My links'] || []).push(l);
+        for (const gname in groups) box.append(h('div', { class: 'sec' }, gname), h('div', { class: 'lgrid' }, groups[gname].map(l => onLongPress(h('button', { class: 'lnk', onclick: () => { if (!navigator.onLine) UI.toast('Websites need internet'); window.open(l.url, '_blank', 'noopener'); } }, h('span', { class: 'lg', style: { background: col(l.name) } }, l.emoji || l.name[0].toUpperCase()), h('b', null, l.name)), () => edit(l)))));
+        if (all.length) box.append(h('div', { class: 'row mt2' }, h('button', { class: 'btn sm', onclick: ideas }, '✨ More good sites'), h('span', { class: 'sp tiny muted' }, 'Press and hold a link to change it.')));
+      };
+      q.addEventListener('input', paint); paint();
+    }
+    function edit(l0) {
+      const l = Object.assign({ name: '', url: '', emoji: '', group: '' }, l0 || {});
+      const n = h('input', { type: 'text', value: l.name, placeholder: 'Name' }), u = h('input', { type: 'url', value: l.url, placeholder: 'https://…', autocapitalize: 'off' }), e = h('input', { type: 'text', value: l.emoji, placeholder: '🙂', maxlength: 4, style: { width: '70px', textAlign: 'center', fontSize: '22px' } }), gr = h('input', { type: 'text', value: l.group, placeholder: 'Group (optional, e.g. School)' });
+      UI.sheet({ title: l0 ? 'Edit link' : 'Add a link', body: h('div', { class: 'stack' }, h('div', { class: 'row nw' }, e, n), u, gr, l0 ? h('button', { class: 'btn bad sm', onclick: ev => { set(get().filter(x => x.id !== l.id)); ev.target.closest('.scrim').remove(); draw(); } }, 'Delete link') : null),
+        actions: [{ label: 'Cancel' }, { label: 'Save', cls: 'pri', onClick: c => { let url = u.value.trim(); if (!url) return UI.toast('Paste a web address'); if (!/^[a-z]+:/i.test(url)) url = 'https://' + url; const rec = Object.assign(l, { id: l.id || uid(), name: n.value.trim() || url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0], url, emoji: e.value.trim(), group: gr.value.trim() }); set(get().filter(x => x.id !== rec.id).concat(rec)); c(); draw(); } }] });
+      if (!l0 && navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(t => { if (/^https?:\/\//.test(t) && !u.value) u.value = t.trim(); }).catch(() => { });
+    }
+    function ideas() {
+      const have = new Set(get().map(l => l.url));
+      UI.sheet({ title: 'Good sites to add', body: h('div', { class: 'list' }, LINK_IDEAS.map(([g, e, n, u]) => { const b = h('button', { class: 'li', disabled: have.has(u) }, h('span', { class: 'ic' }, e), h('span', { class: 't' }, h('b', null, n), h('small', null, g)), h('span', { class: 'chev' }, have.has(u) ? '✓' : '＋')); b.onclick = () => { set(get().concat({ id: uid(), name: n, url: u, emoji: e, group: g })); b.disabled = true; b.lastChild.textContent = '✓'; }; return b; })), onClose: draw });
+    }
+    draw();
+  },
+});
+
+/* ---- 38-wheel.js ---- */
+/* ===== Spin Wheel: make wheels, spin to pick ===== */
+addCSS(`
+.wheelbox{position:relative;max-width:420px;margin:0 auto}
+.wheelbox canvas{width:100%;aspect-ratio:1/1;display:block}
+.wheelbox .ptr{position:absolute;left:50%;top:-6px;transform:translateX(-50%);width:0;height:0;border-left:18px solid transparent;border-right:18px solid transparent;border-top:34px solid #FF2E63;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}
+.wheelbox .hub{position:absolute;left:50%;top:50%;width:76px;height:76px;margin:-38px 0 0 -38px;border-radius:50%;border:0;background:radial-gradient(circle at 35% 35%,#fff,#ddd);box-shadow:0 4px 12px rgba(0,0,0,.3);font-weight:900;font-size:17px;color:#222}
+.winner{text-align:center;font-size:28px;font-weight:800;font-family:var(--round);min-height:42px;margin:12px 0 4px}
+`);
+const WHEEL_PRESETS = [
+  ['🎲 Yes or No', ['Yes', 'No', 'Yes', 'No', 'Maybe', 'Ask again']],
+  ['🍕 What to eat', ['Pizza', 'Tacos', 'Pasta', 'Burgers', 'Sushi', 'Noodles', 'Salad', 'Chicken']],
+  ['🎮 Which game', ['Chess', 'Sudoku', 'Snake', 'Meteor Dash', 'Brick Smash', 'Sky Hopper', 'Memory Match', 'Four in a Row']],
+  ['🧊 Cube practice', ['Sune', 'Antisune', 'T perm', 'Y perm', 'Ua perm', 'Ub perm', 'H perm', 'Z perm', 'Jb perm']],
+  ['🔢 1 to 10', ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']],
+  ['🧹 Chores', ['Dishes', 'Trash', 'Make bed', 'Vacuum', 'Laundry', 'Feed pet']],
+  ['🎭 Truth or dare', ['Truth', 'Dare', 'Truth', 'Dare', 'Pass', 'Double dare']],
+];
+const WHEEL_COLORS = ['#FF595E', '#FFCA3A', '#8AC926', '#1982C4', '#6A4C93', '#FF924C', '#52A675', '#4267AC', '#B5A6C9', '#F15BB5'];
+Apps.reg({
+  id: 'wheel', name: 'Spin Wheel', icon: '🎡', color: 'linear-gradient(135deg,#F857A6,#FF5858)', group: 'play', keys: 'random picker decide spinner choose wheel', blurb: 'Spin to decide',
+  mount(v, ctx) {
+    let wheels = Prefs.get('wheels', null) || WHEEL_PRESETS.map(([n, o]) => ({ id: uid(), name: n, opts: o }));
+    let cur = wheels.find(w => w.id === Prefs.get('wheelCur')) || wheels[0], ang = 0, spinning = false, raf = 0, removeWin = Prefs.get('wheelRemove', false);
+    const saveW = () => Prefs.set('wheels', wheels);
+    const cv = h('canvas', { width: 840, height: 840, 'aria-label': 'Wheel' }), g = cv.getContext('2d');
+    const winEl = h('div', { class: 'winner', 'aria-live': 'polite' }), pickSel = h('select', { 'aria-label': 'Which wheel' }), hist = h('div', { class: 'chips', style: { justifyContent: 'center' } });
+    const hub = h('button', { class: 'hub', onclick: () => spin() }, 'SPIN');
+    const remB = h('button', { class: 'chip', 'aria-pressed': String(removeWin), onclick: () => { removeWin = !removeWin; Prefs.set('wheelRemove', removeWin); remB.setAttribute('aria-pressed', String(removeWin)); } }, '✂️ Remove the winner');
+    v.append(h('div', { class: 'row nw mb' }, pickSel, h('button', { class: 'btn', onclick: () => edit(cur) }, 'Edit'), h('button', { class: 'btn', onclick: () => edit(null) }, '＋ New')),
+      h('div', { class: 'wheelbox' }, cv, h('div', { class: 'ptr' }), hub), winEl, h('div', { class: 'row', style: { justifyContent: 'center' } }, h('button', { class: 'btn pri', style: { minWidth: '160px' }, onclick: () => spin() }, '🎡 Spin!'), remB), h('div', { class: 'sec center' }, 'Last spins'), hist);
+    const opts = () => cur.live || cur.opts;
+    function fillSel() { pickSel.innerHTML = ''; wheels.forEach(w => pickSel.append(h('option', { value: w.id, selected: w === cur }, w.name))); }
+    pickSel.onchange = () => { cur = wheels.find(w => w.id === pickSel.value); cur.live = null; Prefs.set('wheelCur', cur.id); winEl.textContent = ''; draw(); };
+    function draw() {
+      const o = opts(), n = Math.max(1, o.length), R = 400, c = 420; g.clearRect(0, 0, 840, 840);
+      g.save(); g.translate(c, c); g.rotate(ang);
+      o.forEach((txt, i) => { const a0 = i / n * 6.2832 - Math.PI / 2 - Math.PI / n, a1 = a0 + 6.2832 / n; g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, R, a0, a1); g.closePath(); g.fillStyle = WHEEL_COLORS[i % WHEEL_COLORS.length]; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 4; g.stroke();
+        g.save(); g.rotate((a0 + a1) / 2); g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.font = '800 ' + Math.max(22, Math.min(44, 560 / n)) + 'px ' + getComputedStyle(document.body).fontFamily; g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 4; let t = String(txt); while (g.measureText(t).width > R - 110 && t.length > 3) t = t.slice(0, -2) + '…'; g.fillText(t, R - 26, 0); g.restore(); });
+      g.restore(); g.beginPath(); g.arc(c, c, R, 0, 6.2832); g.lineWidth = 12; g.strokeStyle = '#222'; g.stroke();
+    }
+    function spin() {
+      if (spinning) return; const o = opts(); if (o.length < 2) { UI.toast('Add at least 2 choices'); return; }
+      spinning = true; winEl.textContent = '…'; Sfx.ctx(); const start = ang, target = start + 6.2832 * (5 + Math.random() * 3) + Math.random() * 6.2832, dur = 4200 + Math.random() * 1200, t0 = performance.now(); let lastTick = -1;
+      const n = o.length, step = () => { const k = Math.min(1, (performance.now() - t0) / dur), e = 1 - Math.pow(1 - k, 4); ang = start + (target - start) * e; draw();
+        const idx = Math.floor((((-ang / 6.2832) * n) % n + n + 0.5) % n); if (idx !== lastTick) { lastTick = idx; if (Prefs.get('sound', true)) Sfx.tone(900, 0.02, { type: 'square', vol: 0.04 }); }
+        if (k < 1) raf = requestAnimationFrame(step); else done(); };
+      const done = () => { spinning = false; const idx = Math.floor((((-ang / 6.2832) * n) % n + n + 0.5) % n) % n, win = o[idx]; winEl.textContent = '🎉 ' + win; Sfx.win();
+        const H = Prefs.get('wheelHist', []); H.unshift(win); Prefs.set('wheelHist', H.slice(0, 12)); paintHist();
+        if (removeWin) { cur.live = o.filter((_, i) => i !== idx); if (cur.live.length < 2) { cur.live = null; UI.toast('Everyone had a turn — wheel is full again'); } setTimeout(draw, 900); } };
+      raf = requestAnimationFrame(step); setTimeout(() => { if (spinning) { ang = target; draw(); done(); } }, dur + 400);
+    }
+    function paintHist() { hist.innerHTML = ''; Prefs.get('wheelHist', []).forEach(x => hist.append(h('span', { class: 'chip' }, x))); }
+    function edit(w0) {
+      const w = w0 || { id: uid(), name: 'My wheel', opts: [] }, name = h('input', { type: 'text', value: w.name }), ta = h('textarea', { placeholder: 'One choice per line', style: { minHeight: '180px' } }); ta.value = w.opts.join('\n');
+      UI.sheet({ title: w0 ? 'Edit wheel' : 'New wheel', body: h('div', { class: 'stack' }, h('label', { class: 'f' }, h('span', null, 'Name'), name), h('label', { class: 'f' }, h('span', null, 'Choices (one per line)'), ta), w0 && wheels.length > 1 ? h('button', { class: 'btn bad sm', onclick: e => { wheels = wheels.filter(x => x !== w); saveW(); cur = wheels[0]; e.target.closest('.scrim').remove(); fillSel(); draw(); } }, 'Delete this wheel') : null),
+        actions: [{ label: 'Cancel' }, { label: 'Save', cls: 'pri', onClick: c => { const o = ta.value.split('\n').map(x => x.trim()).filter(Boolean).slice(0, 40); if (o.length < 2) return UI.toast('Add at least 2 choices'); w.name = name.value.trim() || 'My wheel'; w.opts = o; w.live = null; if (!w0) wheels.push(w); cur = w; Prefs.set('wheelCur', w.id); saveW(); c(); fillSel(); draw(); } }] });
+    }
+    fillSel(); draw(); paintHist();
+    return () => cancelAnimationFrame(raf);
+  },
+});
+
 /* ---- 40-dict.js ---- */
 /* ===== Dictionary: 87,000 English words from WordNet, all offline ===== */
 addCSS(`
@@ -3990,8 +4398,8 @@ Apps.reg({
     const box = h('div', { class: 'mapbox' }, cv, h('div', { class: 'mapctl' }, h('button', { 'aria-label': 'Zoom in', onclick: () => zoomAt(1.6) }, '+'), h('button', { 'aria-label': 'Zoom out', onclick: () => zoomAt(1 / 1.6) }, '−'), h('button', { 'aria-label': 'Show my location', onclick: locate }, '📍')), info);
     const search = h('input', { type: 'search', placeholder: 'Find a country', 'aria-label': 'Find a country' });
     const placesBox = h('div');
-    v.append(h('div', { class: 'search mb' }, search), box, h('div', { class: 'row mt' }, h('button', { class: 'btn', onclick: locate }, '📍 Where am I?'), h('button', { class: 'btn', onclick: () => addPlace() }, '⭐ Save a place'), h('span', { class: 'sp' })), placesBox,
-      h('p', { class: 'tiny muted mt' }, 'Your phone’s GPS works without internet. This map shows countries, not streets — for street directions use Apple Maps with an offline map downloaded.'));
+    v.append(h('div', { class: 'search mb' }, search), box, h('div', { class: 'row mt' }, h('button', { class: 'btn', onclick: locate }, '📍 Where am I?'), h('button', { class: 'btn', onclick: () => addPlace() }, '⭐ Save a place'), h('button', { class: 'btn', onclick: () => gmaps('') }, '🌍 Google Maps')), placesBox,
+      h('p', { class: 'tiny muted mt' }, 'Your phone’s GPS works without internet. This map shows countries; for streets and directions tap 🌍 Google Maps (needs internet).'));
     let D; try { D = await WorldData.load(); } catch (e) { box.replaceWith(UI.empty('🌐', 'Map not saved yet', 'Open Super One once with internet so it can save the world map.')); return; }
     const g = cv.getContext('2d'); let W = 0, H = 0, dpr = 1, s = 1, tx = 0, ty = 0, sel = null, me = null, places = [], raf = 0;
     const fit = (x0, y0, x1, y1, pad = 0.12) => { const w = x1 - x0, hh = y1 - y0; s = Math.min(W / (w * (1 + pad * 2)), H / (hh * (1 + pad * 2))); s = clamp(s, minS(), 400); tx = W / 2 - (x0 + w / 2) * s; ty = H / 2 - (y0 + hh / 2) * s; clampView(); draw(); };
@@ -4044,7 +4452,19 @@ Apps.reg({
         f.official && f.official !== c.name ? h('p', { class: 'muted small' }, f.official) : null,
         h('dl', { class: 'facts' }, row('Capital', f.capital), row('Region', [f.sub || f.region].filter(Boolean).join('')), row('Size', f.area ? Math.round(f.area).toLocaleString() + ' km²' : ''), row('Languages', (f.lang || []).join(', ')), row('Money', (f.money || []).join(', ')), row('Borders', f.borders != null ? (f.borders ? f.borders + ' countries' : 'No land borders') + (f.land ? ' · no coast' : '') : '')),
         me ? h('p', { class: 'small muted mt' }, '📏 About ' + fmtKm(haversine(me.lat, me.lon, f.latlng[0], f.latlng[1])) + ' from you (to the middle of the country).') : null),
-        actions: [{ label: '🔊 Say it', onClick: () => Speak.say(c.name + (f.capital ? '. Capital: ' + f.capital : '')) }, { label: 'Zoom to it', cls: 'pri', onClick: cl => { cl(); sel = c; fit(...c.bb, 0.3); } }] });
+        actions: [{ label: '🔊 Say it', onClick: () => Speak.say(c.name + (f.capital ? '. Capital: ' + f.capital : '')) }, { label: '🌍 Google Maps', onClick: cl => { cl(); gmaps(c.name); } }, { label: 'Zoom to it', cls: 'pri', onClick: cl => { cl(); sel = c; fit(...c.bb, 0.3); } }] });
+    }
+    function gmaps(query, label) {
+      const inp = h('input', { type: 'search', placeholder: 'Search a place, address or shop', value: label || query || '', enterkeyhint: 'search' }), frame = h('div', { style: { marginTop: '10px' } });
+      const q = () => inp.value.trim() || (me ? me.lat.toFixed(5) + ',' + me.lon.toFixed(5) : '');
+      const show = () => { frame.innerHTML = ''; const v2 = query && !inp.value.trim() ? query : q(); if (!v2) return; if (!navigator.onLine) { frame.append(h('div', { class: 'note-banner' }, '📴 Google Maps needs internet. The world map here still works offline.')); return; }
+        frame.append(h('iframe', { src: 'https://www.google.com/maps?q=' + encodeURIComponent(query && /^-?\d/.test(query) && label === inp.value.trim() ? query : v2) + '&z=15&output=embed', title: 'Google Maps', loading: 'lazy', referrerpolicy: 'no-referrer-when-downgrade', style: { width: '100%', height: '55vh', border: 0, borderRadius: '14px' } })); };
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { query = ''; show(); } });
+      const target = () => (query && label === inp.value.trim() ? query : q());
+      UI.sheet({ title: '🌍 Google Maps', body: h('div', null, inp, frame, h('p', { class: 'tiny muted mt' }, 'Google Maps works online. “Open app” uses the Google Maps app if you have it, or the website.')),
+        actions: [{ label: '🧭 Directions', onClick: () => { const t = target(); if (t) openOut('comgooglemaps://?daddr=' + encodeURIComponent(t) + '&directionsmode=driving', 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(t)); } },
+          { label: 'Open app ↗', cls: 'pri', onClick: () => { const t = target(); openOut('comgooglemaps://?q=' + encodeURIComponent(t), 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(t)); } }] });
+      show(); if (!query && !label) setTimeout(() => inp.focus(), 80);
     }
     async function locate() {
       UI.toast('Finding you…');
@@ -4058,7 +4478,7 @@ Apps.reg({
     }
     function showPlace(p) {
       UI.sheet({ title: '📍 ' + p.name, body: h('div', null, h('p', null, Math.abs(p.lat).toFixed(4) + '°' + (p.lat >= 0 ? 'N' : 'S') + ', ' + Math.abs(p.lon).toFixed(4) + '°' + (p.lon >= 0 ? 'E' : 'W')), me ? h('p', null, '📏 ' + fmtKm(haversine(me.lat, me.lon, p.lat, p.lon)) + ' away (straight line)') : null, h('p', { class: 'muted small' }, 'Saved ' + fmtDay(new Date(p.created)))),
-        actions: [{ label: 'Delete', cls: 'bad', onClick: async c => { await DB.del('places', p.id); c(); await loadPlaces(); draw(); } }, { label: 'Go there', cls: 'pri', onClick: c => { c(); const [x, y] = WorldData.merc(p.lon, p.lat).map(q => q * D.S); s = Math.max(s, minS() * 20); tx = W / 2 - x * s; ty = H / 2 - y * s; clampView(); draw(); } }] });
+        actions: [{ label: 'Delete', cls: 'bad', onClick: async c => { await DB.del('places', p.id); c(); await loadPlaces(); draw(); } }, { label: '🌍 Google', onClick: c => { c(); gmaps(p.lat.toFixed(5) + ',' + p.lon.toFixed(5), p.name); } }, { label: 'Go there', cls: 'pri', onClick: c => { c(); const [x, y] = WorldData.merc(p.lon, p.lat).map(q => q * D.S); s = Math.max(s, minS() * 20); tx = W / 2 - x * s; ty = H / 2 - y * s; clampView(); draw(); } }] });
     }
     async function loadPlaces() { places = (await DB.all('places')).sort((a, b) => b.created - a.created); paintPlaces(); }
     function paintPlaces() { placesBox.innerHTML = ''; if (!places.length) return; placesBox.append(h('div', { class: 'sec' }, '⭐ My places'), h('div', { class: 'list' }, places.map(p => h('button', { class: 'li', onclick: () => showPlace(p) }, h('span', { class: 'ic' }, '📍'), h('span', { class: 't' }, h('b', null, p.name), h('small', null, me ? fmtKm(haversine(me.lat, me.lon, p.lat, p.lon)) + ' away' : p.lat.toFixed(3) + ', ' + p.lon.toFixed(3))), h('span', { class: 'chev' }, '›'))))); }
@@ -4587,6 +5007,89 @@ Apps.reg({
     }
     if (ctx.param && ctx.param.startsWith('search:')) search(ctx.param.slice(7)); else home();
     return () => { if (window.speechSynthesis) speechSynthesis.cancel(); if (ctx._bar) ctx._bar(); };
+  },
+});
+
+/* ---- 47-wiki.js ---- */
+/* ===== Wikipedia: search and read articles online, save them to read offline ===== */
+addCSS(`
+.wart{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px 16px 22px;line-height:1.6;font-size:17px;overflow-wrap:anywhere}
+.wart h1{font-size:28px;margin:0 0 6px;font-family:Georgia,"Iowan Old Style",serif}
+.wart h2{font-size:22px;margin:22px 0 6px;font-family:Georgia,serif;border-bottom:1px solid var(--line);padding-bottom:4px}
+.wart h3{font-size:18px;margin:16px 0 4px}
+.wart p{margin:0 0 12px}
+.wart img{max-width:100%;height:auto;border-radius:8px}
+.wart figure,.wart .thumb{margin:10px 0;text-align:center;font-size:13px;color:var(--muted)}
+.wart .infobox{width:100%!important;font-size:14px;border-collapse:collapse;margin:0 0 14px;background:var(--surface2);border-radius:12px;overflow:hidden;display:block;overflow-x:auto}
+.wart table{max-width:100%;display:block;overflow-x:auto;border-collapse:collapse;font-size:14px}
+.wart td,.wart th{padding:4px 8px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+.wart a{color:var(--accent);text-decoration:none}
+.wart ul,.wart ol{padding-left:22px}
+.wsum{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-top:1px solid var(--line);background:none;border-left:0;border-right:0;border-bottom:0;width:100%;text-align:left;color:var(--ink)}
+.wsum:first-child{border-top:0}
+.wsum .im{width:56px;height:56px;border-radius:10px;flex:0 0 auto;background:var(--surface2) center/cover;display:grid;place-items:center;font-size:24px}
+.wsum b{display:block}.wsum small{display:block;color:var(--muted);font-size:13px}
+`);
+const Wiki = {
+  api: 'https://en.wikipedia.org/w/api.php?format=json&formatversion=2&origin=*&',
+  async search(q) { const r = await (await fetch(this.api + 'action=query&list=search&srlimit=12&srprop=snippet&srsearch=' + encodeURIComponent(q))).json(); return (r.query && r.query.search || []).map(x => ({ title: x.title, sum: strip(x.snippet) })); },
+  async article(title) {
+    const r = await (await fetch(this.api + 'action=parse&prop=text|displaytitle&redirects=1&disableeditsection=1&disabletoc=1&page=' + encodeURIComponent(title))).json();
+    if (r.error) throw new Error(r.error.info || 'Not found'); return { title: r.parse.title, html: this.clean(r.parse.text) };
+  },
+  clean(html) {
+    const d = new DOMParser().parseFromString(html, 'text/html');
+    d.querySelectorAll('script,style,link,.mw-editsection,sup.reference,.reference,.reflist,ol.references,.navbox,.navbox-styles,.ambox,.mbox-small,.metadata,.noprint,.sistersitebox,.mw-empty-elt,.portalbox,.shortdescription,#coordinates,.hatnote,.mw-references-wrap,.sidebar,.vertical-navbox').forEach(e => e.remove());
+    // drop the end sections (references, links) — they are long and not useful offline
+    for (const hdr of d.querySelectorAll('h2')) { if (/^(References|External links|Notes|Further reading|Sources|Bibliography|Citations|Footnotes)/i.test(hdr.textContent.trim())) { let n = (hdr.closest('.mw-heading') || hdr); const kill = []; while (n) { kill.push(n); n = n.nextElementSibling; } kill.forEach(k => k.remove()); break; } }
+    d.querySelectorAll('img').forEach(i => { let s = i.getAttribute('src') || ''; if (s.startsWith('//')) i.setAttribute('src', 'https:' + s); i.removeAttribute('srcset'); i.setAttribute('loading', 'lazy'); i.removeAttribute('width'); i.removeAttribute('height'); });
+    d.querySelectorAll('a').forEach(a => { const h2 = a.getAttribute('href') || ''; const m = h2.match(/^\/wiki\/([^#?]+)/); if (m && !/^(File|Special|Help|Category|Template|Wikipedia|Portal|Talk):/.test(decodeURIComponent(m[1]))) { a.setAttribute('data-wiki', decodeURIComponent(m[1]).replace(/_/g, ' ')); a.setAttribute('href', '#'); } else if (/^https?:/.test(h2)) { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener'); } else if (h2.startsWith('#')) { } else { a.replaceWith(...a.childNodes); } });
+    d.querySelectorAll('[style]').forEach(e => { if (!e.matches('.infobox *')) e.removeAttribute('style'); });
+    return d.body.innerHTML;
+  },
+};
+Apps.reg({
+  id: 'wiki', name: 'Wikipedia', icon: '📚', color: 'linear-gradient(135deg,#8E9EAB,#3E4A59)', group: 'learn', keys: 'encyclopedia wiki article facts research search', blurb: 'Read Wikipedia, save for offline',
+  mount(v, ctx) {
+    const savedList = () => Prefs.get('wikiSaved', []);
+    const q = h('input', { type: 'search', placeholder: 'Search Wikipedia', enterkeyhint: 'search', autocomplete: 'off' }), out = h('div', { class: 'mt' });
+    v.append(h('div', { class: 'search' }, q), out);
+    q.addEventListener('keydown', e => { if (e.key === 'Enter' && q.value.trim()) { q.blur(); results(q.value.trim()); } });
+    async function home() {
+      ctx.setTitle('Wikipedia'); ctx.setBack(null); ctx.setActions(navigator.onLine ? h('button', { class: 'btn ghost sm', onclick: random }, '🎲 Random') : null); out.innerHTML = '';
+      if (!navigator.onLine) out.append(h('div', { class: 'note-banner' }, '📴 You’re offline. Your saved articles still open below.'));
+      const S = savedList();
+      if (S.length) out.append(h('div', { class: 'sec' }, '⭐ Saved for offline (' + S.length + ')'), h('div', { class: 'list' }, S.map(s => h('button', { class: 'wsum', onclick: () => open(s.title) }, h('span', { class: 'im' }, '📄'), h('span', null, h('b', null, s.title), h('small', null, 'Saved ' + fmtAgo(s.at)))))));
+      if (navigator.onLine) {
+        try { const d = new Date(), j = await (await fetch('https://en.wikipedia.org/api/rest_v1/feed/featured/' + d.getFullYear() + '/' + pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()))).json();
+          if (j.tfa) out.prepend(h('div', { class: 'sec', style: { marginTop: '4px' } }, '⭐ Today’s featured article'), h('button', { class: 'wsum card', style: { border: '1px solid var(--line)' }, onclick: () => open(j.tfa.titles.normalized) }, h('span', { class: 'im', style: { backgroundImage: j.tfa.thumbnail ? 'url("' + j.tfa.thumbnail.source + '")' : 'none' } }, j.tfa.thumbnail ? '' : '📖'), h('span', null, h('b', null, j.tfa.titles.normalized), h('small', null, strip(j.tfa.extract).slice(0, 140) + '…'))));
+          if (j.mostread) {} } catch (e) { }
+        out.append(h('div', { class: 'sec' }, 'Try'), h('div', { class: 'chips' }, ['Rubik’s Cube', 'Solar System', 'Dinosaur', 'Volcano', 'Black hole', 'Chess', 'Ancient Egypt', 'Shark', 'Moon landing', 'Minecraft'].map(t => h('button', { class: 'chip', onclick: () => open(t) }, t))));
+      } else if (!S.length) out.append(UI.empty('📚', 'Nothing saved yet', 'When you’re online, open an article and tap “Save for offline”.'));
+    }
+    async function results(term) {
+      ctx.setBack(() => { home(); return true; }); out.innerHTML = '';
+      if (!navigator.onLine) { const S = savedList().filter(s => s.title.toLowerCase().includes(term.toLowerCase())); out.append(S.length ? h('div', { class: 'list' }, S.map(s => h('button', { class: 'wsum', onclick: () => open(s.title) }, h('span', { class: 'im' }, '📄'), h('b', null, s.title)))) : UI.empty('📴', 'Searching needs internet', 'Your saved articles still work offline.')); return; }
+      out.append(h('div', { class: 'empty' }, 'Searching…'));
+      try { const R = await Wiki.search(term); out.innerHTML = ''; if (!R.length) { out.append(UI.empty('🤔', 'No articles found')); return; } out.append(h('div', { class: 'list' }, R.map(r => h('button', { class: 'wsum', onclick: () => open(r.title) }, h('span', { class: 'im' }, '📄'), h('span', null, h('b', null, r.title), h('small', null, r.sum.slice(0, 150))))))); }
+      catch (e) { out.innerHTML = ''; out.append(UI.empty('⚠️', 'Couldn’t search right now', e.message)); }
+    }
+    async function random() { try { const r = await (await fetch('https://en.wikipedia.org/api/rest_v1/page/random/summary')).json(); open(r.titles ? r.titles.normalized : r.title); } catch (e) { UI.toast('Couldn’t load a random article'); } }
+    async function open(title) {
+      ctx.setBack(() => { home(); return true; }); out.innerHTML = ''; out.append(h('div', { class: 'empty' }, 'Opening…')); scrollTo(0, 0);
+      let art = await DB.kget('wiki:' + title, null), fromSave = !!art;
+      if (!art || navigator.onLine) { try { art = await Wiki.article(title); fromSave = false; } catch (e) { if (!art) { out.innerHTML = ''; out.append(UI.empty('📴', navigator.onLine ? 'Couldn’t open that article' : 'This article isn’t saved', navigator.onLine ? e.message : 'Connect to the internet to read it, then tap “Save for offline”.')); return; } } }
+      const isSaved = () => savedList().some(s => s.title === art.title);
+      const saveB = h('button', { class: 'btn sm' + (isSaved() ? '' : ' pri') }, isSaved() ? '✓ Saved' : '⭐ Save for offline');
+      saveB.onclick = async () => { if (isSaved()) { Prefs.set('wikiSaved', savedList().filter(s => s.title !== art.title)); await DB.kdel('wiki:' + art.title); saveB.textContent = '⭐ Save for offline'; saveB.classList.add('pri'); UI.toast('Removed from offline'); } else { await DB.kset('wiki:' + art.title, art); Prefs.set('wikiSaved', [{ title: art.title, at: Date.now() }].concat(savedList().filter(s => s.title !== art.title)).slice(0, 200)); saveB.textContent = '✓ Saved'; saveB.classList.remove('pri'); UI.toast('Saved — readable offline (text only)'); } };
+      ctx.setTitle(art.title); ctx.setActions(h('button', { class: 'ib', 'aria-label': 'Read aloud', onclick: () => { const t = body.innerText.slice(0, 4000); Speak.say(t); } }, '🔊'));
+      const body = h('div', { class: 'wart', html: '<h1>' + esc(art.title) + '</h1>' + art.html });
+      body.addEventListener('click', e => { const a = e.target.closest('a[data-wiki]'); if (a) { e.preventDefault(); open(a.dataset.wiki); } });
+      out.innerHTML = ''; out.append(h('div', { class: 'row mb' }, saveB, h('button', { class: 'btn sm', onclick: () => shareText('https://en.wikipedia.org/wiki/' + encodeURIComponent(art.title.replace(/ /g, '_')), art.title) }, '📤 Share'), fromSave ? h('span', { class: 'pill' }, '📴 Saved copy') : null), body,
+        h('p', { class: 'tiny muted mt' }, 'From Wikipedia, the free encyclopedia (CC BY-SA). Pictures need internet.'));
+    }
+    if (ctx.param) open(ctx.param); else home();
+    return () => Speak.stop();
   },
 });
 
