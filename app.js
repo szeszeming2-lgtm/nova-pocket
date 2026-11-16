@@ -1,0 +1,3403 @@
+window.NP_VERSION='b695da78a1';
+/* ---- 00-core.js ---- */
+'use strict';
+/* ===== Nova Pocket core: helpers, storage, dialogs, files, sound ===== */
+const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  if (attrs) for (const k in attrs) {
+    const v = attrs[k]; if (v == null || v === false) continue;
+    if (k === 'class') e.className = v; else if (k === 'html') e.innerHTML = v; else if (k === 'text') e.textContent = v;
+    else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+    else if (k === 'style' && typeof v === 'object') Object.assign(e.style, v);
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat(9)) if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(c));
+  return e;
+}
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const pad2 = n => String(n).padStart(2, '0');
+const ymd = d => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+const fromYmd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const fmtDay = (d, o = { weekday: 'short', month: 'short', day: 'numeric' }) => d.toLocaleDateString(undefined, o);
+const fmtTime = d => d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+const fmtDur = s => { s = Math.max(0, Math.round(s || 0)); const m = Math.floor(s / 60); return m + ':' + pad2(s % 60); };
+const fmtSize = b => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(0) + ' KB' : b < 1073741824 ? (b / 1048576).toFixed(1) + ' MB' : (b / 1073741824).toFixed(2) + ' GB';
+const fmtAgo = t => { const s = (Date.now() - t) / 1000; if (s < 60) return 'just now'; if (s < 3600) return Math.floor(s / 60) + ' min ago'; if (s < 86400) return Math.floor(s / 3600) + ' h ago'; const d = Math.floor(s / 86400); return d === 1 ? 'yesterday' : d + ' days ago'; };
+const debounce = (f, ms) => { let t; const g = (...a) => { clearTimeout(t); t = setTimeout(() => f(...a), ms); }; g.flush = (...a) => { clearTimeout(t); f(...a); }; return g; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const isTouch = () => matchMedia('(pointer:coarse)').matches;
+const SVG = {
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5.5" y="4" width="4.5" height="16" rx="1.2"/><rect x="14" y="4" width="4.5" height="16" rx="1.2"/></svg>',
+  next: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 5.5v13a1 1 0 0 0 1.5.86L15 13.7V18a1 1 0 0 0 2 0V6a1 1 0 0 0-2 0v4.3L5.5 4.64A1 1 0 0 0 4 5.5z"/></svg>',
+  prev: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 5.5v13a1 1 0 0 1-1.5.86L9 13.7V18a1 1 0 0 1-2 0V6a1 1 0 0 1 2 0v4.3l9.5-5.66A1 1 0 0 1 20 5.5z"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>',
+  more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+};
+
+/* ---------- IndexedDB storage (everything stays on this device) ---------- */
+const DB = (() => {
+  const NAME = 'nova-pocket', VER = 1;
+  const STORES = ['kv', 'notes', 'events', 'reminders', 'decks', 'cards', 'media', 'songs', 'memos', 'places', 'vault'];
+  let dbp = null;
+  function open() {
+    return dbp || (dbp = new Promise((res, rej) => {
+      const r = indexedDB.open(NAME, VER);
+      r.onupgradeneeded = () => { const d = r.result; for (const s of STORES) if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, s === 'kv' ? undefined : { keyPath: 'id' }); };
+      r.onsuccess = () => { const d = r.result; d.onversionchange = () => d.close(); res(d); };
+      r.onerror = () => { dbp = null; rej(r.error); };
+    }));
+  }
+  async function tx(store, mode, fn) {
+    const d = await open();
+    return new Promise((res, rej) => {
+      const t = d.transaction(store, mode), s = t.objectStore(store); let out;
+      const r = fn(s); if (r) r.onsuccess = () => { out = r.result; };
+      t.oncomplete = () => res(out); t.onerror = t.onabort = () => rej(t.error || new Error('storage'));
+    });
+  }
+  const changed = new Set();
+  const note = s => changed.forEach(f => { try { f(s); } catch (e) { } });
+  return {
+    STORES, open,
+    all: s => tx(s, 'readonly', o => o.getAll()).then(a => a || []),
+    get: (s, id) => tx(s, 'readonly', o => o.get(id)),
+    put: (s, v) => tx(s, 'readwrite', o => o.put(v)).then(() => (note(s), v)),
+    del: (s, id) => tx(s, 'readwrite', o => o.delete(id)).then(() => note(s)),
+    clear: s => tx(s, 'readwrite', o => o.clear()).then(() => note(s)),
+    count: s => tx(s, 'readonly', o => o.count()),
+    kget: (k, d) => tx('kv', 'readonly', o => o.get(k)).then(v => v === undefined ? d : v),
+    kset: (k, v) => tx('kv', 'readwrite', o => o.put(v, k)).then(() => note('kv')),
+    kdel: k => tx('kv', 'readwrite', o => o.delete(k)),
+    async kentries() {
+      const d = await open();
+      return new Promise((res, rej) => {
+        const out = [], t = d.transaction('kv'), c = t.objectStore('kv').openCursor();
+        c.onsuccess = () => { const cur = c.result; if (cur) { out.push([cur.key, cur.value]); cur.continue(); } };
+        t.oncomplete = () => res(out); t.onerror = () => rej(t.error);
+      });
+    },
+    onChange(f) { changed.add(f); return () => changed.delete(f); },
+  };
+})();
+/* fast settings mirror (theme etc. need to be known before the first paint) */
+const Prefs = {
+  get(k, d) { try { const v = localStorage.getItem('np.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('np.' + k, JSON.stringify(v)); } catch (e) { } },
+};
+
+/* ---------- dialogs ---------- */
+const UI = {
+  toast(msg, ms = 2300) {
+    let host = $('#toasts'); if (!host) { host = h('div', { id: 'toasts', 'aria-live': 'polite' }); document.body.append(host); }
+    const t = h('div', { class: 'toast' }, msg); host.append(t); setTimeout(() => t.remove(), ms);
+  },
+  sheet({ title, body, actions = [], onClose }) {
+    const prevFocus = document.activeElement;
+    const close = () => { scrim.remove(); document.removeEventListener('keydown', key); onClose && onClose(); try { prevFocus && prevFocus.focus && prevFocus.focus(); } catch (e) { } };
+    const key = e => { if (e.key === 'Escape') close(); };
+    const content = typeof body === 'function' ? body(() => close()) : body;
+    const foot = actions.length ? h('footer', null, actions.map(a => h('button', { class: 'btn ' + (a.cls || ''), onclick: () => a.onClick ? a.onClick(close) : close() }, a.label))) : null;
+    const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title || 'Panel' },
+      h('header', null, h('h3', null, title || ''), h('button', { class: 'ib', 'aria-label': 'Close', html: SVG.close, onclick: close })),
+      h('div', { class: 'body' }, content), foot);
+    const scrim = h('div', { class: 'scrim', onclick: e => { if (e.target === scrim) close(); } }, sheet);
+    document.body.append(scrim); document.addEventListener('keydown', key);
+    setTimeout(() => { const f = sheet.querySelector('input:not([type=checkbox]):not([type=range]),textarea'); if (f && !isTouch()) f.focus(); }, 60);
+    return { el: sheet, close };
+  },
+  ask(msg, { ok = 'OK', cancel = 'Cancel', danger = false } = {}) {
+    return new Promise(res => {
+      const done = v => { scrim.remove(); res(v); };
+      const box = h('div', { class: 'dialog', role: 'alertdialog' }, h('p', null, msg),
+        h('div', { class: 'row nw' }, h('button', { class: 'btn', onclick: () => done(false) }, cancel), h('button', { class: 'btn ' + (danger ? 'bad' : 'pri'), onclick: () => done(true) }, ok)));
+      const scrim = h('div', { class: 'scrim', style: { alignItems: 'center' }, onclick: e => { if (e.target === scrim) done(false); } }, box);
+      document.body.append(scrim); setTimeout(() => box.querySelector('.btn:last-child').focus(), 30);
+    });
+  },
+  prompt(title, { value = '', placeholder = '', ok = 'Save', type = 'text' } = {}) {
+    return new Promise(res => {
+      let val = null;
+      const inp = h('input', { type, value, placeholder, onkeydown: e => { if (e.key === 'Enter') { val = inp.value; s.close(); } } });
+      const s = UI.sheet({ title, body: h('div', null, inp), onClose: () => res(val), actions: [{ label: 'Cancel' }, { label: ok, cls: 'pri', onClick: c => { val = inp.value; c(); } }] });
+      setTimeout(() => { inp.focus(); inp.select(); }, 80);
+    });
+  },
+  menu(title, items) {
+    const s = UI.sheet({ title, body: h('div', { class: 'list' }, items.filter(Boolean).map(it => h('button', { class: 'li', onclick: () => { s.close(); it.run(); } },
+      h('span', { class: 'ic' }, it.icon || '•'), h('span', { class: 't' }, h('b', { style: it.danger ? { color: 'var(--bad)' } : null }, it.label), it.sub ? h('small', null, it.sub) : null)))) });
+  },
+  empty(icon, title, text) { return h('div', { class: 'empty' }, h('div', { class: 'big' }, icon), h('b', null, title), text ? h('div', null, text) : null); },
+  seg(options, value, onPick) {
+    const el = h('div', { class: 'seg', role: 'group' });
+    const draw = v => { el.innerHTML = ''; for (const [val, label] of options) el.append(h('button', { 'aria-pressed': String(val === v), onclick: () => { draw(val); onPick(val); } }, label)); };
+    draw(value); return el;
+  },
+  tabs(options, value, onPick) {
+    const el = h('div', { class: 'tabs', role: 'tablist' });
+    const draw = v => { el.innerHTML = ''; for (const [val, label] of options) el.append(h('button', { 'aria-pressed': String(val === v), role: 'tab', onclick: () => { draw(val); onPick(val); } }, label)); };
+    draw(value); return el;
+  },
+  swatches(colors, value, onPick) {
+    const el = h('div', { class: 'swatches' });
+    const draw = v => { el.innerHTML = ''; for (const c of colors) el.append(h('button', { class: 'swatch', style: { background: c }, 'aria-label': 'Color', 'aria-pressed': String(c === v), onclick: () => { draw(c); onPick(c); } })); };
+    draw(value); return el;
+  },
+};
+
+/* ---------- files in and out ---------- */
+function pickFiles(accept, { multiple = true, capture } = {}) {
+  return new Promise(res => {
+    const i = h('input', { type: 'file', accept, style: { position: 'fixed', left: '-999px' } });
+    if (multiple) i.multiple = true; if (capture) i.setAttribute('capture', capture);
+    i.onchange = () => { res([...i.files]); i.remove(); };
+    i.addEventListener('cancel', () => { res([]); i.remove(); });
+    document.body.append(i); i.click();
+  });
+}
+async function saveFile(blob, name) {
+  const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
+  if (isTouch() && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file] }); return 'shared'; } catch (e) { if (e.name === 'AbortError') return 'cancel'; }
+  }
+  const a = h('a', { href: URL.createObjectURL(blob), download: name, style: { display: 'none' } });
+  document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 8000);
+  return 'downloaded';
+}
+async function shareText(text, title) {
+  if (navigator.share) { try { await navigator.share({ title, text }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  try { await navigator.clipboard.writeText(text); UI.toast('Copied'); } catch (e) { UI.toast('Could not share'); }
+}
+async function copyText(t, what = 'Copied') {
+  try { await navigator.clipboard.writeText(t); UI.toast(what); return true; }
+  catch (e) {
+    const ta = h('textarea', { style: { position: 'fixed', left: '-999px' } }); ta.value = t; document.body.append(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (e2) { } ta.remove(); UI.toast(ok ? what : 'Copy failed'); return ok;
+  }
+}
+const URLS = { // object URLs for stored blobs, freed when an app closes
+  live: new Set(),
+  of(blob) { const u = URL.createObjectURL(blob); this.live.add(u); return u; },
+  freeAll() { for (const u of this.live) URL.revokeObjectURL(u); this.live.clear(); },
+};
+function imageThumb(blobOrCanvas, size = 320, type = 'image/jpeg') {
+  return new Promise(res => {
+    const draw = src => {
+      const w = src.naturalWidth || src.videoWidth || src.width, ht = src.naturalHeight || src.videoHeight || src.height;
+      if (!w || !ht) return res(null);
+      const k = Math.min(1, size / Math.max(w, ht)), c = h('canvas'); c.width = Math.round(w * k); c.height = Math.round(ht * k);
+      c.getContext('2d').drawImage(src, 0, 0, c.width, c.height); res({ url: c.toDataURL(type, 0.8), w, h: ht });
+    };
+    if (blobOrCanvas instanceof HTMLCanvasElement) return draw(blobOrCanvas);
+    const img = new Image(), u = URL.createObjectURL(blobOrCanvas);
+    img.onload = () => { draw(img); URL.revokeObjectURL(u); }; img.onerror = () => { URL.revokeObjectURL(u); res(null); }; img.src = u;
+  });
+}
+function videoThumb(blob, size = 320) {
+  return new Promise(res => {
+    const v = h('video', { muted: true, playsinline: true, preload: 'metadata' }), u = URL.createObjectURL(blob); v.muted = true;
+    let done = false; const fin = r => { if (done) return; done = true; URL.revokeObjectURL(u); res(r); };
+    v.onloadeddata = () => { try { v.currentTime = Math.min(0.5, (v.duration || 1) / 3); } catch (e) { fin(null); } };
+    v.onseeked = () => { const k = Math.min(1, size / Math.max(v.videoWidth, v.videoHeight)), c = h('canvas'); c.width = Math.max(1, Math.round(v.videoWidth * k)); c.height = Math.max(1, Math.round(v.videoHeight * k)); try { c.getContext('2d').drawImage(v, 0, 0, c.width, c.height); fin({ url: c.toDataURL('image/jpeg', 0.75), w: v.videoWidth, h: v.videoHeight, dur: v.duration }); } catch (e) { fin(null); } };
+    v.onerror = () => fin(null); setTimeout(() => fin(null), 8000); v.src = u;
+  });
+}
+
+/* ---------- sound + voice ---------- */
+const Sfx = {
+  _c: null,
+  ctx() { if (!this._c) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; this._c = new C(); } if (this._c.state === 'suspended') this._c.resume(); return this._c; },
+  tone(freq, dur = 0.15, { type = 'sine', vol = 0.2, when = 0, slide } = {}) {
+    const c = this.ctx(); if (!c) return; const t = c.currentTime + when, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t); if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + 0.05);
+  },
+  good() { this.tone(660, 0.12, { type: 'triangle' }); this.tone(990, 0.18, { type: 'triangle', when: 0.09 }); },
+  bad() { this.tone(220, 0.25, { type: 'sawtooth', vol: 0.08, slide: 150 }); },
+  tap() { this.tone(520, 0.05, { type: 'triangle', vol: 0.08 }); },
+  chime() { [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, 0.5, { type: 'sine', vol: 0.18, when: i * 0.14 })); },
+  win() { [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.25, { type: 'triangle', vol: 0.15, when: i * 0.1 })); },
+  on() { return Prefs.get('sound', true); },
+};
+['good', 'bad', 'tap', 'win'].forEach(k => { const f = Sfx[k]; Sfx[k] = function () { if (Sfx.on()) f.call(Sfx); }; });
+const Speak = {
+  ok: 'speechSynthesis' in window,
+  say(text, { rate = 1, lang } = {}) {
+    if (!this.ok) return false; speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text); u.rate = rate;
+    const vs = speechSynthesis.getVoices(); const v = vs.find(v => /en(-|_)US/i.test(v.lang) && v.localService) || vs.find(v => /^en/i.test(v.lang));
+    if (lang) u.lang = lang; else if (v) { u.voice = v; u.lang = v.lang; }
+    speechSynthesis.speak(u); return true;
+  },
+  stop() { if (this.ok) speechSynthesis.cancel(); },
+};
+function seeded(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+function hashStr(str) { let x = 2166136261; for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 16777619); } return x >>> 0; }
+function addCSS(t) { document.head.append(h('style', null, t)); }
+/* calendar file (.ics) so iPhone Calendar can alert you even when Nova Pocket is closed */
+const ICS = {
+  stamp(d, allDay) { return allDay ? d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) : d.getUTCFullYear() + pad2(d.getUTCMonth() + 1) + pad2(d.getUTCDate()) + 'T' + pad2(d.getUTCHours()) + pad2(d.getUTCMinutes()) + '00Z'; },
+  esc(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, m => '\\' + m); },
+  make(items) {
+    const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Nova Pocket//EN', 'CALSCALE:GREGORIAN'];
+    for (const it of items) {
+      L.push('BEGIN:VEVENT', 'UID:' + (it.id || uid()) + '@nova-pocket', 'DTSTAMP:' + this.stamp(new Date()), 'SUMMARY:' + this.esc(it.title));
+      if (it.allDay) { const e = new Date(it.start); e.setDate(e.getDate() + 1); L.push('DTSTART;VALUE=DATE:' + this.stamp(it.start, true), 'DTEND;VALUE=DATE:' + this.stamp(e, true)); }
+      else L.push('DTSTART:' + this.stamp(it.start), 'DTEND:' + this.stamp(it.end || new Date(+it.start + 30 * 60e3)));
+      if (it.rrule) L.push('RRULE:' + it.rrule);
+      if (it.notes) L.push('DESCRIPTION:' + this.esc(it.notes));
+      if (it.alarmMin != null) L.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + this.esc(it.title), 'TRIGGER:-PT' + it.alarmMin + 'M', 'END:VALARM');
+      L.push('END:VEVENT');
+    }
+    L.push('END:VCALENDAR'); return new Blob([L.join('\r\n')], { type: 'text/calendar' });
+  },
+};
+
+/* ---- 01-shell.js ---- */
+/* ===== Shell: home screen, app switching, settings, backup, offline saving ===== */
+const Apps = {
+  list: [], byId: {},
+  reg(a) { this.list.push(a); this.byId[a.id] = a; },
+  GROUPS: [['day', 'Everyday'], ['make', 'Create'], ['learn', 'Learn'], ['play', 'Play']],
+};
+
+const Shell = {
+  cur: null, cleanup: null, backFn: null, scrollMemo: {},
+  init() {
+    const app = $('#app');
+    this.top = h('header', { class: 'top' });
+    this.view = h('main', { id: 'view' });
+    app.append(this.top, this.view);
+    document.body.append(h('div', { id: 'mini', hidden: true }));
+    addEventListener('hashchange', () => this.route());
+    addEventListener('scroll', () => this.top.classList.toggle('scrolled', scrollY > 4), { passive: true });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('.scrim') && this.cur) this.back(); });
+    this.route();
+    setInterval(() => { if (!this.cur) this.paintHello(); }, 30000);
+  },
+  go(id, param) { location.hash = '#/' + (id || '') + (param ? '/' + encodeURIComponent(param) : ''); },
+  back() { if (this.backFn) { const f = this.backFn; if (f() !== false) return; } this.go(''); },
+  route() {
+    const m = location.hash.match(/^#\/([\w-]*)(?:\/(.*))?$/); const id = m && m[1], param = m && m[2] ? decodeURIComponent(m[2]) : null;
+    if (this.cleanup) { try { this.cleanup(); } catch (e) { console.error(e); } this.cleanup = null; }
+    URLS.freeAll(); Speak.stop();
+    if (this.cur) this.scrollMemo[this.cur.id] = scrollY; else this.scrollMemo.home = scrollY;
+    this.backFn = null; this.view.className = ''; this.view.innerHTML = ''; this.top.innerHTML = '';
+    const a = id && Apps.byId[id];
+    if (!a) { this.cur = null; document.title = 'Nova Pocket'; this.renderHome(); requestAnimationFrame(() => scrollTo(0, this.scrollMemo.home || 0)); return; }
+    this.cur = a; document.title = a.name + ' · Nova Pocket';
+    const title = h('h1', null, a.name), acts = h('div', { class: 'acts' });
+    this.top.append(h('button', { class: 'back', 'aria-label': 'Back', onclick: () => this.back(), html: SVG.back + '<span>Back</span>' }), title, acts);
+    const ctx = {
+      param,
+      setTitle: t => { title.textContent = t; },
+      setActions: (...n) => { acts.innerHTML = ''; acts.append(...n.flat().filter(Boolean)); },
+      setBack: f => { this.backFn = f; },
+      full: on => this.view.classList.toggle('full', !!on),
+    };
+    scrollTo(0, 0);
+    try { const c = a.mount(this.view, ctx); if (typeof c === 'function') this.cleanup = c; else if (c && c.then) c.then(f => { if (typeof f === 'function' && this.cur === a) this.cleanup = f; }).catch(e => this.crash(e)); }
+    catch (e) { this.crash(e); }
+  },
+  crash(e) { console.error(e); this.view.append(UI.empty('🛠️', 'Something went wrong here', String(e && e.message || e))); },
+
+  /* ---------- home ---------- */
+  paintHello() {
+    const el = $('#hello'); if (!el) return; const d = new Date(), hr = d.getHours();
+    const name = Prefs.get('name', '');
+    el.querySelector('h2').textContent = (hr < 5 ? 'Good night' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening') + (name ? ', ' + name : '');
+    el.querySelector('p').textContent = fmtDay(d, { weekday: 'long', month: 'long', day: 'numeric' }) + ' · ' + fmtTime(d);
+  },
+  renderHome() {
+    this.top.append(h('h1', null, 'Nova Pocket'), Offline.pill(), h('button', { class: 'ib', 'aria-label': 'Settings', html: SVG.gear, onclick: () => this.settings() }));
+    const v = this.view;
+    v.append(h('div', { class: 'hello', id: 'hello' }, h('h2'), h('p')));
+    this.paintHello();
+    const q = h('input', { type: 'search', placeholder: 'Search apps, notes, words…', 'aria-label': 'Search', autocomplete: 'off' });
+    const results = h('div', { class: 'mt' });
+    v.append(h('div', { class: 'search mt' }, q), results);
+    const today = h('div', { class: 'today' }); v.append(today); this.fillToday(today);
+    if (!Offline.standalone() && /iPhone|iPad|iPod/.test(navigator.userAgent) && !Prefs.get('hideInstall')) {
+      v.append(h('div', { class: 'info-banner mt', style: { display: 'flex', gap: '10px', alignItems: 'center' } },
+        h('span', { style: { fontSize: '26px' } }, '📲'),
+        h('span', { style: { flex: 1 } }, h('b', null, 'Put me on your Home Screen. '), 'Tap the Share button, then “Add to Home Screen”. Then I open like a real app and work with no internet.'),
+        h('button', { class: 'ib', 'aria-label': 'Hide', html: SVG.close, onclick: e => { Prefs.set('hideInstall', true); e.currentTarget.parentNode.remove(); } })));
+    }
+    Backup.nudge(v);
+    const groups = h('div');
+    for (const [g, label] of Apps.GROUPS) {
+      const apps = Apps.list.filter(a => a.group === g); if (!apps.length) continue;
+      groups.append(h('div', { class: 'sec' }, label), h('div', { class: 'tiles' }, apps.map(a => this.tile(a))));
+    }
+    v.append(groups);
+    v.append(h('p', { class: 'center tiny muted mt2' }, 'Everything you make stays on this device. Back it up in Settings.'));
+    const doSearch = debounce(async () => {
+      const s = q.value.trim().toLowerCase(); results.innerHTML = '';
+      groups.hidden = !!s; today.hidden = !!s; if (!s) return;
+      const list = h('div', { class: 'list' });
+      for (const a of Apps.list) if ((a.name + ' ' + (a.keys || '')).toLowerCase().includes(s)) list.append(h('button', { class: 'li', onclick: () => this.go(a.id) }, h('span', { class: 'ic', style: { background: a.color } }, a.icon), h('span', { class: 't' }, h('b', null, a.name), h('small', null, a.blurb || '')), h('span', { class: 'chev' }, '›')));
+      if (/^[a-z][a-z '\-]*$/i.test(s)) list.append(h('button', { class: 'li', onclick: () => this.go('dict', s) }, h('span', { class: 'ic' }, '📖'), h('span', { class: 't' }, h('b', null, 'Look up “' + s + '”'), h('small', null, 'Dictionary')), h('span', { class: 'chev' }, '›')));
+      const notes = (await DB.all('notes')).filter(n => ((n.title || '') + ' ' + (n.body || '')).toLowerCase().includes(s)).slice(0, 6);
+      for (const n of notes) list.append(h('button', { class: 'li', onclick: () => this.go('notes', n.id) }, h('span', { class: 'ic' }, '📝'), h('span', { class: 't' }, h('b', null, n.title || 'Untitled note'), h('small', null, (n.body || '').slice(0, 80))), h('span', { class: 'chev' }, '›')));
+      results.append(list.childNodes.length ? list : UI.empty('🔎', 'Nothing found', 'Try another word.'));
+    }, 120);
+    q.addEventListener('input', doSearch);
+  },
+  tile(a) {
+    const ico = h('span', { class: 'ico', style: { background: a.color } }, a.icon);
+    if (a.badge) Promise.resolve(a.badge()).then(n => { if (n > 0) ico.append(h('span', { class: 'badge' }, n > 99 ? '99+' : String(n))); }).catch(() => { });
+    return h('button', { class: 'tile', onclick: () => this.go(a.id), 'aria-label': a.name }, ico, h('span', null, a.name));
+  },
+  async fillToday(el) {
+    const w = (k, big, sub, go) => h('button', { class: 'tw', onclick: () => this.go(go) }, h('small', null, k), h('b', null, big), h('span', null, sub));
+    const parts = await Promise.all([
+      typeof Cal !== 'undefined' ? Cal.next().catch(() => null) : null,
+      typeof Rem !== 'undefined' ? Rem.dueCount().catch(() => 0) : 0,
+      typeof Weather !== 'undefined' ? Weather.peek().catch(() => null) : null,
+    ]);
+    const [ev, due, wx] = parts;
+    el.append(
+      w('Next up', ev ? ev.title : 'Free day', ev ? ev.when : 'No events today', 'calendar'),
+      w('To do', due ? due + ' due' : 'All done', due ? 'Reminders' : 'Nothing due today', 'reminders'),
+      w('Weather', wx ? wx.icon + ' ' + wx.temp : '⛅ Set up', wx ? wx.place : 'Tap to pick a place', 'weather'));
+  },
+
+  /* ---------- settings ---------- */
+  async settings() {
+    const body = h('div', { class: 'stack' });
+    const theme = Prefs.get('theme', 'system'), size = Prefs.get('size', 'normal');
+    const nameIn = h('input', { type: 'text', value: Prefs.get('name', ''), placeholder: 'Your first name (optional)', onchange: () => { Prefs.set('name', nameIn.value.trim().slice(0, 30)); this.paintHello(); } });
+    body.append(
+      h('div', { class: 'sec', style: { marginTop: '4px' } }, 'Look'),
+      h('label', { class: 'f' }, h('span', null, 'Name on the home screen'), nameIn),
+      h('label', { class: 'f' }, h('span', null, 'Theme'), UI.seg([['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']], theme, v => { Prefs.set('theme', v); applyLook(); })),
+      h('label', { class: 'f' }, h('span', null, 'Text size'), UI.seg([['normal', 'Normal'], ['big', 'Bigger']], size, v => { Prefs.set('size', v); applyLook(); })),
+      h('label', { class: 'f' }, h('span', null, 'Sounds'), UI.seg([[true, 'On'], [false, 'Off']], Prefs.get('sound', true), v => Prefs.set('sound', v))),
+      h('div', { class: 'sec' }, 'Works offline'), await Offline.panel(),
+      h('div', { class: 'sec' }, 'Your stuff'), await Backup.panel(),
+      h('div', { class: 'sec' }, 'About'),
+      h('div', { class: 'card small' },
+        h('p', null, h('b', null, 'Nova Pocket'), ' · version ', h('span', { class: 'kbd' }, window.NP_VERSION || 'dev')),
+        h('p', { class: 'muted' }, 'Made for you. Nothing you save is sent anywhere. Weather is the only part that uses the internet, and only when you tap refresh.'),
+        h('p', { class: 'muted' }, 'Dictionary: WordNet 3.1 © Princeton University. Map shapes: Natural Earth (public domain) via world-atlas. Country facts: mledoze/countries (ODbL). Weather data: Open-Meteo.com (CC BY 4.0).')),
+      h('button', { class: 'btn bad wide mt', onclick: () => Backup.eraseAll() }, 'Erase everything on this device'));
+    UI.sheet({ title: 'Settings', body });
+  },
+};
+function applyLook() {
+  const t = Prefs.get('theme', 'system'), r = document.documentElement;
+  if (t === 'system') r.removeAttribute('data-theme'); else r.setAttribute('data-theme', t);
+  r.setAttribute('data-size', Prefs.get('size', 'normal'));
+  const dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+  const m = $('meta[name=theme-color]'); if (m) m.content = dark ? '#0C0D12' : '#F3F4F9';
+}
+applyLook();
+matchMedia('(prefers-color-scheme: dark)').addEventListener && matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyLook);
+
+/* ---------- offline saving (service worker) ---------- */
+const Offline = {
+  state: { core: false, data: false, done: 0, total: 0, err: '' }, pills: new Set(),
+  standalone() { return matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true; },
+  supported() { return 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1'); },
+  async init() {
+    addEventListener('online', () => this.paint()); addEventListener('offline', () => this.paint());
+    if (!this.supported()) { this.paint(); return; }
+    navigator.serviceWorker.addEventListener('message', e => {
+      const m = e.data || {};
+      if (m.type === 'core-done') this.state.core = true;
+      if (m.type === 'data-progress') { this.state.done = m.done; this.state.total = m.total; }
+      if (m.type === 'data-done') { this.state.data = true; this.state.done = this.state.total; }
+      if (m.type === 'failed') this.state.err = m.error || 'failed';
+      this.paint();
+    });
+    let had = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) this.updateReady(); had = true; this.kick(); });
+    try { await navigator.serviceWorker.register('sw.js'); } catch (e) { this.state.err = String(e); }
+    await this.check(); this.kick();
+    try { if (navigator.storage && navigator.storage.persist && !(await navigator.storage.persisted())) await navigator.storage.persist(); } catch (e) { }
+  },
+  async check() {
+    try { this.state.core = !!(await caches.match('__core_complete')); this.state.data = !!(await caches.match('__data_complete')); } catch (e) { }
+    this.paint();
+  },
+  async kick() {
+    if (this.state.data) return;
+    const reg = await navigator.serviceWorker.ready.catch(() => null);
+    const sw = (reg && reg.active) || navigator.serviceWorker.controller; if (sw) sw.postMessage({ type: 'cacheData' });
+  },
+  updateReady() {
+    if ($('#updbar')) return;
+    document.body.append(h('div', { class: 'alertbar', id: 'updbar', style: { borderLeftColor: 'var(--accent)' } }, h('span', { style: { fontSize: '24px' } }, '✨'), h('span', { style: { flex: 1 } }, h('b', null, 'New version saved.'), ' Restart to use it.'), h('button', { class: 'btn pri sm', onclick: () => location.reload() }, 'Restart')));
+  },
+  label() {
+    const s = this.state;
+    if (!this.supported()) return ['', 'Online page'];
+    if (s.core && s.data) return ['good', navigator.onLine ? 'Works offline' : 'Offline · all good'];
+    if (s.core) return ['warn', s.total ? 'Saving ' + Math.round(100 * s.done / s.total) + '%' : 'Saving…'];
+    return [navigator.onLine ? 'warn' : 'bad', navigator.onLine ? 'Saving…' : 'Not saved yet'];
+  },
+  pill() { const p = h('span', { class: 'pill', title: 'Offline status' }); this.pills.add(p); this.paintPill(p); return p; },
+  paintPill(p) { const [c, t] = this.label(); p.className = 'pill ' + c; p.innerHTML = '<span class="dot"></span>' + esc(t); },
+  paint() { for (const p of this.pills) { if (!p.isConnected) { this.pills.delete(p); continue; } this.paintPill(p); } const pn = $('#offpanel'); if (pn) this.fillPanel(pn); },
+  async panel() { const el = h('div', { class: 'card small', id: 'offpanel' }); this.fillPanel(el); return el; },
+  fillPanel(el) {
+    const s = this.state; el.innerHTML = '';
+    if (!this.supported()) { el.append(h('p', null, 'Open Nova Pocket from its web address (https) to let it save itself for offline use.')); return; }
+    el.append(h('p', null, (s.core ? '✅' : '⏳') + ' The app itself ' + (s.core ? 'is saved on this device.' : 'is being saved…')),
+      h('p', null, (s.data ? '✅' : '⏳') + ' Dictionary + world map ' + (s.data ? 'saved.' : s.total ? 'saving: ' + s.done + ' of ' + s.total + ' files.' : 'waiting to save.')));
+    if (!s.data) el.append(h('div', { class: 'prog mb' }, h('i', { style: { width: (s.total ? 100 * s.done / s.total : 4) + '%' } })), h('button', { class: 'btn sm', onclick: () => this.kick() }, 'Try saving again'));
+    if (s.err) el.append(h('p', { class: 'muted tiny' }, 'Last problem: ' + s.err));
+    el.append(h('p', { class: 'muted', style: { margin: '8px 0 0' } }, this.standalone() ? 'You opened me from the Home Screen. 👍' : 'On iPhone: Share button → “Add to Home Screen”. On a computer: the install icon in the address bar.'));
+  },
+};
+
+/* ---------- backup: one .zip with everything (store-only zip, no library) ---------- */
+const Zip = {
+  crcT: null,
+  crc(u8) { let t = this.crcT; if (!t) { t = this.crcT = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } } let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = t[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; },
+  async make(files) {
+    const parts = [], cd = []; let off = 0; const enc = new TextEncoder(), now = new Date();
+    const time = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1), date = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+    for (const f of files) {
+      const name = enc.encode(f.name); const data = f.data instanceof Blob ? new Uint8Array(await f.data.arrayBuffer()) : (typeof f.data === 'string' ? enc.encode(f.data) : f.data);
+      const crc = this.crc(data), size = data.length;
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true); lh.setUint16(10, time, true); lh.setUint16(12, date, true);
+      lh.setUint32(14, crc, true); lh.setUint32(18, size, true); lh.setUint32(22, size, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+      parts.push(lh.buffer, name, data);
+      const c = new DataView(new ArrayBuffer(46));
+      c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true); c.setUint16(12, time, true); c.setUint16(14, date, true);
+      c.setUint32(16, crc, true); c.setUint32(20, size, true); c.setUint32(24, size, true); c.setUint16(28, name.length, true); c.setUint32(42, off, true);
+      cd.push(c.buffer, name); off += 30 + name.length + size;
+    }
+    const cdSize = cd.reduce((a, b) => a + (b.byteLength || b.length), 0);
+    const e = new DataView(new ArrayBuffer(22)); e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, cdSize, true); e.setUint32(16, off, true);
+    return new Blob([...parts, ...cd, e.buffer], { type: 'application/zip' });
+  },
+  async read(blob) {
+    const tailLen = Math.min(blob.size, 65557), tail = new DataView(await blob.slice(blob.size - tailLen).arrayBuffer());
+    let eo = -1; for (let i = tailLen - 22; i >= 0; i--) if (tail.getUint32(i, true) === 0x06054b50) { eo = i; break; }
+    if (eo < 0) throw new Error('This is not a Nova Pocket backup file.');
+    const count = tail.getUint16(eo + 10, true), cdSize = tail.getUint32(eo + 12, true), cdOff = tail.getUint32(eo + 16, true);
+    const cd = new DataView(await blob.slice(cdOff, cdOff + cdSize).arrayBuffer()), dec = new TextDecoder(), out = [];
+    let p = 0;
+    for (let i = 0; i < count; i++) {
+      const size = cd.getUint32(p + 24, true), nl = cd.getUint16(p + 28, true), xl = cd.getUint16(p + 30, true), cl = cd.getUint16(p + 32, true), lo = cd.getUint32(p + 42, true), method = cd.getUint16(p + 10, true);
+      const name = dec.decode(new Uint8Array(cd.buffer, cd.byteOffset + p + 46, nl));
+      const lh = new DataView(await blob.slice(lo, lo + 30).arrayBuffer()); const start = lo + 30 + lh.getUint16(26, true) + lh.getUint16(28, true);
+      if (method !== 0) throw new Error('This zip was changed by another app and can’t be read.');
+      out.push({ name, blob: blob.slice(start, start + size) }); p += 46 + nl + xl + cl;
+    }
+    return out;
+  },
+};
+const Backup = {
+  async make(withFiles) {
+    const files = [], data = { app: 'nova-pocket', format: 1, made: new Date().toISOString(), kv: await DB.kentries(), stores: {} };
+    let n = 0;
+    for (const s of DB.STORES) {
+      if (s === 'kv') continue;
+      const rows = await DB.all(s); data.stores[s] = [];
+      for (const r of rows) {
+        const o = {}; let skip = false;
+        for (const k in r) {
+          if (r[k] instanceof Blob) { if (!withFiles) { skip = true; break; } const nm = 'files/' + (n++) + '-' + s; files.push({ name: nm, data: r[k] }); o[k] = { $blob: nm, type: r[k].type }; }
+          else o[k] = r[k];
+        }
+        if (!skip) data.stores[s].push(o);
+      }
+    }
+    files.unshift({ name: 'nova-pocket-backup.json', data: JSON.stringify(data) });
+    return Zip.make(files);
+  },
+  async restore(file) {
+    const entries = await Zip.read(file), byName = Object.fromEntries(entries.map(e => [e.name, e.blob]));
+    const main = byName['nova-pocket-backup.json']; if (!main) throw new Error('This is not a Nova Pocket backup file.');
+    const data = JSON.parse(await main.text()); if (data.app !== 'nova-pocket') throw new Error('This is not a Nova Pocket backup file.');
+    let count = 0;
+    for (const [k, v] of data.kv || []) await DB.kset(k, v);
+    for (const s in data.stores) {
+      if (!DB.STORES.includes(s)) continue;
+      for (const o of data.stores[s]) {
+        for (const k in o) if (o[k] && typeof o[k] === 'object' && o[k].$blob) { const b = byName[o[k].$blob]; o[k] = b ? new Blob([b], { type: o[k].type || '' }) : null; }
+        await DB.put(s, o); count++;
+      }
+    }
+    return count;
+  },
+  async panel() {
+    const el = h('div', { class: 'card small' });
+    const last = await DB.kget('lastBackup', 0); let est = '';
+    try { const e = await navigator.storage.estimate(); est = fmtSize(e.usage || 0) + ' used'; } catch (e) { }
+    let persisted = false; try { persisted = await navigator.storage.persisted(); } catch (e) { }
+    el.append(
+      h('p', null, '💾 ', last ? 'Last backup: ' + fmtAgo(last) + '.' : 'You have not made a backup yet.', est ? ' ' + est + '.' : ''),
+      h('p', { class: 'muted' }, persisted ? '🔒 This device has promised to keep your stuff.' : 'A backup file keeps your notes, cards, photos and more safe if this device ever clears its storage.'),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn pri sm', onclick: () => this.run(true) }, 'Back up everything'),
+        h('button', { class: 'btn sm', onclick: () => this.run(false) }, 'Text only (small)'),
+        h('button', { class: 'btn sm', onclick: () => this.pickRestore() }, 'Restore…')));
+    return el;
+  },
+  async run(withFiles) {
+    UI.toast('Making your backup…');
+    try {
+      const z = await this.make(withFiles);
+      const r = await saveFile(z, 'nova-pocket-backup-' + ymd(new Date()) + '.zip');
+      if (r !== 'cancel') { await DB.kset('lastBackup', Date.now()); UI.toast(r === 'shared' ? 'Backup ready. Pick “Save to Files”.' : 'Backup saved (' + fmtSize(z.size) + ')'); }
+    } catch (e) { console.error(e); UI.toast('Backup failed: ' + e.message, 4000); }
+  },
+  async pickRestore() {
+    const [f] = await pickFiles('.zip,application/zip', { multiple: false }); if (!f) return;
+    if (!(await UI.ask('Add everything from this backup? Items that are already here stay; items with the same name get the backup copy.', { ok: 'Restore' }))) return;
+    try { const n = await this.restore(f); UI.toast('Restored ' + n + ' items'); setTimeout(() => location.reload(), 900); }
+    catch (e) { UI.toast(e.message, 4000); }
+  },
+  async nudge(v) {
+    const last = await DB.kget('lastBackup', 0); if (last && Date.now() - last < 30 * 86400e3) return;
+    const n = (await DB.count('notes')) + (await DB.count('cards')) + (await DB.count('media')) + (await DB.count('vault'));
+    if (n < 5) return;
+    const hello = $('#hello', v); if (!hello) return;
+    hello.after(h('button', { class: 'info-banner mt', style: { display: 'block', width: '100%', textAlign: 'left', border: 0 }, onclick: () => Shell.settings() }, '💾 ', h('b', null, 'Time for a backup. '), last ? 'Your last one was ' + fmtAgo(last) + '.' : 'Save a copy of your stuff in Files.'));
+  },
+  async eraseAll() {
+    if (!(await UI.ask('Erase ALL notes, passwords, photos, music, cards and settings on this device?', { ok: 'Erase', danger: true }))) return;
+    if (!(await UI.ask('Are you really sure? This can’t be undone unless you have a backup file.', { ok: 'Yes, erase all', danger: true }))) return;
+    for (const s of DB.STORES) await DB.clear(s);
+    try { localStorage.clear(); } catch (e) { }
+    location.hash = '#/'; location.reload();
+  },
+};
+
+/* ---- 10-calendar.js ---- */
+/* ===== Calendar ===== */
+addCSS(`
+.cal-head{display:flex;align-items:center;gap:6px;margin:4px 0 10px}
+.cal-head h2{flex:1;font-size:24px;font-weight:800}
+.cal-wd{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));text-align:center;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;touch-action:pan-y}
+.cal-d{position:relative;aspect-ratio:1/1.05;border:0;background:var(--surface);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:6px 0 0;font-weight:650;font-size:16px;min-width:0}
+.cal-d.out{background:transparent;color:var(--muted);opacity:.55}
+.cal-d.today .n{background:#FF3B30;color:#fff}
+.cal-d .n{width:30px;height:30px;border-radius:15px;display:grid;place-items:center}
+.cal-d.sel{box-shadow:inset 0 0 0 2px var(--accent)}
+.cal-d .dots{display:flex;gap:3px;margin-top:3px;height:6px}
+.cal-d .dots i{width:6px;height:6px;border-radius:3px;display:block}
+.ev{display:flex;gap:12px;align-items:stretch;padding:12px 14px;border-top:1px solid var(--line);background:none;border-left:0;border-right:0;border-bottom:0;width:100%;text-align:left}
+.ev:first-child{border-top:0}
+.ev .bar{width:5px;border-radius:3px;flex:0 0 auto}
+.ev .tm{width:64px;flex:0 0 auto;font-size:14px;color:var(--muted);font-weight:600}
+.ev b{display:block}
+.ev small{color:var(--muted)}
+`);
+const CAL_COLORS = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#0A84FF', '#AF52DE', '#FF2D92', '#8E8E93'];
+const Cal = {
+  occurs(ev, ds) {
+    if (ds < ev.date) return false; if (ds === ev.date) return true;
+    const a = fromYmd(ev.date), b = fromYmd(ds);
+    switch (ev.repeat) {
+      case 'daily': return true;
+      case 'weekly': return a.getDay() === b.getDay();
+      case 'monthly': return a.getDate() === b.getDate();
+      case 'yearly': return a.getDate() === b.getDate() && a.getMonth() === b.getMonth();
+      default: return false;
+    }
+  },
+  sortDay: (a, b) => (a.allDay ? '' : a.time || '').localeCompare(b.allDay ? '' : b.time || ''),
+  timeLabel(ev) { if (ev.allDay || !ev.time) return 'All day'; const [h1, m1] = ev.time.split(':').map(Number); const d = new Date(); d.setHours(h1, m1, 0, 0); return fmtTime(d); },
+  async next() {
+    const evs = await DB.all('events'); const now = new Date();
+    for (let i = 0; i < 8; i++) {
+      const d = new Date(now); d.setDate(now.getDate() + i); const ds = ymd(d);
+      const list = evs.filter(e => this.occurs(e, ds)).sort(this.sortDay).filter(e => i > 0 || e.allDay || !e.time || e.time >= pad2(now.getHours()) + ':' + pad2(now.getMinutes()));
+      if (list.length) return { title: list[0].title, when: (i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : fmtDay(d, { weekday: 'long' })) + ' · ' + this.timeLabel(list[0]) };
+    }
+    return null;
+  },
+  toIcs(ev) {
+    const start = fromYmd(ev.date); if (!ev.allDay && ev.time) { const [a, b] = ev.time.split(':').map(Number); start.setHours(a, b); }
+    let end = null; if (!ev.allDay && ev.end) { end = fromYmd(ev.date); const [a, b] = ev.end.split(':').map(Number); end.setHours(a, b); if (end <= start) end = null; }
+    const rr = { daily: 'FREQ=DAILY', weekly: 'FREQ=WEEKLY', monthly: 'FREQ=MONTHLY', yearly: 'FREQ=YEARLY' }[ev.repeat];
+    return ICS.make([{ id: ev.id, title: ev.title, start, end, allDay: ev.allDay || !ev.time, notes: ev.notes, rrule: rr, alarmMin: ev.allDay || !ev.time ? null : 10 }]);
+  },
+};
+Apps.reg({
+  id: 'calendar', name: 'Calendar', icon: '📅', color: 'linear-gradient(135deg,#FF6B6B,#E0303A)', group: 'day', keys: 'events dates schedule birthday', blurb: 'Your days and events',
+  async badge() { const evs = await DB.all('events'); const t = ymd(new Date()); return evs.filter(e => Cal.occurs(e, t)).length; },
+  mount(v, ctx) {
+    let events = [], reminders = [], sel = ymd(new Date()), month = new Date(); month.setDate(1);
+    const head = h('div', { class: 'cal-head' }), wd = h('div', { class: 'cal-wd' }), grid = h('div', { class: 'cal-grid' }), dayBox = h('div');
+    for (const d of ['S', 'M', 'T', 'W', 'T', 'F', 'S']) wd.append(h('div', null, d));
+    v.append(head, wd, grid, dayBox, h('button', { class: 'fab', 'aria-label': 'Add event', html: SVG.plus, onclick: () => edit({ date: sel }) }));
+    ctx.setActions(h('button', { class: 'btn ghost sm', onclick: () => { const t = new Date(); sel = ymd(t); month = new Date(t.getFullYear(), t.getMonth(), 1); draw(); } }, 'Today'));
+    const shift = n => { month = new Date(month.getFullYear(), month.getMonth() + n, 1); draw(); };
+    let sx = null; grid.addEventListener('touchstart', e => { sx = e.touches[0].clientX; }, { passive: true });
+    grid.addEventListener('touchend', e => { if (sx == null) return; const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 60) shift(dx < 0 ? 1 : -1); sx = null; });
+    async function load() { events = await DB.all('events'); reminders = await DB.all('reminders'); draw(); }
+    function draw() {
+      head.innerHTML = '';
+      head.append(h('h2', null, month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })),
+        h('button', { class: 'ib solid', 'aria-label': 'Previous month', onclick: () => shift(-1) }, '‹'), h('button', { class: 'ib solid', 'aria-label': 'Next month', onclick: () => shift(1) }, '›'));
+      grid.innerHTML = ''; const start = new Date(month); start.setDate(1 - month.getDay()); const today = ymd(new Date());
+      for (let i = 0; i < 42; i++) {
+        const d = new Date(start); d.setDate(start.getDate() + i); const ds = ymd(d);
+        const evs = events.filter(e => Cal.occurs(e, ds)), rem = reminders.filter(r => !r.done && r.due && r.due.slice(0, 10) === ds);
+        const dots = h('span', { class: 'dots' }, evs.slice(0, 3).map(e => h('i', { style: { background: e.color || CAL_COLORS[4] } })), rem.length && evs.length < 3 ? h('i', { style: { background: 'var(--muted)' } }) : null);
+        grid.append(h('button', { class: 'cal-d' + (d.getMonth() !== month.getMonth() ? ' out' : '') + (ds === today ? ' today' : '') + (ds === sel ? ' sel' : ''), 'aria-label': fmtDay(d, { weekday: 'long', month: 'long', day: 'numeric' }) + (evs.length ? ', ' + evs.length + ' events' : ''), onclick: () => { sel = ds; if (d.getMonth() !== month.getMonth()) month = new Date(d.getFullYear(), d.getMonth(), 1); draw(); } }, h('span', { class: 'n' }, d.getDate()), dots));
+      }
+      drawDay();
+    }
+    function drawDay() {
+      dayBox.innerHTML = ''; const d = fromYmd(sel);
+      dayBox.append(h('div', { class: 'sec' }, fmtDay(d, { weekday: 'long', month: 'long', day: 'numeric' })));
+      const evs = events.filter(e => Cal.occurs(e, sel)).sort(Cal.sortDay), rem = reminders.filter(r => !r.done && r.due && r.due.slice(0, 10) === sel);
+      if (!evs.length && !rem.length) { dayBox.append(h('div', { class: 'card muted center' }, 'Nothing planned. Tap + to add an event.')); return; }
+      const list = h('div', { class: 'list' });
+      for (const e of evs) list.append(h('button', { class: 'ev', onclick: () => edit(e) }, h('span', { class: 'bar', style: { background: e.color || CAL_COLORS[4] } }), h('span', { class: 'tm' }, Cal.timeLabel(e)), h('span', { style: { flex: 1, minWidth: 0 } }, h('b', null, e.title), e.notes || e.repeat !== 'none' ? h('small', null, [e.repeat && e.repeat !== 'none' ? '🔁 ' + e.repeat + ' ' : '', e.notes || '']) : null)));
+      for (const r of rem) list.append(h('button', { class: 'ev', onclick: () => Shell.go('reminders') }, h('span', { class: 'bar', style: { background: 'var(--muted)' } }), h('span', { class: 'tm' }, r.due.length > 10 ? fmtTime(new Date(r.due)) : 'Today'), h('span', { style: { flex: 1 } }, h('b', null, '☑️ ' + r.text), h('small', null, 'Reminder'))));
+      dayBox.append(list);
+    }
+    function edit(ev) {
+      const isNew = !ev.id; const e = Object.assign({ title: '', date: sel, allDay: false, time: '09:00', end: '10:00', color: CAL_COLORS[4], repeat: 'none', notes: '' }, ev);
+      const title = h('input', { type: 'text', value: e.title, placeholder: 'What’s happening?', maxlength: 120 });
+      const date = h('input', { type: 'date', value: e.date });
+      const all = h('input', { type: 'checkbox' }); all.checked = !!e.allDay;
+      const time = h('input', { type: 'time', value: e.time || '09:00' }), end = h('input', { type: 'time', value: e.end || '' });
+      const times = h('div', { class: 'grid2' }, h('label', { class: 'f' }, h('span', null, 'Starts'), time), h('label', { class: 'f' }, h('span', null, 'Ends'), end));
+      const rep = h('select', null, [['none', 'Does not repeat'], ['daily', 'Every day'], ['weekly', 'Every week'], ['monthly', 'Every month'], ['yearly', 'Every year (birthdays!)']].map(([v, l]) => h('option', { value: v, selected: e.repeat === v }, l)));
+      const notes = h('textarea', { placeholder: 'Notes (optional)', style: { minHeight: '80px' } }); notes.value = e.notes || '';
+      let color = e.color;
+      const syncAll = () => { times.hidden = all.checked; }; all.onchange = syncAll; syncAll();
+      const body = h('div', null, h('label', { class: 'f' }, h('span', null, 'Title'), title), h('label', { class: 'f' }, h('span', null, 'Date'), date),
+        h('label', { class: 'f row nw' }, all, h('span', { style: { margin: 0, color: 'var(--ink)', fontSize: '16px' } }, 'All day')), times,
+        h('label', { class: 'f' }, h('span', null, 'Repeat'), rep), h('div', { class: 'f' }, h('span', { class: 'small muted', style: { display: 'block', fontWeight: 600, marginBottom: '6px' } }, 'Color'), UI.swatches(CAL_COLORS, color, c => color = c)),
+        h('label', { class: 'f' }, h('span', null, 'Notes'), notes),
+        isNew ? null : h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: async () => { await saveFile(Cal.toIcs(e), (e.title || 'event').replace(/[^\w\- ]+/g, '').slice(0, 40) + '.ics'); } }, '📲 Add to phone calendar'),
+          h('button', { class: 'btn sm bad', onclick: async () => { if (await UI.ask('Delete “' + e.title + '”?', { ok: 'Delete', danger: true })) { await DB.del('events', e.id); s.close(); load(); } } }, 'Delete')));
+      const s = UI.sheet({ title: isNew ? 'New event' : 'Edit event', body, actions: [{ label: 'Cancel' }, { label: 'Save', cls: 'pri', onClick: async c => {
+        if (!title.value.trim()) { title.focus(); UI.toast('Give it a title'); return; }
+        if (!date.value) { UI.toast('Pick a date'); return; }
+        Object.assign(e, { id: e.id || uid(), title: title.value.trim(), date: date.value, allDay: all.checked, time: time.value, end: end.value, color, repeat: rep.value, notes: notes.value.trim(), updated: Date.now() });
+        await DB.put('events', e); sel = e.date; const d = fromYmd(e.date); month = new Date(d.getFullYear(), d.getMonth(), 1); c(); load(); UI.toast(isNew ? 'Event added' : 'Saved');
+      } }] });
+    }
+    load();
+  },
+});
+
+/* ---- 11-notes.js ---- */
+/* ===== Notes ===== */
+addCSS(`
+.notes-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:700px){.notes-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.nt{border:1px solid var(--line);background:var(--surface);border-radius:16px;padding:12px;text-align:left;min-height:110px;display:flex;flex-direction:column;gap:4px;min-width:0;box-shadow:var(--shadow)}
+.nt b{font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nt p{margin:0;font-size:14px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;word-break:break-word}
+.nt small{margin-top:auto;font-size:12px;color:var(--muted)}
+.note-ed input.ttl{font-size:24px;font-weight:800;border:0;background:transparent;padding:6px 0;min-height:0;font-family:var(--round)}
+.note-ed textarea{border:0;background:transparent;padding:4px 0;font-size:17px;min-height:60vh;resize:none;line-height:1.55}
+.note-ed input.ttl:focus,.note-ed textarea:focus{border:0}
+`);
+const NOTE_TINTS = { none: '', yellow: '#FFF6C7', green: '#DDF6E3', blue: '#DCEBFF', pink: '#FFE0EC', purple: '#ECE3FF' };
+const NOTE_TINTS_DARK = { none: '', yellow: '#3A3416', green: '#16301F', blue: '#16263F', pink: '#3B1726', purple: '#2A1F45' };
+const noteTint = c => { if (!c || c === 'none') return ''; const dark = document.documentElement.getAttribute('data-theme') === 'dark' || (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches); return (dark ? NOTE_TINTS_DARK : NOTE_TINTS)[c]; };
+Apps.reg({
+  id: 'notes', name: 'Notes', icon: '📝', color: 'linear-gradient(135deg,#FFD84D,#F5A623)', group: 'day', keys: 'write text list journal', blurb: 'Write anything down',
+  mount(v, ctx) {
+    let notes = [], q = '';
+    const listView = async () => {
+      ctx.setTitle('Notes'); ctx.setBack(null); ctx.setActions(); v.innerHTML = '';
+      notes = (await DB.all('notes')).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+      const search = h('input', { type: 'search', placeholder: 'Search notes', value: q, 'aria-label': 'Search notes' });
+      const box = h('div');
+      v.append(h('div', { class: 'search mb' }, search), box, h('button', { class: 'fab', 'aria-label': 'New note', html: SVG.plus, onclick: () => editView(null) }));
+      const draw = () => {
+        box.innerHTML = ''; const s = q.toLowerCase();
+        const shown = notes.filter(n => !s || ((n.title || '') + '\n' + (n.body || '')).toLowerCase().includes(s));
+        if (!notes.length) { box.append(UI.empty('📝', 'No notes yet', 'Tap + to write your first note.')); return; }
+        if (!shown.length) { box.append(UI.empty('🔎', 'No matching notes')); return; }
+        const pinned = shown.filter(n => n.pinned), rest = shown.filter(n => !n.pinned);
+        for (const [label, arr] of [['📌 Pinned', pinned], [pinned.length ? 'Notes' : '', rest]]) {
+          if (!arr.length) continue; if (label) box.append(h('div', { class: 'sec' }, label));
+          box.append(h('div', { class: 'notes-grid' }, arr.map(n => h('button', { class: 'nt', style: { background: noteTint(n.color) || null }, onclick: () => editView(n) },
+            h('b', null, n.title || firstLine(n.body) || 'Untitled'), h('p', null, (n.title ? n.body : restLines(n.body)) || ''), h('small', null, fmtAgo(n.updated || n.created))))));
+        }
+      };
+      search.addEventListener('input', () => { q = search.value; draw(); });
+      draw();
+    };
+    const firstLine = b => (b || '').split('\n')[0].slice(0, 60), restLines = b => (b || '').split('\n').slice(1).join('\n');
+    const editView = n => {
+      const note = n ? { ...n } : { id: uid(), title: '', body: '', color: 'none', pinned: false, created: Date.now(), updated: Date.now() };
+      v.innerHTML = ''; ctx.setTitle(n ? '' : 'New note');
+      const title = h('input', { class: 'ttl', type: 'text', placeholder: 'Title', value: note.title, 'aria-label': 'Title' });
+      const body = h('textarea', { placeholder: 'Start writing…', 'aria-label': 'Note' }); body.value = note.body;
+      const info = h('div', { class: 'tiny muted' });
+      const wrap = h('div', { class: 'note-ed', style: { background: noteTint(note.color) || null, borderRadius: '16px', padding: noteTint(note.color) ? '4px 14px' : '0' } }, title, body);
+      v.append(wrap, info);
+      let dirty = false;
+      const paintInfo = () => { const w = (note.body.trim().match(/\S+/g) || []).length; info.textContent = w + ' words · ' + (dirty ? 'saving…' : 'saved ' + fmtAgo(note.updated)); };
+      const save = debounce(async () => { note.title = title.value; note.body = body.value; note.updated = Date.now(); if (note.title.trim() || note.body.trim()) await DB.put('notes', note); dirty = false; paintInfo(); }, 400);
+      const onInput = () => { dirty = true; paintInfo(); save(); };
+      title.addEventListener('input', onInput); body.addEventListener('input', onInput);
+      const pinBtn = h('button', { class: 'ib', 'aria-label': 'Pin', title: 'Pin to top' }, note.pinned ? '📌' : '📍');
+      pinBtn.onclick = async () => { note.pinned = !note.pinned; pinBtn.textContent = note.pinned ? '📌' : '📍'; UI.toast(note.pinned ? 'Pinned to top' : 'Unpinned'); save.flush(); };
+      ctx.setActions(pinBtn, h('button', { class: 'ib', 'aria-label': 'More', html: SVG.more, onclick: () => UI.menu('Note', [
+        { icon: '🎨', label: 'Color', run: () => { const s = UI.sheet({ title: 'Note color', body: h('div', { class: 'chips' }, Object.keys(NOTE_TINTS).map(c => h('button', { class: 'chip', style: { background: noteTint(c) || null }, 'aria-pressed': String(note.color === c), onclick: () => { note.color = c; wrap.style.background = noteTint(c) || ''; wrap.style.padding = noteTint(c) ? '4px 14px' : '0'; save.flush(); s.close(); } }, c === 'none' ? 'Plain' : c[0].toUpperCase() + c.slice(1)))) }); } },
+        { icon: '📤', label: 'Share or copy', run: () => shareText((title.value ? title.value + '\n\n' : '') + body.value, title.value || 'Note') },
+        { icon: '☑️', label: 'Add a checklist line', sub: 'Adds “☐ ” — tap ☐ later to tick it', run: () => { body.value += (body.value && !body.value.endsWith('\n') ? '\n' : '') + '☐ '; onInput(); body.focus(); } },
+        { icon: '🗑️', label: 'Delete note', danger: true, run: async () => { if (await UI.ask('Delete this note?', { ok: 'Delete', danger: true })) { save.flush(); await DB.del('notes', note.id); dirty = false; note.title = note.body = ''; listView(); } } },
+      ]) }));
+      // tap a ☐ / ☑ at the start of a line to tick it
+      body.addEventListener('click', () => {
+        const pos = body.selectionStart, val = body.value, ls = val.lastIndexOf('\n', pos - 1) + 1;
+        if (pos - ls <= 1 && (val[ls] === '☐' || val[ls] === '☑')) { body.value = val.slice(0, ls) + (val[ls] === '☐' ? '☑' : '☐') + val.slice(ls + 1); body.setSelectionRange(pos, pos); onInput(); }
+      });
+      ctx.setBack(() => { if (dirty) save.flush(); listView(); return true; });
+      paintInfo(); if (!n) setTimeout(() => body.focus(), 50);
+    };
+    if (ctx.param) DB.get('notes', ctx.param).then(n => n ? editView(n) : listView()); else listView();
+  },
+});
+
+/* ---- 12-reminders.js ---- */
+/* ===== Reminders ===== */
+addCSS(`
+.rm{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}
+.rm:first-child{border-top:0}
+.rm .ck{width:28px;height:28px;border-radius:14px;border:2px solid var(--muted);background:none;flex:0 0 auto;margin-top:1px;display:grid;place-items:center;color:#fff;font-size:16px;padding:0}
+.rm.done .ck{background:var(--good);border-color:var(--good)}
+.rm.done .tx b{text-decoration:line-through;color:var(--muted)}
+.rm .tx{flex:1;min-width:0;border:0;background:none;text-align:left;padding:0}
+.rm .tx b{display:block;font-weight:600;word-break:break-word}
+.rm .tx small{display:block;font-size:13px;color:var(--muted)}
+.rm .tx small.late{color:var(--bad);font-weight:650}
+.quick{display:flex;gap:8px;margin-bottom:6px}
+`);
+const Rem = {
+  dueDate(r) { if (!r.due) return null; return r.due.length > 10 ? new Date(r.due) : fromYmd(r.due); },
+  async dueCount() { const end = new Date(); end.setHours(23, 59, 59); return (await DB.all('reminders')).filter(r => !r.done && r.due && this.dueDate(r) <= end).length; },
+  label(r) {
+    const d = this.dueDate(r); if (!d) return ''; const today = ymd(new Date()), ds = r.due.slice(0, 10);
+    const t = new Date(); t.setDate(t.getDate() + 1); const tm = ymd(t);
+    const day = ds === today ? 'Today' : ds === tm ? 'Tomorrow' : fmtDay(d);
+    return day + (r.due.length > 10 ? ' · ' + fmtTime(d) : '') + (r.repeat && r.repeat !== 'none' ? ' · 🔁 ' + r.repeat : '');
+  },
+  late(r) { const d = this.dueDate(r); if (!d || r.done) return false; if (r.due.length > 10) return d < new Date(); return r.due < ymd(new Date()); },
+  advance(r) {
+    const d = this.dueDate(r) || new Date();
+    if (r.repeat === 'daily') d.setDate(d.getDate() + 1); else if (r.repeat === 'weekly') d.setDate(d.getDate() + 7); else if (r.repeat === 'monthly') d.setMonth(d.getMonth() + 1);
+    r.due = r.due && r.due.length > 10 ? ymd(d) + 'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) : ymd(d); r.alerted = '';
+  },
+  async toggle(r) {
+    if (!r.done && r.repeat && r.repeat !== 'none' && r.due) { this.advance(r); UI.toast('Done! Next one: ' + this.label(r)); }
+    else { r.done = !r.done; r.doneAt = r.done ? Date.now() : 0; }
+    await DB.put('reminders', r); if (r.done) Sfx.good();
+  },
+  /* alerts while the app is open */
+  async tick() {
+    const now = new Date(), list = await DB.all('reminders');
+    for (const r of list) {
+      if (r.done || !r.due || r.due.length <= 10 || r.alerted === r.due) continue;
+      if (new Date(r.due) <= now && now - new Date(r.due) < 6 * 3600e3) { r.alerted = r.due; await DB.put('reminders', r); this.alert(r); }
+    }
+  },
+  alert(r) {
+    if (Prefs.get('sound', true)) Sfx.chime(); try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) { }
+    if (document.hidden && 'Notification' in window && Notification.permission === 'granted') navigator.serviceWorker && navigator.serviceWorker.ready.then(g => g.showNotification('⏰ ' + r.text, { body: 'Reminder from Nova Pocket', tag: r.id })).catch(() => { });
+    const bar = h('div', { class: 'alertbar', role: 'alert' }, h('span', { style: { fontSize: '28px' } }, '⏰'),
+      h('span', { style: { flex: 1, minWidth: 0 } }, h('b', { style: { display: 'block' } }, r.text), h('small', { class: 'muted' }, 'Reminder · ' + fmtTime(new Date(r.due)))),
+      h('button', { class: 'btn sm', onclick: async () => { const d = new Date(Date.now() + 10 * 60e3); r.due = ymd(d) + 'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); r.alerted = ''; await DB.put('reminders', r); bar.remove(); UI.toast('I’ll remind you in 10 minutes'); } }, '10 min'),
+      h('button', { class: 'btn good sm', onclick: async () => { await Rem.toggle(r); bar.remove(); } }, 'Done'));
+    document.body.append(bar);
+  },
+};
+setTimeout(() => { Rem.tick(); setInterval(() => Rem.tick(), 15000); }, 2500);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) Rem.tick(); });
+
+Apps.reg({
+  id: 'reminders', name: 'Reminders', icon: '⏰', color: 'linear-gradient(135deg,#FFA94D,#F76707)', group: 'day', keys: 'todo to-do tasks alarm', blurb: 'To-dos with alerts',
+  badge: () => Rem.dueCount(),
+  mount(v, ctx) {
+    let list = [], showDone = false;
+    const quick = h('input', { type: 'text', placeholder: 'Add a reminder…', 'aria-label': 'New reminder', enterkeyhint: 'done' });
+    const addQuick = async () => { const t = quick.value.trim(); if (!t) return; await DB.put('reminders', { id: uid(), text: t, due: '', repeat: 'none', done: false, created: Date.now() }); quick.value = ''; load(); };
+    quick.addEventListener('keydown', e => { if (e.key === 'Enter') addQuick(); });
+    const box = h('div');
+    v.append(h('div', { class: 'quick' }, quick, h('button', { class: 'btn pri', onclick: addQuick, 'aria-label': 'Add' }, 'Add')),
+      h('p', { class: 'tiny muted', style: { margin: '0 4px 4px' } }, 'Tip: tap a reminder to give it a time. I ring while Nova Pocket is open. For alerts when it’s closed, use “Add to phone calendar”.'),
+      box, h('button', { class: 'fab', 'aria-label': 'New reminder with time', html: SVG.plus, onclick: () => edit({}) }));
+    if ('Notification' in window && Notification.permission === 'default') ctx.setActions(h('button', { class: 'btn ghost sm', onclick: async e => { try { await Notification.requestPermission(); } catch (x) { } e.target.remove(); } }, '🔔 Allow alerts'));
+    async function load() { list = await DB.all('reminders'); draw(); }
+    function row(r) {
+      const late = Rem.late(r);
+      return h('div', { class: 'rm' + (r.done ? ' done' : '') },
+        h('button', { class: 'ck', 'aria-label': r.done ? 'Mark not done' : 'Mark done', onclick: async () => { await Rem.toggle(r); load(); } }, r.done ? '✓' : ''),
+        h('button', { class: 'tx', onclick: () => edit(r) }, h('b', null, r.text), r.due ? h('small', { class: late ? 'late' : '' }, (late ? 'Late · ' : '') + Rem.label(r)) : null, r.notes ? h('small', null, r.notes) : null));
+    }
+    function draw() {
+      box.innerHTML = ''; const end = new Date(); end.setHours(23, 59, 59); const todayS = ymd(new Date());
+      const open = list.filter(r => !r.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999') || a.created - b.created);
+      const groups = [['Late', open.filter(r => Rem.late(r))], ['Today', open.filter(r => !Rem.late(r) && r.due && r.due.slice(0, 10) === todayS)],
+        ['Coming up', open.filter(r => r.due && r.due.slice(0, 10) > todayS)], ['Anytime', open.filter(r => !r.due)]];
+      if (!list.length) { box.append(UI.empty('⏰', 'No reminders', 'Type one above, or tap + to set a time.')); return; }
+      if (!open.length) box.append(h('div', { class: 'card center' }, '🎉 All done!'));
+      for (const [label, arr] of groups) if (arr.length) box.append(h('div', { class: 'sec' }, label + ' · ' + arr.length), h('div', { class: 'list' }, arr.map(row)));
+      const done = list.filter(r => r.done).sort((a, b) => b.doneAt - a.doneAt);
+      if (done.length) {
+        box.append(h('div', { class: 'row', style: { margin: '18px 4px 8px' } }, h('button', { class: 'btn ghost sm', onclick: () => { showDone = !showDone; draw(); } }, (showDone ? 'Hide' : 'Show') + ' done (' + done.length + ')'), h('span', { class: 'sp' }),
+          showDone ? h('button', { class: 'btn ghost sm', onclick: async () => { if (await UI.ask('Clear all ' + done.length + ' done reminders?', { ok: 'Clear', danger: true })) { for (const r of done) await DB.del('reminders', r.id); load(); } } }, 'Clear done') : null));
+        if (showDone) box.append(h('div', { class: 'list' }, done.map(row)));
+      }
+    }
+    function edit(r0) {
+      const isNew = !r0.id; const r = Object.assign({ text: '', due: '', repeat: 'none', notes: '', done: false }, r0);
+      const text = h('input', { type: 'text', value: r.text, placeholder: 'What should I remind you about?' });
+      const hasDate = h('input', { type: 'checkbox' }); hasDate.checked = !!r.due;
+      const hasTime = h('input', { type: 'checkbox' }); hasTime.checked = !r.due || r.due.length > 10;
+      const now = new Date(Date.now() + 3600e3);
+      const date = h('input', { type: 'date', value: r.due ? r.due.slice(0, 10) : ymd(now) });
+      const time = h('input', { type: 'time', value: r.due && r.due.length > 10 ? r.due.slice(11, 16) : pad2(now.getHours()) + ':00' });
+      const rep = h('select', null, [['none', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['monthly', 'Every month']].map(([a, b]) => h('option', { value: a, selected: r.repeat === a }, b)));
+      const notes = h('input', { type: 'text', value: r.notes || '', placeholder: 'Extra details (optional)' });
+      const when = h('div', null, h('label', { class: 'f' }, h('span', null, 'Day'), date), h('label', { class: 'f row nw' }, hasTime, h('span', { style: { margin: 0, color: 'var(--ink)', fontSize: '16px' } }, 'At a time')), h('label', { class: 'f', id: 'rtime' }, h('span', null, 'Time'), time), h('label', { class: 'f' }, h('span', null, 'Repeat'), rep));
+      const sync = () => { when.hidden = !hasDate.checked; time.parentNode.hidden = !hasTime.checked; }; hasDate.onchange = sync; hasTime.onchange = sync;
+      const build = () => { r.text = text.value.trim(); r.notes = notes.value.trim(); r.repeat = hasDate.checked ? rep.value : 'none'; r.due = hasDate.checked ? date.value + (hasTime.checked ? 'T' + time.value : '') : ''; };
+      const body = h('div', null, h('label', { class: 'f' }, h('span', null, 'Reminder'), text), h('label', { class: 'f row nw' }, hasDate, h('span', { style: { margin: 0, color: 'var(--ink)', fontSize: '16px' } }, 'On a day')), when, h('label', { class: 'f' }, h('span', null, 'Notes'), notes),
+        h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: async () => { build(); if (!r.due) { UI.toast('Pick a day first'); return; } const d = Rem.dueDate(r); const rr = { daily: 'FREQ=DAILY', weekly: 'FREQ=WEEKLY', monthly: 'FREQ=MONTHLY' }[r.repeat]; await saveFile(ICS.make([{ id: r.id, title: r.text, start: d, allDay: r.due.length <= 10, alarmMin: 0, rrule: rr, notes: r.notes }]), 'reminder.ics'); } }, '📲 Add to phone calendar'),
+          isNew ? null : h('button', { class: 'btn sm bad', onclick: async () => { await DB.del('reminders', r.id); s.close(); load(); } }, 'Delete')));
+      sync();
+      const s = UI.sheet({ title: isNew ? 'New reminder' : 'Reminder', body, actions: [{ label: 'Cancel' }, { label: 'Save', cls: 'pri', onClick: async c => {
+        build(); if (!r.text) { UI.toast('Type what to remember'); return; }
+        r.id = r.id || uid(); r.created = r.created || Date.now(); if (r.due !== r0.due) r.alerted = ''; await DB.put('reminders', r); c(); load();
+      } }] });
+    }
+    load();
+    const off = DB.onChange(s => { if (s === 'reminders') load(); });
+    return off;
+  },
+});
+
+/* ---- 13-passwords.js ---- */
+/* ===== Passwords: an encrypted vault (AES-256-GCM, key from your master password with PBKDF2) ===== */
+addCSS(`
+.lock{max-width:420px;margin:24px auto;text-align:center}
+.lock .big{font-size:64px;line-height:1;margin-bottom:8px}
+.lock h2{font-size:24px;margin-bottom:6px}
+.pwrow{display:flex;gap:8px;align-items:center}
+.pwrow input{font-family:var(--mono)}
+.meter{height:6px;border-radius:3px;background:var(--surface2);overflow:hidden;margin:6px 0 2px}
+.meter i{display:block;height:100%;border-radius:3px;transition:width .2s}
+.field-show{display:flex;align-items:center;gap:8px;padding:12px 14px;border-top:1px solid var(--line)}
+.field-show:first-child{border-top:0}
+.field-show .k{font-size:13px;color:var(--muted);font-weight:600}
+.field-show .val{font-size:17px;word-break:break-all}
+.field-show .val.mono{font-family:var(--mono)}
+.avatar{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-weight:800;color:#fff;font-size:18px;flex:0 0 auto}
+`);
+const Vault = {
+  ITER: 310000,
+  b64: u8 => { let s = ''; for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s); },
+  unb64: s => Uint8Array.from(atob(s), c => c.charCodeAt(0)),
+  async key(pass, salt, iter) {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: iter, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  },
+  async seal(key, obj) { const iv = crypto.getRandomValues(new Uint8Array(12)); const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(obj))); return { iv: this.b64(iv), ct: this.b64(new Uint8Array(ct)) }; },
+  async open(key, box) { const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: this.unb64(box.iv) }, key, this.unb64(box.ct)); return JSON.parse(new TextDecoder().decode(pt)); },
+  gen({ len = 16, upper = true, lower = true, nums = true, syms = true, easy = false } = {}) {
+    let U = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', L = 'abcdefghijklmnopqrstuvwxyz', N = '0123456789', S = '!@#$%^&*-_=+?';
+    if (easy) { U = U.replace(/[IO]/g, ''); L = L.replace(/[lo]/g, ''); N = N.replace(/[01]/g, ''); }
+    const sets = [upper && U, lower && L, nums && N, syms && S].filter(Boolean); if (!sets.length) sets.push(L);
+    const all = sets.join(''), rnd = n => { const lim = 256 - (256 % n); let x; do { x = crypto.getRandomValues(new Uint8Array(1))[0]; } while (x >= lim); return x % n; };
+    for (; ;) { let p = ''; for (let i = 0; i < len; i++) p += all[rnd(all.length)]; if (sets.every(s => [...p].some(c => s.includes(c))) || len < sets.length) return p; }
+  },
+  strength(p) {
+    if (!p) return [0, '', 'var(--line)']; let pool = 0; if (/[a-z]/.test(p)) pool += 26; if (/[A-Z]/.test(p)) pool += 26; if (/\d/.test(p)) pool += 10; if (/[^\w]/.test(p)) pool += 15;
+    let bits = p.length * Math.log2(Math.max(pool, 2)); if (/^(.)\1+$/.test(p) || /^(password|123456|qwerty)/i.test(p)) bits = 8;
+    return bits < 40 ? [bits, 'Weak', 'var(--bad)'] : bits < 60 ? [bits, 'Okay', 'var(--warn)'] : bits < 80 ? [bits, 'Strong', 'var(--good)'] : [bits, 'Very strong', 'var(--good)'];
+  },
+};
+Apps.reg({
+  id: 'passwords', name: 'Passwords', icon: '🔐', color: 'linear-gradient(135deg,#5C6BFF,#2B2FB8)', group: 'day', keys: 'vault login keys secure', blurb: 'Locked password keeper',
+  mount(v, ctx) {
+    let rec = null, key = null, items = null, q = '', hiddenAt = 0, idle = null, fails = 0, waitUntil = 0;
+    const lock = () => { key = null; items = null; clearTimeout(idle); render(); };
+    const poke = () => { clearTimeout(idle); if (key) idle = setTimeout(() => { lock(); UI.toast('Locked after 5 minutes'); }, 5 * 60e3); };
+    const vis = () => { if (document.hidden) hiddenAt = Date.now(); else if (key && Date.now() - hiddenAt > 60e3) lock(); };
+    document.addEventListener('visibilitychange', vis); v.addEventListener('pointerdown', poke);
+    if (!(window.crypto && crypto.subtle)) { v.append(UI.empty('⚠️', 'Encryption is not available here', 'Open Nova Pocket from its https address to use Passwords.')); return; }
+    const save = async () => { rec.box = await Vault.seal(key, items); rec.updated = Date.now(); await DB.put('vault', rec); };
+    const pwInput = (ph, auto = 'current-password') => h('input', { type: 'password', placeholder: ph, autocomplete: auto, autocapitalize: 'off', spellcheck: 'false' });
+    async function render() {
+      v.innerHTML = ''; ctx.setActions(); ctx.setBack(null); ctx.setTitle('Passwords');
+      rec = await DB.get('vault', 'main');
+      if (!rec) return setup();
+      if (!key) return unlock();
+      list();
+    }
+    function setup() {
+      const p1 = pwInput('Make a master password', 'new-password'), p2 = pwInput('Type it again', 'new-password'), hint = h('input', { type: 'text', placeholder: 'Hint to help you remember (optional)' });
+      const meter = h('i'), lab = h('small', { class: 'muted' });
+      p1.addEventListener('input', () => { const [b, t, c] = Vault.strength(p1.value); meter.style.width = Math.min(100, b) + '%'; meter.style.background = c; lab.textContent = t; });
+      const go = h('button', { class: 'btn pri wide mt', onclick: async () => {
+        if (p1.value.length < 6) return UI.toast('Use at least 6 characters');
+        if (p1.value !== p2.value) return UI.toast('The two passwords don’t match');
+        if (hint.value && hint.value.includes(p1.value)) return UI.toast('Don’t put the password in the hint!');
+        go.disabled = true; go.textContent = 'Locking…';
+        const salt = crypto.getRandomValues(new Uint8Array(16)); key = await Vault.key(p1.value, salt, Vault.ITER); items = [];
+        rec = { id: 'main', salt: Vault.b64(salt), iter: Vault.ITER, hint: hint.value.trim(), created: Date.now() }; await save(); UI.toast('Your vault is ready'); poke(); render();
+      } }, 'Create my vault');
+      v.append(h('div', { class: 'lock card' }, h('div', { class: 'big' }, '🔐'), h('h2', null, 'Make your vault'),
+        h('p', { class: 'muted' }, 'Pick one master password. It locks all your other passwords with strong encryption, on this device only.'),
+        h('div', { class: 'stack', style: { textAlign: 'left' } }, p1, h('div', null, h('div', { class: 'meter' }, meter), lab), p2, hint),
+        h('div', { class: 'note-banner mt', style: { textAlign: 'left' } }, '⚠️ If you forget the master password, nobody can open the vault — not even me. Write it down somewhere safe.'), go));
+    }
+    function unlock() {
+      const p = pwInput('Master password');
+      const msg = h('p', { class: 'small', style: { color: 'var(--bad)', minHeight: '1.4em', margin: '8px 0 0' } });
+      const go = h('button', { class: 'btn pri wide mt', onclick: async () => {
+        if (Date.now() < waitUntil) return msg.textContent = 'Too many tries. Wait ' + Math.ceil((waitUntil - Date.now()) / 1000) + ' seconds.';
+        go.disabled = true; go.textContent = 'Unlocking…';
+        try { const k = await Vault.key(p.value, Vault.unb64(rec.salt), rec.iter); items = await Vault.open(k, rec.box); key = k; fails = 0; poke(); render(); }
+        catch (e) { fails++; if (fails >= 5) { waitUntil = Date.now() + 30e3; fails = 0; } msg.textContent = 'That’s not it. Try again.'; p.value = ''; p.focus(); Sfx.bad(); go.disabled = false; go.textContent = 'Unlock'; }
+      } }, 'Unlock');
+      p.addEventListener('keydown', e => { if (e.key === 'Enter') go.click(); });
+      v.append(h('div', { class: 'lock card' }, h('div', { class: 'big' }, '🔒'), h('h2', null, 'Vault locked'), h('p', { class: 'muted' }, 'Type your master password.'), p, msg, go,
+        rec.hint ? h('details', { class: 'mt small' }, h('summary', { class: 'muted' }, 'Show my hint'), h('p', { class: 'mt' }, rec.hint)) : null));
+      setTimeout(() => p.focus(), 80);
+    }
+    const avatar = it => { const c = 'hsl(' + (hashStr((it.name || '?').toLowerCase()) % 360) + ' 60% 48%)'; return h('span', { class: 'avatar', style: { background: c } }, (it.name || '?').trim()[0]?.toUpperCase() || '?'); };
+    function list() {
+      ctx.setActions(h('button', { class: 'btn ghost sm', onclick: lock }, '🔒 Lock'), h('button', { class: 'ib', 'aria-label': 'Vault options', html: SVG.more, onclick: options }));
+      const search = h('input', { type: 'search', placeholder: 'Search ' + items.length + ' saved', value: q });
+      const box = h('div');
+      v.append(h('div', { class: 'search mb' }, search), box, h('button', { class: 'fab', 'aria-label': 'Add password', html: SVG.plus, onclick: () => edit(null) }));
+      const draw = () => {
+        box.innerHTML = ''; const s = q.toLowerCase();
+        const shown = items.filter(i => !s || (i.name + ' ' + i.user + ' ' + (i.url || '')).toLowerCase().includes(s)).sort((a, b) => a.name.localeCompare(b.name));
+        if (!items.length) return box.append(UI.empty('🗝️', 'Nothing saved yet', 'Tap + to add your first login.'), h('button', { class: 'btn wide', onclick: generator }, '🎲 Make a strong password'));
+        box.append(h('div', { class: 'list' }, shown.map(it => h('button', { class: 'li', onclick: () => show(it) }, avatar(it), h('span', { class: 't' }, h('b', null, it.name), h('small', null, it.user || '—')), h('span', { class: 'chev' }, '›')))));
+        box.append(h('button', { class: 'btn wide mt', onclick: generator }, '🎲 Make a strong password'));
+      };
+      search.addEventListener('input', () => { q = search.value; draw(); }); draw();
+    }
+    function show(it) {
+      v.innerHTML = ''; ctx.setTitle(it.name); ctx.setBack(() => { render(); return true; });
+      ctx.setActions(h('button', { class: 'btn ghost sm', onclick: () => edit(it) }, 'Edit'));
+      let reveal = false; const pw = h('span', { class: 'val mono' }, '••••••••••');
+      const eye = h('button', { class: 'btn sm', onclick: () => { reveal = !reveal; pw.textContent = reveal ? it.pass : '••••••••••'; eye.textContent = reveal ? 'Hide' : 'Show'; } }, 'Show');
+      const f = (k, val, extra) => h('div', { class: 'field-show' }, h('div', { style: { flex: 1, minWidth: 0 } }, h('div', { class: 'k' }, k), typeof val === 'string' ? h('div', { class: 'val' }, val) : val), extra);
+      v.append(h('div', { class: 'row mb', style: { gap: '12px' } }, avatar(it), h('h2', { style: { fontSize: '22px' } }, it.name)),
+        h('div', { class: 'list' },
+          f('Username or email', it.user || '—', it.user ? h('button', { class: 'btn sm', onclick: () => copyText(it.user, 'Username copied') }, 'Copy') : null),
+          f('Password', pw, h('div', { class: 'row nw' }, eye, h('button', { class: 'btn sm pri', onclick: () => copyText(it.pass, 'Password copied') }, 'Copy'))),
+          it.url ? f('Website', h('a', { class: 'val', href: /^https?:/.test(it.url) ? it.url : 'https://' + it.url, target: '_blank', rel: 'noopener' }, it.url)) : null,
+          it.notes ? f('Notes', it.notes) : null),
+        h('p', { class: 'tiny muted mt' }, 'Changed ' + fmtAgo(it.updated || it.created) + '. Strength: ' + Vault.strength(it.pass)[1] + '.'));
+    }
+    function edit(it0) {
+      const it = Object.assign({ name: '', user: '', pass: '', url: '', notes: '' }, it0 || {});
+      const name = h('input', { type: 'text', value: it.name, placeholder: 'Website or app (e.g. Roblox)', autocapitalize: 'words' });
+      const user = h('input', { type: 'text', value: it.user, placeholder: 'Username or email', autocapitalize: 'off', autocomplete: 'off', spellcheck: 'false' });
+      const pass = h('input', { type: 'text', value: it.pass, placeholder: 'Password', autocapitalize: 'off', autocomplete: 'off', spellcheck: 'false', style: { fontFamily: 'var(--mono)' } });
+      const url = h('input', { type: 'url', value: it.url, placeholder: 'Web address (optional)', autocapitalize: 'off' });
+      const notes = h('input', { type: 'text', value: it.notes, placeholder: 'Notes (optional)' });
+      const meter = h('i'), lab = h('small', { class: 'muted' });
+      const paint = () => { const [b, t, c] = Vault.strength(pass.value); meter.style.width = Math.min(100, b) + '%'; meter.style.background = c; lab.textContent = t; };
+      pass.addEventListener('input', paint); paint();
+      const body = h('div', null, h('label', { class: 'f' }, h('span', null, 'Name'), name), h('label', { class: 'f' }, h('span', null, 'Username'), user),
+        h('label', { class: 'f' }, h('span', null, 'Password'), h('div', { class: 'pwrow' }, pass, h('button', { class: 'btn', title: 'Make a strong one', onclick: () => { pass.value = Vault.gen(); paint(); } }, '🎲')), h('div', { class: 'meter' }, meter), lab),
+        h('label', { class: 'f' }, h('span', null, 'Website'), url), h('label', { class: 'f' }, h('span', null, 'Notes'), notes),
+        it0 ? h('button', { class: 'btn bad sm', onclick: async () => { if (!(await UI.ask('Delete the login for ' + it.name + '?', { ok: 'Delete', danger: true }))) return; items = items.filter(x => x.id !== it.id); await save(); s.close(); render(); } }, 'Delete this login') : null);
+      const s = UI.sheet({ title: it0 ? 'Edit login' : 'New login', body, actions: [{ label: 'Cancel' }, { label: 'Save', cls: 'pri', onClick: async c => {
+        if (!name.value.trim()) return UI.toast('Give it a name');
+        if (!pass.value) return UI.toast('Type or make a password');
+        Object.assign(it, { id: it.id || uid(), name: name.value.trim(), user: user.value.trim(), pass: pass.value, url: url.value.trim(), notes: notes.value.trim(), updated: Date.now(), created: it.created || Date.now() });
+        items = items.filter(x => x.id !== it.id).concat([it]); await save(); c(); UI.toast('Saved and locked away'); show(it);
+      } }] });
+    }
+    function generator() {
+      const opt = { len: 16, upper: true, lower: true, nums: true, syms: true, easy: false };
+      const out = h('div', { class: 'val', style: { fontFamily: 'var(--mono)', fontSize: '22px', wordBreak: 'break-all', textAlign: 'center', padding: '14px', background: 'var(--surface2)', borderRadius: '12px', minHeight: '64px' } });
+      const len = h('input', { type: 'range', min: 8, max: 40, value: 16 }), lenL = h('b');
+      const roll = () => { opt.len = +len.value; lenL.textContent = len.value; out.textContent = Vault.gen(opt); };
+      len.addEventListener('input', roll);
+      const tog = (k, label) => { const c = h('input', { type: 'checkbox' }); c.checked = opt[k]; c.onchange = () => { opt[k] = c.checked; roll(); }; return h('label', { class: 'row nw', style: { margin: '6px 0' } }, c, label); };
+      roll();
+      UI.sheet({ title: 'Strong password maker', body: h('div', null, out, h('div', { class: 'row mt' }, h('span', null, 'Length: '), lenL), len, tog('upper', 'ABC capitals'), tog('lower', 'abc small letters'), tog('nums', '123 numbers'), tog('syms', '!@# symbols'), tog('easy', 'Skip look-alike letters (l, 1, O, 0)')),
+        actions: [{ label: '🎲 New one', onClick: () => roll() }, { label: 'Copy', cls: 'pri', onClick: c => { copyText(out.textContent, 'Password copied'); c(); } }] });
+    }
+    function options() {
+      UI.menu('Vault', [
+        { icon: '🔑', label: 'Change master password', run: changeMaster },
+        { icon: '💾', label: 'Back up', sub: 'Backups keep the vault locked with your master password', run: () => Shell.settings() },
+        { icon: '🗑️', label: 'Delete the whole vault', danger: true, run: async () => { if (await UI.ask('Delete ALL saved passwords?', { ok: 'Delete', danger: true }) && await UI.ask('Really? This can’t be undone.', { ok: 'Yes, delete', danger: true })) { await DB.del('vault', 'main'); lock(); } } },
+      ]);
+    }
+    function changeMaster() {
+      const old = pwInput('Current master password'), p1 = pwInput('New master password', 'new-password'), p2 = pwInput('New one again', 'new-password');
+      UI.sheet({ title: 'Change master password', body: h('div', { class: 'stack' }, old, p1, p2), actions: [{ label: 'Cancel' }, { label: 'Change', cls: 'pri', onClick: async c => {
+        try { await Vault.open(await Vault.key(old.value, Vault.unb64(rec.salt), rec.iter), rec.box); } catch (e) { return UI.toast('Current password is wrong'); }
+        if (p1.value.length < 6) return UI.toast('Use at least 6 characters'); if (p1.value !== p2.value) return UI.toast('New passwords don’t match');
+        const salt = crypto.getRandomValues(new Uint8Array(16)); key = await Vault.key(p1.value, salt, Vault.ITER); rec.salt = Vault.b64(salt); rec.iter = Vault.ITER; await save(); c(); UI.toast('Master password changed');
+      } }] });
+    }
+    render();
+    return () => { key = null; items = null; clearTimeout(idle); document.removeEventListener('visibilitychange', vis); };
+  },
+});
+
+/* ---- 20-media.js ---- */
+/* ===== Photos & videos ===== */
+addCSS(`
+.gal{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;border-radius:14px;overflow:hidden}
+@media (min-width:640px){.gal{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.gal button{position:relative;aspect-ratio:1/1;border:0;padding:0;background:var(--surface2);overflow:hidden;min-width:0}
+.gal img{width:100%;height:100%;object-fit:cover;display:block}
+.gal .vd{position:absolute;right:5px;bottom:4px;color:#fff;font-size:12px;font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,.7)}
+.gal .fv{position:absolute;left:5px;bottom:3px;font-size:13px}
+.viewer{position:fixed;inset:0;z-index:55;background:#000;display:flex;flex-direction:column;color:#fff}
+.viewer .vt,.viewer .vb{display:flex;align-items:center;gap:6px;padding:calc(var(--top) + 6px) 10px 6px;background:rgba(0,0,0,.4)}
+.viewer .vb{padding:8px 10px calc(var(--bot) + 10px);justify-content:space-around}
+.viewer .ib{color:#fff}
+.viewer .stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;touch-action:pan-x pan-y pinch-zoom;min-height:0}
+.viewer .stage img,.viewer .stage video{max-width:100%;max-height:100%;object-fit:contain}
+.viewer .stage.zoom{align-items:flex-start;justify-content:flex-start}
+.viewer .stage.zoom img{max-width:none;max-height:none}
+.viewer .vb button{display:flex;flex-direction:column;align-items:center;gap:2px;border:0;background:none;color:#fff;font-size:12px;min-width:60px;padding:4px}
+.viewer .vb button span{font-size:24px}
+`);
+const Media = {
+  async add(files) {
+    let n = 0;
+    for (const f of files) {
+      const video = f.type.startsWith('video'); const th = video ? await videoThumb(f) : await imageThumb(f);
+      await DB.put('media', { id: uid(), kind: video ? 'video' : 'photo', name: f.name, blob: f, type: f.type, thumb: th && th.url, w: th && th.w, h: th && th.h, dur: th && th.dur, size: f.size, fav: false, created: Date.now() }); n++;
+    }
+    return n;
+  },
+  async addCanvas(canvas, name, kind = 'drawing', id) {
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png')); const th = await imageThumb(canvas);
+    const old = id ? await DB.get('media', id) : null;
+    const rec = Object.assign(old || { id: uid(), created: Date.now(), fav: false }, { kind: old ? old.kind : kind, name: name || (old && old.name) || 'Drawing', blob, type: 'image/png', thumb: th && th.url, w: canvas.width, h: canvas.height, size: blob.size, updated: Date.now() });
+    await DB.put('media', rec); return rec;
+  },
+  viewer(list, i, onChange) {
+    let idx = i, url = null;
+    const stage = h('div', { class: 'stage' }), counter = h('span', { style: { flex: 1, textAlign: 'center', fontWeight: 600 } });
+    const favB = h('button', null, h('span', null, '🤍'), 'Favorite');
+    const close = () => { if (url) URL.revokeObjectURL(url); el.remove(); removeEventListener('keydown', key); onChange && onChange(); };
+    const show = () => {
+      const m = list[idx]; if (!m) return close(); if (url) URL.revokeObjectURL(url); url = URL.createObjectURL(m.blob); stage.innerHTML = ''; stage.classList.remove('zoom');
+      stage.append(m.kind === 'video' ? h('video', { src: url, controls: true, playsinline: true, autoplay: true }) : h('img', { src: url, alt: m.name || 'Photo', ondblclick: () => stage.classList.toggle('zoom') }));
+      counter.textContent = (idx + 1) + ' of ' + list.length; favB.firstChild.textContent = m.fav ? '❤️' : '🤍';
+      editB.hidden = m.kind === 'video';
+    };
+    const go = d => { idx = clamp(idx + d, 0, list.length - 1); show(); };
+    favB.onclick = async () => { const m = list[idx]; m.fav = !m.fav; await DB.put('media', m); show(); };
+    const editB = h('button', { onclick: () => { const m = list[idx]; close(); Shell.go('studio', m.id); } }, h('span', null, '🎨'), 'Edit');
+    const el = h('div', { class: 'viewer', role: 'dialog', 'aria-label': 'Photo viewer' },
+      h('div', { class: 'vt' }, h('button', { class: 'ib', 'aria-label': 'Close', html: SVG.close, onclick: close }), counter, h('button', { class: 'ib', 'aria-label': 'Previous', onclick: () => go(-1) }, '‹'), h('button', { class: 'ib', 'aria-label': 'Next', onclick: () => go(1) }, '›')),
+      stage,
+      h('div', { class: 'vb' }, favB, editB,
+        h('button', { onclick: () => { const m = list[idx]; saveFile(m.blob, m.name || ('photo-' + m.id + (m.type.includes('png') ? '.png' : m.kind === 'video' ? '.mp4' : '.jpg'))); } }, h('span', null, '📤'), 'Save'),
+        h('button', { onclick: async () => { const m = list[idx]; if (!(await UI.ask('Delete this ' + (m.kind === 'video' ? 'video' : 'picture') + '?', { ok: 'Delete', danger: true }))) return; await DB.del('media', m.id); list.splice(idx, 1); if (!list.length) return close(); idx = Math.min(idx, list.length - 1); show(); } }, h('span', null, '🗑️'), 'Delete')));
+    let sx = null; stage.addEventListener('touchstart', e => { sx = e.touches.length === 1 && !stage.classList.contains('zoom') ? e.touches[0].clientX : null; }, { passive: true });
+    stage.addEventListener('touchend', e => { if (sx == null) return; const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 60) go(dx < 0 ? 1 : -1); sx = null; });
+    const key = e => { if (e.key === 'ArrowLeft') go(-1); else if (e.key === 'ArrowRight') go(1); else if (e.key === 'Escape') close(); };
+    addEventListener('keydown', key); document.body.append(el); show();
+  },
+};
+Apps.reg({
+  id: 'media', name: 'Photos', icon: '🖼️', color: 'linear-gradient(135deg,#4FD1C5,#2B8CBE)', group: 'make', keys: 'pictures videos gallery media camera', blurb: 'Your pictures and videos',
+  mount(v, ctx) {
+    let filter = 'all';
+    const box = h('div');
+    const add = () => UI.menu('Add', [
+      { icon: '🖼️', label: 'Choose photos or videos', sub: 'From your library or Files', run: async () => { const f = await pickFiles('image/*,video/*'); if (f.length) { UI.toast('Adding ' + f.length + '…'); const n = await Media.add(f); UI.toast('Added ' + n); draw(); } } },
+      { icon: '📷', label: 'Take a photo', run: async () => { const f = await pickFiles('image/*', { multiple: false, capture: 'environment' }); if (f.length) { await Media.add(f); draw(); } } },
+      { icon: '🎥', label: 'Record a video', run: async () => { const f = await pickFiles('video/*', { multiple: false, capture: 'environment' }); if (f.length) { await Media.add(f); draw(); } } },
+    ]);
+    ctx.setActions(h('button', { class: 'btn ghost sm', onclick: add }, '＋ Add'));
+    v.append(UI.tabs([['all', 'All'], ['photo', '📷 Photos'], ['video', '🎥 Videos'], ['drawing', '🎨 Drawings'], ['fav', '❤️ Favorites']], filter, f => { filter = f; draw(); }), box);
+    async function draw() {
+      const all = (await DB.all('media')).sort((a, b) => (b.created || 0) - (a.created || 0));
+      const list = all.filter(m => filter === 'all' || (filter === 'fav' ? m.fav : m.kind === filter)); box.innerHTML = '';
+      if (!all.length) { box.append(UI.empty('🖼️', 'No pictures yet', 'Add photos and videos here, or draw something in Studio. They stay on this device.'), h('div', { class: 'center' }, h('button', { class: 'btn pri', onclick: add }, '＋ Add photos'))); return; }
+      if (!list.length) { box.append(UI.empty('🔎', 'Nothing here yet')); return; }
+      const bytes = list.reduce((a, m) => a + (m.size || 0), 0);
+      box.append(h('div', { class: 'gal' }, list.map((m, i) => h('button', { 'aria-label': (m.kind === 'video' ? 'Video ' : 'Picture ') + (i + 1), onclick: () => Media.viewer(list, i, draw) },
+        m.thumb ? h('img', { src: m.thumb, alt: '', loading: 'lazy' }) : h('span', { style: { fontSize: '30px' } }, m.kind === 'video' ? '🎬' : '🖼️'),
+        m.kind === 'video' ? h('span', { class: 'vd' }, '▶ ' + (m.dur ? fmtDur(m.dur) : '')) : null, m.fav ? h('span', { class: 'fv' }, '❤️') : null))),
+        h('p', { class: 'tiny muted center mt' }, list.length + ' items · ' + fmtSize(bytes)));
+    }
+    draw();
+  },
+});
+
+/* ---- 21-music.js ---- */
+/* ===== Music: your songs, built-in tunes, piano, beat maker ===== */
+addCSS(`
+.np{background:linear-gradient(160deg,#3B2DB0,#7A3FD8 60%,#D24E9B);color:#fff;border-radius:22px;padding:18px;box-shadow:0 10px 30px rgba(80,40,180,.35)}
+.np .art{width:64px;height:64px;border-radius:14px;background:rgba(255,255,255,.18);display:grid;place-items:center;font-size:34px;flex:0 0 auto}
+.np b{font-size:19px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.np small{opacity:.8}
+.np input[type=range]{accent-color:#fff}
+.np .ctl{display:flex;justify-content:center;align-items:center;gap:18px;margin-top:6px}
+.np .ctl button{border:0;background:none;color:#fff;width:48px;height:48px;display:grid;place-items:center;border-radius:24px}
+.np .ctl button svg{width:28px;height:28px}
+.np .ctl .big{width:64px;height:64px;background:#fff;color:#4a2fc0;border-radius:32px}
+.np .ctl .big svg{width:30px;height:30px}
+.np .ctl .tog{opacity:.5;font-size:20px}
+.np .ctl .tog.on{opacity:1}
+.np .times{display:flex;justify-content:space-between;font-size:12px;opacity:.85;font-variant-numeric:tabular-nums}
+.song.playing b{color:var(--accent)}
+.piano{position:relative;height:200px;display:flex;touch-action:none;user-select:none;-webkit-user-select:none;margin-top:10px;overflow:hidden;border-radius:0 0 12px 12px}
+.piano .w{flex:1;border:1px solid #999;border-top:0;background:linear-gradient(#fff,#f1f1f1);border-radius:0 0 8px 8px;position:relative;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;font-size:12px;color:#777;font-weight:700}
+.piano .b{position:absolute;top:0;height:60%;background:linear-gradient(#333,#111);border-radius:0 0 6px 6px;z-index:2;box-shadow:0 2px 4px rgba(0,0,0,.4)}
+.piano .on{background:linear-gradient(#c9c4ff,#9d96ff)!important}
+.beat{display:grid;grid-template-columns:64px repeat(16,minmax(0,1fr));gap:3px;align-items:center;margin-top:10px}
+.beat .lab{font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden}
+.beat .st{aspect-ratio:1/1.3;border:0;border-radius:5px;background:var(--surface2);padding:0;min-width:0}
+.beat .st.q{background:color-mix(in srgb,var(--surface2) 70%,var(--muted))}
+.beat .st.on{background:var(--accent)}
+.beat .st.now{outline:2px solid #FF9500;outline-offset:-2px}
+`);
+const MIDI = m => 440 * Math.pow(2, (m - 69) / 12);
+const Synth = {
+  noise: new WeakMap(),
+  noiseBuf(ctx) { let b = this.noise.get(ctx); if (!b) { b = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate); const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; this.noise.set(ctx, b); } return b; },
+  INST: { piano: 'Piano', organ: 'Organ', synth: 'Synth', bell: 'Bell', box: 'Music box', pluck: 'Pluck', bass: 'Bass', soft: 'Soft' },
+  // start a note; returns stop(time) for held notes
+  note(ctx, dest, inst, freq, t, dur, vel = 1) {
+    const g = ctx.createGain(); g.connect(dest); const os = []; const v = 0.22 * vel;
+    const osc = (type, f, gain) => { const o = ctx.createOscillator(), gg = ctx.createGain(); o.type = type; o.frequency.setValueAtTime(f, t); gg.gain.value = gain; o.connect(gg).connect(g); o.start(t); os.push(o); return o; };
+    let rel = 0.08, hold = dur != null;
+    switch (inst) {
+      case 'organ': osc('square', freq, 0.25); osc('sine', freq / 2, 0.6); osc('sine', freq * 2, 0.25); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * 0.8, t + 0.02); break;
+      case 'synth': { const o = osc('sawtooth', freq, 0.5); osc('sawtooth', freq * 1.006, 0.4); const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(3500, t); lp.frequency.exponentialRampToValueAtTime(900, t + 0.4); g.disconnect(); g.connect(lp).connect(dest); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + 0.02); g.gain.setTargetAtTime(v * 0.6, t + 0.05, 0.2); break; }
+      case 'bell': osc('sine', freq, 0.7); osc('sine', freq * 2.76, 0.25); osc('sine', freq * 5.4, 0.08); g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2); hold = false; dur = 2.2; break;
+      case 'box': osc('sine', freq * 2, 0.6); osc('triangle', freq * 4, 0.15); g.gain.setValueAtTime(v * 0.8, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9); hold = false; dur = 0.9; break;
+      case 'pluck': osc('square', freq, 0.35); osc('triangle', freq, 0.5); g.gain.setValueAtTime(v * 0.9, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35); hold = false; dur = 0.35; break;
+      case 'bass': osc('triangle', freq, 0.9); osc('square', freq, 0.12); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * 1.3, t + 0.01); g.gain.setTargetAtTime(v * 0.9, t + 0.03, 0.15); break;
+      case 'soft': osc('sine', freq, 0.8); osc('triangle', freq, 0.25); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * 0.7, t + 0.08); rel = 0.4; break;
+      default: osc('triangle', freq, 0.75); osc('sine', freq * 2, 0.18); osc('sine', freq * 3, 0.05); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * 1.1, t + 0.005); g.gain.exponentialRampToValueAtTime(v * 0.35, t + 0.4); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4); dur = dur == null ? 2.4 : Math.min(dur, 2.4); hold = true;
+    }
+    const stop = (at) => { at = Math.max(at, t + 0.02); try { g.gain.cancelScheduledValues(at); g.gain.setValueAtTime(g.gain.value || 0.0001, at); } catch (e) { } g.gain.setTargetAtTime(0, at, rel / 3); os.forEach(o => { try { o.stop(at + rel + 0.3); } catch (e) { } }); };
+    if (dur != null) { if (hold) stop(t + dur); else os.forEach(o => { try { o.stop(t + dur + 0.1); } catch (e) { } }); }
+    return stop;
+  },
+  drum(ctx, dest, kind, t, vel = 1) {
+    const g = ctx.createGain(); g.connect(dest);
+    const nz = (type, f, q) => { const s = ctx.createBufferSource(); s.buffer = this.noiseBuf(ctx); const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f; if (q) fl.Q.value = q; s.connect(fl).connect(g); s.start(t); s.stop(t + 0.5); };
+    const tone = (type, f0, f1, d, gain = 1) => { const o = ctx.createOscillator(), gg = ctx.createGain(); o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + d); gg.gain.setValueAtTime(gain, t); gg.gain.exponentialRampToValueAtTime(0.0001, t + d); o.connect(gg).connect(g); o.start(t); o.stop(t + d + 0.05); };
+    switch (kind) {
+      case 'kick': g.gain.value = 0.9 * vel; tone('sine', 150, 42, 0.32); break;
+      case 'snare': g.gain.setValueAtTime(0.45 * vel, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18); nz('highpass', 1200); tone('triangle', 200, 120, 0.1, 0.6); break;
+      case 'hat': g.gain.setValueAtTime(0.18 * vel, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05); nz('highpass', 7500); break;
+      case 'open': g.gain.setValueAtTime(0.16 * vel, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3); nz('highpass', 6500); break;
+      case 'clap': for (let i = 0; i < 3; i++) { const gg = ctx.createGain(); gg.connect(dest); const s = ctx.createBufferSource(); s.buffer = this.noiseBuf(ctx); const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1600; f.Q.value = 1.2; s.connect(f).connect(gg); const tt = t + i * 0.012; gg.gain.setValueAtTime(0.5 * vel, tt); gg.gain.exponentialRampToValueAtTime(0.0001, tt + (i === 2 ? 0.15 : 0.03)); s.start(tt); s.stop(tt + 0.2); } break;
+      case 'tom': g.gain.value = 0.6 * vel; tone('sine', 230, 110, 0.28); break;
+      case 'bell': g.gain.setValueAtTime(0.18 * vel, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35); tone('square', 540, 538, 0.35, 0.6); tone('square', 800, 798, 0.35, 0.5); break;
+    }
+  },
+  wav(buf) {
+    const ch = buf.numberOfChannels, sr = buf.sampleRate, n = buf.length, dv = new DataView(new ArrayBuffer(44 + n * ch * 2));
+    const ws = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+    ws(0, 'RIFF'); dv.setUint32(4, 36 + n * ch * 2, true); ws(8, 'WAVE'); ws(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, ch, true);
+    dv.setUint32(24, sr, true); dv.setUint32(28, sr * ch * 2, true); dv.setUint16(32, ch * 2, true); dv.setUint16(34, 16, true); ws(36, 'data'); dv.setUint32(40, n * ch * 2, true);
+    const data = []; for (let c = 0; c < ch; c++) data.push(buf.getChannelData(c));
+    let o = 44; for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++) { const s = Math.max(-1, Math.min(1, data[c][i])); dv.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7FFF, true); o += 2; }
+    return new Blob([dv.buffer], { type: 'audio/wav' });
+  },
+  async render(seconds, fill, sr = 32000) {
+    const C = window.OfflineAudioContext || window.webkitOfflineAudioContext; const ctx = new C(1, Math.ceil(seconds * sr), sr);
+    const master = ctx.createGain(); master.gain.value = 0.8; const comp = ctx.createDynamicsCompressor(); master.connect(comp).connect(ctx.destination);
+    fill(ctx, master); const buf = await ctx.startRendering(); return this.wav(buf);
+  },
+};
+/* ---------- built-in original tunes (made from a seed, rendered on this device) ---------- */
+const TUNES = [
+  { id: 't1', name: 'Sunny Steps', icon: '🌞', bpm: 118, root: 60, mode: 'maj', prog: [0, 4, 5, 3], lead: 'pluck', arp: 'box', drums: 'pop', seed: 11 },
+  { id: 't2', name: 'Night Drive', icon: '🌙', bpm: 96, root: 57, mode: 'min', prog: [0, 5, 2, 6], lead: 'synth', arp: 'soft', drums: 'chill', seed: 23 },
+  { id: 't3', name: 'Pixel Rain', icon: '🌧️', bpm: 140, root: 64, mode: 'min', prog: [0, 3, 6, 4], lead: 'pluck', arp: 'pluck', drums: 'fast', seed: 37 },
+  { id: 't4', name: 'Lazy Cloud', icon: '☁️', bpm: 84, root: 65, mode: 'maj', prog: [0, 3, 0, 4], lead: 'soft', arp: 'piano', drums: 'chill', seed: 41 },
+  { id: 't5', name: 'Boss Rush', icon: '⚔️', bpm: 160, root: 62, mode: 'min', prog: [0, 0, 5, 4], lead: 'synth', arp: 'pluck', drums: 'fast', seed: 59 },
+  { id: 't6', name: 'Starlight Lullaby', icon: '✨', bpm: 72, root: 67, mode: 'maj', prog: [0, 5, 3, 4], lead: 'bell', arp: 'box', drums: 'none', seed: 73 },
+  { id: 't7', name: 'Ocean Breeze', icon: '🌊', bpm: 104, root: 62, mode: 'maj', prog: [0, 2, 3, 4], lead: 'piano', arp: 'soft', drums: 'pop', seed: 89 },
+  { id: 't8', name: 'Cave Echoes', icon: '🦇', bpm: 90, root: 55, mode: 'min', prog: [0, 6, 5, 6], lead: 'bell', arp: 'organ', drums: 'chill', seed: 97 },
+];
+const DRUMS = {
+  pop: { kick: 'x.......x.x.....', snare: '....x.......x...', hat: 'x.x.x.x.x.x.x.x.' },
+  chill: { kick: 'x.........x.....', snare: '....x.......x...', hat: '..x...x...x...x.' },
+  fast: { kick: 'x...x...x...x...', snare: '....x.......x..x', hat: 'xxxxxxxxxxxxxxxx' },
+  none: {},
+};
+function composeTune(def) {
+  const rnd = seeded(def.seed), spb = 60 / def.bpm, s16 = spb / 4, bar = spb * 4;
+  const scale = def.mode === 'maj' ? [0, 2, 4, 5, 7, 9, 11] : [0, 2, 3, 5, 7, 8, 10];
+  const deg = d => def.root + scale[((d % 7) + 7) % 7] + 12 * Math.floor(d / 7);
+  const ev = []; const bars = 26;
+  const motif = () => { const m = []; let d = 4 + Math.floor(rnd() * 3); for (let i = 0; i < 8; i++) { if (rnd() < 0.18 && i % 2) { m.push(null); continue; } d += pick([-2, -1, -1, 0, 1, 1, 2, 3, -3]); d = clamp(d, 0, 11); m.push({ d, len: rnd() < 0.25 ? 2 : 1 }); } return m; };
+  const A = [motif(), motif()], B = [motif(), motif()];
+  const form = ['i', 'i', 'A', 'A', 'B', 'A', 'B', 'B', 'A', 'o'];
+  for (let b = 0; b < bars; b++) {
+    const t0 = b * bar, ch = def.prog[b % def.prog.length], sect = form[Math.min(form.length - 1, Math.floor(b / 3))];
+    const vol = b >= bars - 2 ? 0.6 : 1;
+    ev.push({ k: 'n', inst: 'bass', m: deg(ch) - 24, t: t0, d: spb * 1.8, v: 0.9 * vol }, { k: 'n', inst: 'bass', m: deg(ch) - 24 + (rnd() < 0.3 ? 12 : 0), t: t0 + spb * 2, d: spb * 1.8, v: 0.8 * vol });
+    const tones = [deg(ch), deg(ch + 2), deg(ch + 4), deg(ch + 7)];
+    for (let i = 0; i < 8; i++) ev.push({ k: 'n', inst: def.arp, m: tones[[0, 1, 2, 3, 2, 1, 2, 3][i]] - 12, t: t0 + i * spb / 2, d: spb / 2, v: 0.35 * vol });
+    if (sect === 'A' || sect === 'B') {
+      const mo = (sect === 'A' ? A : B)[b % 2];
+      for (let i = 0; i < 8; i++) { const n = mo[i]; if (!n) continue; const d = i % 2 === 0 ? [ch, ch + 2, ch + 4, ch + 7].reduce((a, c) => Math.abs(c - n.d) < Math.abs(a - n.d) ? c : a) : n.d; ev.push({ k: 'n', inst: def.lead, m: deg(d) + 12, t: t0 + i * spb / 2, d: spb / 2 * n.len * 0.95, v: 0.75 * vol }); }
+    }
+    const pat = DRUMS[def.drums] || {};
+    if (b > 0 && b < bars - 1) for (const kind in pat) for (let s = 0; s < 16; s++) if (pat[kind][s] === 'x') ev.push({ k: 'd', kind, t: t0 + s * s16, v: (s % 4 ? 0.7 : 1) * vol });
+  }
+  ev.push({ k: 'n', inst: def.arp, m: deg(def.prog[0]), t: bars * bar, d: spb * 3, v: 0.5 }, { k: 'n', inst: 'bass', m: deg(def.prog[0]) - 24, t: bars * bar, d: spb * 3, v: 0.7 });
+  return { ev, len: bars * bar + spb * 4 };
+}
+const tuneCache = {};
+async function renderTune(def) {
+  if (tuneCache[def.id]) return tuneCache[def.id];
+  const { ev, len } = composeTune(def);
+  const blob = await Synth.render(len, (ctx, out) => { for (const e of ev) e.k === 'n' ? Synth.note(ctx, out, e.inst, MIDI(e.m), e.t, e.d, e.v) : Synth.drum(ctx, out, e.kind, e.t, e.v); }, 24000);
+  return (tuneCache[def.id] = blob);
+}
+/* ---------- one player for the whole app (keeps playing while you use other apps) ---------- */
+const Player = {
+  audio: new Audio(), queue: [], idx: -1, url: null, shuffle: false, repeat: 'all', subs: new Set(), loading: false,
+  get cur() { return this.queue[this.idx] || null; },
+  on(f) { this.subs.add(f); return () => this.subs.delete(f); },
+  emit() { this.subs.forEach(f => f()); this.paintMini(); },
+  async playList(list, i) { this.queue = list; this.idx = i; await this.load(true); },
+  async load(play) {
+    const t = this.cur; if (!t) return; this.loading = true; this.emit();
+    let blob = t.blob; if (!blob && t.make) { try { blob = await t.make(); } catch (e) { UI.toast('Could not play that'); this.loading = false; return; } }
+    if (this.cur !== t) return;
+    if (this.url) URL.revokeObjectURL(this.url); this.url = URL.createObjectURL(blob); this.audio.src = this.url; this.loading = false;
+    if (play) { try { await this.audio.play(); } catch (e) { } }
+    if ('mediaSession' in navigator) { try { navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist || 'Nova Pocket', album: 'Nova Pocket' }); } catch (e) { } }
+    this.emit();
+  },
+  toggle() { if (!this.cur) return; if (this.audio.paused) this.audio.play().catch(() => { }); else this.audio.pause(); },
+  next(auto) {
+    if (!this.queue.length) return;
+    if (auto && this.repeat === 'one') { this.audio.currentTime = 0; this.audio.play(); return; }
+    if (this.shuffle && this.queue.length > 1) { let j; do { j = Math.floor(Math.random() * this.queue.length); } while (j === this.idx); this.idx = j; }
+    else if (this.idx + 1 < this.queue.length) this.idx++; else if (auto && this.repeat === 'off') { this.emit(); return; } else this.idx = 0;
+    this.load(true);
+  },
+  prev() { if (this.audio.currentTime > 3) { this.audio.currentTime = 0; return; } this.idx = (this.idx - 1 + this.queue.length) % this.queue.length; this.load(true); },
+  stop() { this.audio.pause(); this.queue = []; this.idx = -1; if (this.url) URL.revokeObjectURL(this.url); this.url = null; this.audio.removeAttribute('src'); this.emit(); },
+  paintMini() {
+    const m = $('#mini'); if (!m) return; const show = !!this.cur && !(Shell.cur && Shell.cur.id === 'music');
+    m.hidden = !show; document.body.classList.toggle('has-mini', show); if (!show) return;
+    m.innerHTML = '';
+    m.append(h('span', { style: { fontSize: '24px' } }, this.cur.icon || '🎵'), h('button', { class: 't', onclick: () => Shell.go('music') }, h('b', null, this.cur.title), h('small', null, this.loading ? 'Loading…' : this.audio.paused ? 'Paused' : 'Playing')),
+      h('button', { class: 'ib', 'aria-label': this.audio.paused ? 'Play' : 'Pause', html: this.audio.paused ? SVG.play : SVG.pause, onclick: () => this.toggle() }),
+      h('button', { class: 'ib', 'aria-label': 'Next', html: SVG.next, onclick: () => this.next() }),
+      h('button', { class: 'ib', 'aria-label': 'Close player', html: SVG.close, onclick: () => this.stop() }));
+  },
+};
+['play', 'pause', 'ended', 'loadedmetadata'].forEach(k => Player.audio.addEventListener(k, () => { if (k === 'ended') Player.next(true); else Player.emit(); }));
+Player.audio.preload = 'auto'; Player.audio.setAttribute('playsinline', '');
+if ('mediaSession' in navigator) { const ms = navigator.mediaSession; try { ms.setActionHandler('play', () => Player.toggle()); ms.setActionHandler('pause', () => Player.toggle()); ms.setActionHandler('nexttrack', () => Player.next()); ms.setActionHandler('previoustrack', () => Player.prev()); } catch (e) { } }
+addEventListener('hashchange', () => setTimeout(() => Player.paintMini(), 0));
+
+Apps.reg({
+  id: 'music', name: 'Music', icon: '🎵', color: 'linear-gradient(135deg,#FF5E8A,#C2185B)', group: 'make', keys: 'songs player piano beats drums', blurb: 'Songs, piano and beats',
+  mount(v, ctx) {
+    let tab = Prefs.get('musicTab', 'songs'), cleanupTab = null;
+    const now = h('div'), body = h('div');
+    v.append(now, UI.tabs([['songs', '🎧 My songs'], ['tunes', '🎼 Built-in'], ['piano', '🎹 Piano'], ['beats', '🥁 Beats']], tab, t => { tab = t; Prefs.set('musicTab', t); show(); }), body);
+    const paintNow = () => {
+      now.innerHTML = ''; const c = Player.cur; if (!c) return;
+      const a = Player.audio, dur = a.duration && isFinite(a.duration) ? a.duration : (c.dur || 0);
+      const seek = h('input', { type: 'range', min: 0, max: Math.max(1, dur), step: 0.1, value: a.currentTime || 0, 'aria-label': 'Position', oninput: e => { a.currentTime = +e.target.value; } });
+      const tl = h('div', { class: 'times' }, h('span', { id: 'mcur' }, fmtDur(a.currentTime)), h('span', null, fmtDur(dur)));
+      now.append(h('div', { class: 'np mb' }, h('div', { class: 'row nw', style: { gap: '14px' } }, h('div', { class: 'art' }, c.icon || '🎵'), h('div', { style: { minWidth: 0, flex: 1 } }, h('b', null, c.title), h('small', null, Player.loading ? 'Getting it ready…' : (c.artist || 'Nova Pocket')))),
+        h('div', { class: 'mt' }, seek, tl),
+        h('div', { class: 'ctl' }, h('button', { class: 'tog' + (Player.shuffle ? ' on' : ''), 'aria-label': 'Shuffle', onclick: () => { Player.shuffle = !Player.shuffle; paintNow(); } }, '🔀'),
+          h('button', { 'aria-label': 'Previous', html: SVG.prev, onclick: () => Player.prev() }),
+          h('button', { class: 'big', 'aria-label': a.paused ? 'Play' : 'Pause', html: a.paused ? SVG.play : SVG.pause, onclick: () => Player.toggle() }),
+          h('button', { 'aria-label': 'Next', html: SVG.next, onclick: () => Player.next() }),
+          h('button', { class: 'tog' + (Player.repeat !== 'off' ? ' on' : ''), 'aria-label': 'Repeat', onclick: () => { Player.repeat = Player.repeat === 'all' ? 'one' : Player.repeat === 'one' ? 'off' : 'all'; paintNow(); } }, Player.repeat === 'one' ? '🔂' : '🔁'))));
+      const upd = () => { if (!seek.isConnected) return; if (document.activeElement !== seek) seek.value = a.currentTime; const s = $('#mcur'); if (s) s.textContent = fmtDur(a.currentTime); };
+      a.ontimeupdate = upd;
+    };
+    const offP = Player.on(paintNow); paintNow();
+    function show() { if (cleanupTab) { cleanupTab(); cleanupTab = null; } body.innerHTML = ''; cleanupTab = ({ songs, tunes, piano, beats })[tab](body) || null; }
+    function songs(el) {
+      const list = h('div');
+      const add = async () => {
+        const files = await pickFiles('audio/*'); if (!files.length) return; let n = 0;
+        for (const f of files) { const dur = await new Promise(r => { const a = new Audio(), u = URL.createObjectURL(f); a.onloadedmetadata = () => { r(a.duration); URL.revokeObjectURL(u); }; a.onerror = () => r(0); a.src = u; setTimeout(() => r(0), 5000); }); await DB.put('songs', { id: uid(), title: f.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' '), blob: f, type: f.type, dur, size: f.size, created: Date.now(), src: 'import' }); n++; }
+        UI.toast('Added ' + n + ' song' + (n > 1 ? 's' : '')); draw();
+      };
+      el.append(h('div', { class: 'row mb' }, h('button', { class: 'btn pri', onclick: add }, '＋ Add songs'), h('span', { class: 'small muted sp' }, 'From Files: mp3, m4a, wav. They stay on this device.')), list);
+      async function draw() {
+        const all = (await DB.all('songs')).sort((a, b) => a.title.localeCompare(b.title)); list.innerHTML = '';
+        if (!all.length) { list.append(UI.empty('🎧', 'No songs yet', 'Add music files from Files, or make your own with Piano or Beats and save them here.')); return; }
+        const q = all.map(s => ({ id: s.id, title: s.title, blob: s.blob, dur: s.dur, icon: s.src === 'made' ? '🎹' : '🎵', artist: s.src === 'made' ? 'Made by you' : '' }));
+        list.append(h('div', { class: 'list' }, all.map((s, i) => h('div', { class: 'li song' + (Player.cur && Player.cur.id === s.id ? ' playing' : '') },
+          h('button', { class: 'ic', style: { border: 0 }, 'aria-label': 'Play ' + s.title, onclick: () => Player.playList(q, i) }, Player.cur && Player.cur.id === s.id && !Player.audio.paused ? '🔊' : (s.src === 'made' ? '🎹' : '🎵')),
+          h('button', { class: 't', style: { border: 0, background: 'none', textAlign: 'left', padding: 0 }, onclick: () => Player.playList(q, i) }, h('b', null, s.title), h('small', null, fmtDur(s.dur) + (s.size ? ' · ' + fmtSize(s.size) : ''))),
+          h('button', { class: 'ib', 'aria-label': 'Song options', html: SVG.more, onclick: () => UI.menu(s.title, [
+            { icon: '✏️', label: 'Rename', run: async () => { const t = await UI.prompt('Song name', { value: s.title }); if (t && t.trim()) { s.title = t.trim(); await DB.put('songs', s); draw(); } } },
+            { icon: '📤', label: 'Share or save', run: () => saveFile(s.blob, s.title + (s.type && s.type.includes('wav') ? '.wav' : s.type && s.type.includes('mp4') ? '.m4a' : '.mp3')) },
+            { icon: '🗑️', label: 'Delete', danger: true, run: async () => { if (await UI.ask('Delete “' + s.title + '”?', { ok: 'Delete', danger: true })) { if (Player.cur && Player.cur.id === s.id) Player.stop(); await DB.del('songs', s.id); draw(); } } },
+          ]) })))));
+      }
+      draw(); const off = Player.on(draw); return off;
+    }
+    function tunes(el) {
+      const q = TUNES.map(t => ({ id: t.id, title: t.name, icon: t.icon, artist: 'Built-in tune · ' + t.bpm + ' bpm', make: () => renderTune(t) }));
+      el.append(h('p', { class: 'small muted' }, 'Original tunes made right on your device — no internet needed.'),
+        h('div', { class: 'grid2 w' }, TUNES.map((t, i) => h('button', { class: 'bigbtn', onclick: () => Player.playList(q, i) }, h('span', { class: 'e' }, t.icon), h('b', null, t.name), h('small', null, Synth.INST[t.lead] + ' · ' + t.bpm + ' bpm')))));
+    }
+    function piano(el) {
+      let inst = Prefs.get('pianoInst', 'piano'), oct = 4, rec = null, take = null, playing = [];
+      const c = Sfx.ctx(); if (!c) { el.append(UI.empty('🔇', 'Sound is not available')); return; }
+      const out = c.createGain(); out.gain.value = 0.9; out.connect(c.destination);
+      const kb = h('div', { class: 'piano', role: 'group', 'aria-label': 'Piano keys' });
+      const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+      const held = new Map();
+      const keyEls = [];
+      const build = () => {
+        kb.innerHTML = ''; keyEls.length = 0; const whites = []; const base = 12 * (oct + 1);
+        for (let i = 0; i < 25; i++) { const m = base + i, n = names[m % 12]; if (!n.includes('#')) whites.push(m); }
+        const W = 100 / whites.length;
+        whites.forEach((m, i) => { const k = h('div', { class: 'w', 'data-m': m }, names[m % 12] === 'C' ? 'C' + (Math.floor(m / 12) - 1) : ''); kb.append(k); keyEls.push(k); });
+        whites.forEach((m, i) => { if (names[(m + 1) % 12].includes('#') && i < whites.length - 1) { const k = h('div', { class: 'b', 'data-m': m + 1, style: { left: (W * (i + 1) - W * 0.32) + '%', width: (W * 0.64) + '%' } }); kb.append(k); keyEls.push(k); } });
+      };
+      const down = (m, el) => { if (held.has(m)) return; const t = c.currentTime; held.set(m, { stop: Synth.note(c, out, inst, MIDI(m), t, null, 1), el, t }); el.classList.add('on'); if (rec) rec.push({ m, t: performance.now() - rec.start, d: 0 }); };
+      const up = m => { const x = held.get(m); if (!x) return; x.stop(c.currentTime); x.el.classList.remove('on'); held.delete(m); if (rec) { for (let i = rec.length - 1; i >= 0; i--) if (rec[i].m === m && !rec[i].d) { rec[i].d = Math.max(80, performance.now() - rec.start - rec[i].t); break; } } };
+      const ptr = new Map();
+      const hit = (x, y) => { const e = document.elementFromPoint(x, y); return e && e.dataset && e.dataset.m ? e : null; };
+      kb.addEventListener('pointerdown', e => { e.preventDefault(); kb.setPointerCapture && kb.setPointerCapture(e.pointerId); const k = hit(e.clientX, e.clientY); if (k) { ptr.set(e.pointerId, +k.dataset.m); down(+k.dataset.m, k); } });
+      kb.addEventListener('pointermove', e => { if (!ptr.has(e.pointerId)) return; const k = hit(e.clientX, e.clientY); const m = k ? +k.dataset.m : null; const old = ptr.get(e.pointerId); if (m !== old) { if (old != null) up(old); if (k) down(m, k); ptr.set(e.pointerId, m); } });
+      const lift = e => { const m = ptr.get(e.pointerId); if (m != null) up(m); ptr.delete(e.pointerId); };
+      kb.addEventListener('pointerup', lift); kb.addEventListener('pointercancel', lift);
+      const keymap = 'awsedftgyhujkolp;'; const kd = e => { if (e.repeat || e.target.tagName === 'INPUT') return; const i = keymap.indexOf(e.key); if (i >= 0) { const m = 12 * (oct + 1) + i; const k = keyEls.find(x => +x.dataset.m === m); if (k) down(m, k); } };
+      const ku = e => { const i = keymap.indexOf(e.key); if (i >= 0) up(12 * (oct + 1) + i); };
+      addEventListener('keydown', kd); addEventListener('keyup', ku);
+      const recBtn = h('button', { class: 'btn' }, '⏺ Record'), playBtn = h('button', { class: 'btn', disabled: true }, '▶ Play back'), saveBtn = h('button', { class: 'btn', disabled: true }, '💾 Save as song');
+      recBtn.onclick = () => { if (rec) { take = rec; rec = null; take.forEach(n => n.d = n.d || 300); recBtn.textContent = '⏺ Record'; recBtn.classList.remove('bad'); playBtn.disabled = saveBtn.disabled = !take.length; UI.toast(take.length + ' notes recorded'); } else { rec = []; rec.start = performance.now(); rec.inst = inst; recBtn.textContent = '⏹ Stop'; recBtn.classList.add('bad'); } };
+      playBtn.onclick = () => { playing.forEach(f => f(c.currentTime)); const t0 = c.currentTime + 0.05; playing = take.map(n => Synth.note(c, out, take.inst, MIDI(n.m), t0 + n.t / 1000, n.d / 1000)); };
+      saveBtn.onclick = async () => {
+        const name = await UI.prompt('Name your song', { value: 'My melody ' + new Date().toLocaleDateString() }); if (!name) return;
+        const len = Math.max(...take.map(n => (n.t + n.d) / 1000)) + 2.5;
+        const blob = await Synth.render(len, (ctx, o) => take.forEach(n => Synth.note(ctx, o, take.inst, MIDI(n.m), 0.2 + n.t / 1000, n.d / 1000)));
+        await DB.put('songs', { id: uid(), title: name, blob, type: 'audio/wav', dur: len, size: blob.size, created: Date.now(), src: 'made' }); UI.toast('Saved to My songs');
+      };
+      const instSel = h('select', { 'aria-label': 'Sound', onchange: e => { inst = e.target.value; Prefs.set('pianoInst', inst); } }, Object.entries(Synth.INST).map(([k, n]) => h('option', { value: k, selected: k === inst }, n)));
+      el.append(h('div', { class: 'row' }, h('div', { style: { flex: 1, minWidth: '140px' } }, instSel), h('button', { class: 'btn', onclick: () => { oct = Math.max(2, oct - 1); build(); } }, '◀ Lower'), h('button', { class: 'btn', onclick: () => { oct = Math.min(6, oct + 1); build(); } }, 'Higher ▶')),
+        kb, h('div', { class: 'row mt' }, recBtn, playBtn, saveBtn), h('p', { class: 'tiny muted mt' }, 'Use many fingers at once. On a keyboard, the letters A W S E D F T G Y H U J K play the keys.'));
+      build();
+      return () => { removeEventListener('keydown', kd); removeEventListener('keyup', ku); held.forEach((x, m) => up(m)); playing.forEach(f => f(c.currentTime)); };
+    }
+    function beats(el) {
+      const ROWS = [['kick', 'Kick'], ['snare', 'Snare'], ['hat', 'Hi-hat'], ['open', 'Open hat'], ['clap', 'Clap'], ['tom', 'Tom'], ['bell', 'Cowbell']];
+      const PRESETS = { 'Basic rock': { kick: 'x.......x.x.....', snare: '....x.......x...', hat: 'x.x.x.x.x.x.x.x.' }, 'Hip hop': { kick: 'x.....x...x.....', snare: '....x.......x...', hat: 'x.xxx.x.x.xxx.x.', clap: '............x...' }, 'Dance': { kick: 'x...x...x...x...', open: '..x...x...x...x.', clap: '....x.......x...', hat: 'xxxxxxxxxxxxxxxx' }, 'Funky': { kick: 'x..x..x...x..x..', snare: '....x..x.x..x...', hat: 'x.x.x.x.x.x.x.x.', bell: 'x.....x.....x...' }, 'Empty': {} };
+      let pat = Prefs.get('beat', null) || JSON.parse(JSON.stringify(PRESETS['Basic rock'])); let bpm = Prefs.get('bpm', 100), step = 0, timer = null, nextT = 0;
+      for (const [k] of ROWS) pat[k] = (pat[k] || '................').padEnd(16, '.').slice(0, 16);
+      const grid = h('div', { class: 'beat' }); const cells = {};
+      const draw = () => { grid.innerHTML = ''; for (const [k, label] of ROWS) { grid.append(h('div', { class: 'lab' }, label)); cells[k] = []; for (let s = 0; s < 16; s++) { const b = h('button', { class: 'st' + (s % 4 === 0 ? ' q' : '') + (pat[k][s] === 'x' ? ' on' : ''), 'aria-label': label + ' step ' + (s + 1), onclick: () => { pat[k] = pat[k].slice(0, s) + (pat[k][s] === 'x' ? '.' : 'x') + pat[k].slice(s + 1); b.classList.toggle('on'); Prefs.set('beat', pat); if (!timer) Synth.drum(Sfx.ctx(), Sfx.ctx().destination, k, Sfx.ctx().currentTime); } }); cells[k].push(b); grid.append(b); } } };
+      const c = Sfx.ctx();
+      const tick = () => { const s16 = 60 / bpm / 4; while (nextT < c.currentTime + 0.12) { for (const [k] of ROWS) if (pat[k][step] === 'x') Synth.drum(c, c.destination, k, nextT); const st = step; setTimeout(() => { $$('.st.now', grid).forEach(x => x.classList.remove('now')); for (const [k] of ROWS) cells[k] && cells[k][st] && cells[k][st].classList.add('now'); }, Math.max(0, (nextT - c.currentTime) * 1000)); nextT += s16; step = (step + 1) % 16; } };
+      const playBtn = h('button', { class: 'btn pri' }, '▶ Play');
+      playBtn.onclick = () => { if (timer) { clearInterval(timer); timer = null; playBtn.textContent = '▶ Play'; $$('.st.now', grid).forEach(x => x.classList.remove('now')); } else { step = 0; nextT = c.currentTime + 0.05; timer = setInterval(tick, 25); tick(); playBtn.textContent = '⏹ Stop'; } };
+      const tempo = h('input', { type: 'range', min: 60, max: 180, value: bpm, 'aria-label': 'Tempo' }), tl = h('b', null, bpm + ' bpm');
+      tempo.oninput = () => { bpm = +tempo.value; tl.textContent = bpm + ' bpm'; Prefs.set('bpm', bpm); };
+      const preset = h('select', { 'aria-label': 'Preset', onchange: e => { pat = JSON.parse(JSON.stringify(PRESETS[e.target.value])); for (const [k] of ROWS) pat[k] = (pat[k] || '................'); Prefs.set('beat', pat); draw(); } }, h('option', { value: '', disabled: true, selected: true }, 'Start from…'), Object.keys(PRESETS).map(k => h('option', { value: k }, k)));
+      const saveBtn = h('button', { class: 'btn', onclick: async () => {
+        const name = await UI.prompt('Name your beat', { value: 'My beat ' + new Date().toLocaleDateString() }); if (!name) return;
+        const s16 = 60 / bpm / 4, loops = 8, len = loops * 16 * s16 + 1;
+        const blob = await Synth.render(len, (ctx, o) => { for (let l = 0; l < loops; l++) for (let s = 0; s < 16; s++) for (const [k] of ROWS) if (pat[k][s] === 'x') Synth.drum(ctx, o, k, (l * 16 + s) * s16); });
+        await DB.put('songs', { id: uid(), title: name, blob, type: 'audio/wav', dur: len, size: blob.size, created: Date.now(), src: 'made' }); UI.toast('Saved to My songs');
+      } }, '💾 Save as song');
+      el.append(h('div', { class: 'row' }, playBtn, h('div', { style: { flex: 1, minWidth: '120px' } }, preset)), h('div', { class: 'row mt nw' }, h('span', { class: 'small' }, 'Speed'), tempo, tl), grid, h('div', { class: 'row mt' }, saveBtn, h('button', { class: 'btn ghost', onclick: () => { for (const [k] of ROWS) pat[k] = '................'; Prefs.set('beat', pat); draw(); } }, 'Clear')));
+      draw();
+      return () => { if (timer) clearInterval(timer); };
+    }
+    show();
+    return () => { offP(); if (cleanupTab) cleanupTab(); Player.audio.ontimeupdate = null; };
+  },
+});
+
+/* ---- 22-memos.js ---- */
+/* ===== Voice memos ===== */
+addCSS(`
+.recbox{text-align:center;padding:18px 16px 20px}
+.recbox canvas{width:100%;height:70px;display:block}
+.rectime{font-size:42px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--round);margin:6px 0 10px}
+.recbtn{width:84px;height:84px;border-radius:50%;border:5px solid var(--line);background:var(--surface);display:inline-grid;place-items:center;padding:0}
+.recbtn i{display:block;width:62px;height:62px;border-radius:31px;background:#FF3B30;transition:all .2s}
+.recbtn.on i{width:34px;height:34px;border-radius:8px}
+.memo .pbar{height:4px;border-radius:2px;background:var(--surface2);margin-top:6px;overflow:hidden}
+.memo .pbar i{display:block;height:100%;width:0;background:var(--accent)}
+`);
+Apps.reg({
+  id: 'memos', name: 'Voice Memos', icon: '🎙️', color: 'linear-gradient(135deg,#FF6B6B,#B5179E)', group: 'make', keys: 'record voice audio microphone', blurb: 'Record your voice',
+  mount(v, ctx) {
+    let rec = null, stream = null, chunks = [], t0 = 0, acc = 0, timer = null, raf = null, an = null, src = null;
+    const audio = new Audio(); audio.setAttribute('playsinline', ''); let playing = null, speed = 1;
+    const cv = h('canvas', { width: 600, height: 70 }), time = h('div', { class: 'rectime' }, '0:00');
+    const btn = h('button', { class: 'recbtn', 'aria-label': 'Start recording' }, h('i'));
+    const pauseB = h('button', { class: 'btn sm', hidden: true }, '⏸ Pause');
+    const hint = h('p', { class: 'small muted', style: { margin: '10px 0 0' } }, 'Tap the red button to record.');
+    const list = h('div');
+    v.append(h('div', { class: 'card recbox' }, cv, time, btn, h('div', { class: 'row', style: { justifyContent: 'center', marginTop: '10px' } }, pauseB), hint), h('div', { class: 'sec' }, 'Recordings'), list);
+    const g = cv.getContext('2d');
+    const drawWave = () => {
+      const W = cv.width, H = cv.height; g.clearRect(0, 0, W, H); const col = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#4F46E5';
+      let lvl = new Uint8Array(64); if (an) an.getByteFrequencyData(lvl);
+      for (let i = 0; i < 64; i++) { const v2 = an ? lvl[i] / 255 : 0.04; const bh = Math.max(3, v2 * H * 0.95); g.fillStyle = rec && rec.state === 'recording' ? '#FF3B30' : col; g.globalAlpha = 0.35 + v2 * 0.65; g.fillRect(i * (W / 64) + 2, (H - bh) / 2, W / 64 - 4, bh); }
+      g.globalAlpha = 1; raf = requestAnimationFrame(drawWave);
+    };
+    drawWave();
+    const elapsed = () => acc + (rec && rec.state === 'recording' ? (performance.now() - t0) / 1000 : 0);
+    const pickType = () => { for (const t of ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg']) if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t; return ''; };
+    async function start() {
+      if (!window.MediaRecorder) { UI.toast('Recording is not supported on this device'); return; }
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+      catch (e) { hint.textContent = '🎤 I need the microphone. Allow it when asked (or in Settings → Safari → Microphone).'; return; }
+      const c = Sfx.ctx(); if (c) { src = c.createMediaStreamSource(stream); an = c.createAnalyser(); an.fftSize = 128; src.connect(an); }
+      const type = pickType(); rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined); chunks = []; acc = 0; t0 = performance.now();
+      rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onstop = save; rec.start(1000);
+      btn.classList.add('on'); btn.setAttribute('aria-label', 'Stop recording'); hint.textContent = 'Recording… tap the square to stop.'; pauseB.hidden = !rec.pause;
+      timer = setInterval(() => time.textContent = fmtDur(elapsed()), 250);
+    }
+    function stop() { if (!rec) return; acc = elapsed(); try { rec.stop(); } catch (e) { } }
+    async function save() {
+      clearInterval(timer); const dur = acc; const type = (rec && rec.mimeType) || pickType() || 'audio/webm';
+      stream && stream.getTracks().forEach(t => t.stop()); try { src && src.disconnect(); } catch (e) { } an = null; src = null; stream = null; rec = null;
+      btn.classList.remove('on'); btn.setAttribute('aria-label', 'Start recording'); pauseB.hidden = true; pauseB.textContent = '⏸ Pause'; time.textContent = '0:00'; hint.textContent = 'Tap the red button to record.';
+      if (!chunks.length || dur < 0.5) { UI.toast('Too short — try again'); return; }
+      const blob = new Blob(chunks, { type }); const n = (await DB.count('memos')) + 1;
+      await DB.put('memos', { id: uid(), name: 'Memo ' + n, blob, type, dur, size: blob.size, created: Date.now() }); UI.toast('Saved'); draw();
+    }
+    btn.onclick = () => rec ? stop() : start();
+    pauseB.onclick = () => { if (!rec) return; if (rec.state === 'recording') { acc = elapsed(); rec.pause(); pauseB.textContent = '⏺ Resume'; hint.textContent = 'Paused.'; } else { t0 = performance.now(); rec.resume(); pauseB.textContent = '⏸ Pause'; hint.textContent = 'Recording…'; } };
+    async function draw() {
+      const all = (await DB.all('memos')).sort((a, b) => b.created - a.created); list.innerHTML = '';
+      if (!all.length) { list.append(UI.empty('🎙️', 'No recordings yet', 'Your voice memos will show up here.')); return; }
+      list.append(h('div', { class: 'list' }, all.map(m => {
+        const bar = h('i'), isP = playing === m.id;
+        const pb = h('button', { class: 'ic', style: { border: 0 }, 'aria-label': isP && !audio.paused ? 'Pause' : 'Play' }, isP && !audio.paused ? '⏸' : '▶️');
+        pb.onclick = () => { if (playing === m.id) { audio.paused ? audio.play() : audio.pause(); } else { if (audio.src) URL.revokeObjectURL(audio.src); audio.src = URL.createObjectURL(m.blob); audio.playbackRate = speed; audio.play().catch(() => UI.toast('This recording can’t play on this device')); playing = m.id; } setTimeout(draw, 50); };
+        if (isP) audio.ontimeupdate = () => { bar.style.width = (100 * audio.currentTime / (m.dur || audio.duration || 1)) + '%'; };
+        return h('div', { class: 'li memo' }, pb, h('div', { class: 't' }, h('b', null, m.name), h('small', null, fmtDay(new Date(m.created)) + ' · ' + fmtTime(new Date(m.created)) + ' · ' + fmtDur(m.dur)), isP ? h('div', { class: 'pbar' }, bar) : null),
+          isP ? h('button', { class: 'btn sm', onclick: () => { speed = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1; audio.playbackRate = speed; draw(); } }, speed + '×') : null,
+          h('button', { class: 'ib', 'aria-label': 'Memo options', html: SVG.more, onclick: () => UI.menu(m.name, [
+            { icon: '✏️', label: 'Rename', run: async () => { const t = await UI.prompt('Name', { value: m.name }); if (t && t.trim()) { m.name = t.trim(); await DB.put('memos', m); draw(); } } },
+            { icon: '📤', label: 'Share or save', run: () => saveFile(m.blob, m.name + (m.type.includes('mp4') ? '.m4a' : m.type.includes('ogg') ? '.ogg' : '.webm')) },
+            { icon: '🗑️', label: 'Delete', danger: true, run: async () => { if (await UI.ask('Delete “' + m.name + '”?', { ok: 'Delete', danger: true })) { if (playing === m.id) { audio.pause(); playing = null; } await DB.del('memos', m.id); draw(); } } },
+          ]) }));
+      })));
+    }
+    audio.onended = () => { playing = null; draw(); };
+    draw();
+    return () => { cancelAnimationFrame(raf); if (rec) stop(); clearInterval(timer); audio.pause(); if (audio.src) URL.revokeObjectURL(audio.src); stream && stream.getTracks().forEach(t => t.stop()); };
+  },
+});
+
+/* ---- 23-studio.js ---- */
+/* ===== Studio: draw, edit photos, filters ===== */
+addCSS(`
+.studio{display:flex;flex-direction:column;gap:8px;padding:0 var(--gutr) 12px var(--gut)}
+.easel{display:flex;justify-content:center;align-items:center;background:var(--surface2);border-radius:16px;padding:8px;min-height:240px;position:relative;touch-action:none}
+.easel canvas{max-width:100%;max-height:58vh;max-height:58dvh;touch-action:none;border-radius:4px;box-shadow:0 2px 10px rgba(0,0,0,.18);background-color:#fff;background-image:linear-gradient(45deg,#ddd 25%,transparent 25%,transparent 75%,#ddd 75%),linear-gradient(45deg,#ddd 25%,transparent 25%,transparent 75%,#ddd 75%);background-size:16px 16px;background-position:0 0,8px 8px}
+.easel .ovl{position:absolute;pointer-events:none}
+.tools{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px}
+.tools::-webkit-scrollbar{display:none}
+.tool{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:1px;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:6px 8px;min-width:56px;font-size:11px;font-weight:650}
+.tool span{font-size:22px;line-height:1.1}
+.tool[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.colors{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;align-items:center;padding:2px}
+.colors::-webkit-scrollbar{display:none}
+.colors .swatch{flex:0 0 auto;width:30px;height:30px}
+.fthumbs{display:flex;gap:8px;overflow-x:auto;padding:4px 0 8px}
+.fthumb{flex:0 0 auto;border:2px solid transparent;background:none;border-radius:12px;padding:2px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;font-weight:650}
+.fthumb canvas{width:72px;height:72px;border-radius:9px;object-fit:cover;display:block}
+.fthumb[aria-pressed="true"]{border-color:var(--accent)}
+.stickers{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.stickers button{font-size:30px;border:0;background:var(--surface2);border-radius:12px;aspect-ratio:1/1}
+`);
+const Filters = {
+  each(d, f) { const a = d.data; for (let i = 0; i < a.length; i += 4) { const o = f(a[i], a[i + 1], a[i + 2]); a[i] = o[0]; a[i + 1] = o[1]; a[i + 2] = o[2]; } return d; },
+  adjust(d, { b = 0, c = 0, s = 0, w = 0 } = {}) {
+    const cf = (259 * (c + 255)) / (255 * (259 - c)), sf = 1 + s / 100;
+    return this.each(d, (r, g, bl) => {
+      r += b; g += b; bl += b; r = cf * (r - 128) + 128; g = cf * (g - 128) + 128; bl = cf * (bl - 128) + 128;
+      const L = 0.299 * r + 0.587 * g + 0.114 * bl; r = L + (r - L) * sf; g = L + (g - L) * sf; bl = L + (bl - L) * sf;
+      r += w; bl -= w; return [r, g, bl];
+    });
+  },
+  gray: d => Filters.each(d, (r, g, b) => { const L = 0.299 * r + 0.587 * g + 0.114 * b; return [L, L, L]; }),
+  sepia: d => Filters.each(d, (r, g, b) => [r * .393 + g * .769 + b * .189, r * .349 + g * .686 + b * .168, r * .272 + g * .534 + b * .131]),
+  invert: d => Filters.each(d, (r, g, b) => [255 - r, 255 - g, 255 - b]),
+  fade: d => Filters.each(d, (r, g, b) => [r * .82 + 40, g * .82 + 38, b * .82 + 44]),
+  poster: (d, n = 4) => { const st = 255 / (n - 1); return Filters.each(d, (r, g, b) => [Math.round(r / st) * st, Math.round(g / st) * st, Math.round(b / st) * st]); },
+  vignette(d, k = 0.55) { const W = d.width, H = d.height, a = d.data, cx = W / 2, cy = H / 2, mx = Math.hypot(cx, cy); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const f = 1 - k * Math.pow(Math.hypot(x - cx, y - cy) / mx, 2), i = (y * W + x) * 4; a[i] *= f; a[i + 1] *= f; a[i + 2] *= f; } return d; },
+  pixel(d) { const W = d.width, H = d.height, a = d.data, s = Math.max(4, Math.round(Math.max(W, H) / 64)); for (let y = 0; y < H; y += s) for (let x = 0; x < W; x += s) { let r = 0, g = 0, b = 0, n = 0; for (let yy = y; yy < Math.min(H, y + s); yy++) for (let xx = x; xx < Math.min(W, x + s); xx++) { const i = (yy * W + xx) * 4; r += a[i]; g += a[i + 1]; b += a[i + 2]; n++; } r /= n; g /= n; b /= n; for (let yy = y; yy < Math.min(H, y + s); yy++) for (let xx = x; xx < Math.min(W, x + s); xx++) { const i = (yy * W + xx) * 4; a[i] = r; a[i + 1] = g; a[i + 2] = b; } } return d; },
+  blur(d, rad) {
+    const W = d.width, H = d.height, a = d.data, t = new Float32Array(a.length); rad = rad || Math.max(2, Math.round(Math.max(W, H) / 250));
+    for (let pass = 0; pass < 2; pass++) {
+      for (let y = 0; y < H; y++) { let r = 0, g = 0, b = 0; for (let x = -rad; x <= rad; x++) { const i = (y * W + clamp(x, 0, W - 1)) * 4; r += a[i]; g += a[i + 1]; b += a[i + 2]; } for (let x = 0; x < W; x++) { const o = (y * W + x) * 4, n = 2 * rad + 1; t[o] = r / n; t[o + 1] = g / n; t[o + 2] = b / n; const i1 = (y * W + clamp(x - rad, 0, W - 1)) * 4, i2 = (y * W + clamp(x + rad + 1, 0, W - 1)) * 4; r += a[i2] - a[i1]; g += a[i2 + 1] - a[i1 + 1]; b += a[i2 + 2] - a[i1 + 2]; } }
+      for (let x = 0; x < W; x++) { let r = 0, g = 0, b = 0; for (let y = -rad; y <= rad; y++) { const i = (clamp(y, 0, H - 1) * W + x) * 4; r += t[i]; g += t[i + 1]; b += t[i + 2]; } for (let y = 0; y < H; y++) { const o = (y * W + x) * 4, n = 2 * rad + 1; a[o] = r / n; a[o + 1] = g / n; a[o + 2] = b / n; const i1 = (clamp(y - rad, 0, H - 1) * W + x) * 4, i2 = (clamp(y + rad + 1, 0, H - 1) * W + x) * 4; r += t[i2] - t[i1]; g += t[i2 + 1] - t[i1 + 1]; b += t[i2 + 2] - t[i1 + 2]; } }
+    }
+    return d;
+  },
+  sharpen(d) { const W = d.width, H = d.height, s = new Uint8ClampedArray(d.data), a = d.data; for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) for (let c = 0; c < 3; c++) { const i = (y * W + x) * 4 + c; a[i] = 5 * s[i] - s[i - 4] - s[i + 4] - s[i - W * 4] - s[i + W * 4]; } return d; },
+  PRESETS: [
+    ['none', 'Original', d => d], ['bw', 'B&W', d => Filters.gray(d)], ['noir', 'Noir', d => Filters.adjust(Filters.gray(d), { c: 60, b: -10 })],
+    ['sepia', 'Sepia', d => Filters.sepia(d)], ['vintage', 'Vintage', d => Filters.vignette(Filters.fade(Filters.sepia(d)), 0.4)], ['vivid', 'Vivid', d => Filters.adjust(d, { c: 25, s: 45 })],
+    ['warm', 'Warm', d => Filters.adjust(d, { w: 28, s: 10 })], ['cool', 'Cool', d => Filters.adjust(d, { w: -28 })], ['fade', 'Faded', d => Filters.fade(d)],
+    ['pop', 'Pop art', d => Filters.poster(Filters.adjust(d, { s: 70, c: 30 }), 4)], ['invert', 'Invert', d => Filters.invert(d)], ['pixel', 'Pixel', d => Filters.pixel(d)],
+    ['blur', 'Soft blur', d => Filters.blur(d)], ['sharp', 'Sharpen', d => Filters.sharpen(d)], ['vig', 'Spotlight', d => Filters.vignette(d, 0.7)],
+  ],
+};
+const STICKERS = '😀😂🥰😎🤩🥳😜🤔😴🤯👻💀👽🤖🎃⭐🌟✨🔥💧🌈☀️🌙⚡❤️🧡💛💚💙💜🖤👍👏🙌✌️💪👑🎉🎈🎁🏆⚽🏀🎮🎧🎸🍕🍔🍟🍩🍦🍓🐶🐱🦊🐼🐸🦄🐉🌸🌻🍀🚀✈️🚗🏠'.match(/\p{Extended_Pictographic}️?/gu);
+Apps.reg({
+  id: 'studio', name: 'Studio', icon: '🎨', color: 'linear-gradient(135deg,#F9D423,#FF4E50)', group: 'make', keys: 'draw paint photo edit filter art sketch', blurb: 'Draw and edit photos',
+  mount(v, ctx) {
+    let cleanup = null;
+    const home = async () => {
+      if (cleanup) { cleanup(); cleanup = null; }
+      v.innerHTML = ''; ctx.full(false); ctx.setTitle('Studio'); ctx.setBack(null); ctx.setActions();
+      const SIZES = [['Square', 1080, 1080, '⬛'], ['Tall', 1080, 1440, '📱'], ['Wide', 1440, 1080, '🖥️']];
+      v.append(h('div', { class: 'sec', style: { marginTop: '4px' } }, 'Start something new'),
+        h('div', { class: 'grid3' }, SIZES.map(([n, w, ht, e]) => h('button', { class: 'bigbtn', onclick: () => editor({ w, h: ht, bg: '#FFFFFF' }) }, h('span', { class: 'e' }, e), h('b', null, n), h('small', null, 'Blank page')))),
+        h('div', { class: 'grid2 mt' },
+          h('button', { class: 'bigbtn', onclick: async () => { const [f] = await pickFiles('image/*', { multiple: false }); if (f) editor({ blob: f, name: 'Edited photo', kind: 'photo' }); } }, h('span', { class: 'e' }, '🖼️'), h('b', null, 'Edit a photo'), h('small', null, 'Filters, crop, draw on it')),
+          h('button', { class: 'bigbtn', onclick: () => editor({ w: 1080, h: 1080, bg: '#11131A', name: 'Night drawing' }) }, h('span', { class: 'e' }, '🌌'), h('b', null, 'Dark page'), h('small', null, 'Bright colors pop'))));
+      const mine = (await DB.all('media')).filter(m => m.kind === 'drawing' || m.edited).sort((a, b) => (b.updated || b.created) - (a.updated || a.created));
+      if (mine.length) v.append(h('div', { class: 'sec' }, 'Your art'), h('div', { class: 'gal' }, mine.map(m => h('button', { 'aria-label': 'Open ' + (m.name || 'drawing'), onclick: () => editor({ blob: m.blob, id: m.id, name: m.name, kind: m.kind }) }, m.thumb ? h('img', { src: m.thumb, alt: '' }) : '🎨'))));
+      const pics = (await DB.all('media')).filter(m => m.kind === 'photo').sort((a, b) => b.created - a.created).slice(0, 12);
+      if (pics.length) v.append(h('div', { class: 'sec' }, 'Edit from your Photos'), h('div', { class: 'gal' }, pics.map(m => h('button', { 'aria-label': 'Edit photo', onclick: () => editor({ blob: m.blob, name: 'Edited photo', kind: 'photo' }) }, m.thumb ? h('img', { src: m.thumb, alt: '' }) : '🖼️'))));
+    };
+    async function editor(opt) {
+      v.innerHTML = ''; ctx.full(true); ctx.setTitle(opt.name || 'Drawing'); ctx.setBack(() => { if (dirty) { UI.ask('Leave without saving?', { ok: 'Leave', danger: true }).then(ok => ok && home()); return true; } home(); return true; });
+      const cv = h('canvas'), g = cv.getContext('2d', { willReadFrequently: true });
+      const orig = h('canvas'), go = orig.getContext('2d', { willReadFrequently: true });
+      const isPhoto = !!opt.blob && opt.kind !== 'drawing';
+      let bg = opt.bg || '#FFFFFF';
+      if (opt.blob) {
+        const img = await new Promise((res, rej) => { const i = new Image(), u = URL.createObjectURL(opt.blob); i.onload = () => { res(i); URL.revokeObjectURL(u); }; i.onerror = rej; i.src = u; }).catch(() => null);
+        if (!img) { UI.toast('Could not open that picture'); return home(); }
+        const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight)); cv.width = orig.width = Math.round(img.naturalWidth * k); cv.height = orig.height = Math.round(img.naturalHeight * k);
+        g.drawImage(img, 0, 0, cv.width, cv.height);
+      } else { cv.width = orig.width = opt.w; cv.height = orig.height = opt.h; g.fillStyle = bg; g.fillRect(0, 0, cv.width, cv.height); }
+      go.drawImage(cv, 0, 0);
+      let tool = 'brush', color = opt.bg === '#11131A' ? '#FFD84D' : '#1E1E2E', size = 12, dirty = false, hue = 0;
+      const undo = [], redo = []; const snap = () => ({ main: g.getImageData(0, 0, cv.width, cv.height), orig: go.getImageData(0, 0, orig.width, orig.height) });
+      const push = () => { undo.push(snap()); if (undo.length > 8) undo.shift(); redo.length = 0; dirty = true; paintUndo(); };
+      const restore = s => { cv.width = orig.width = s.main.width; cv.height = orig.height = s.main.height; g.putImageData(s.main, 0, 0); go.putImageData(s.orig, 0, 0); };
+      const undoB = h('button', { class: 'ib', 'aria-label': 'Undo', onclick: () => { if (!undo.length) return; redo.push(snap()); restore(undo.pop()); paintUndo(); } }, '↩️');
+      const redoB = h('button', { class: 'ib', 'aria-label': 'Redo', onclick: () => { if (!redo.length) return; undo.push(snap()); restore(redo.pop()); paintUndo(); } }, '↪️');
+      const paintUndo = () => { undoB.style.opacity = undo.length ? 1 : .35; redoB.style.opacity = redo.length ? 1 : .35; };
+      const save = async () => {
+        let rec;
+        if (opt.id) rec = await Media.addCanvas(cv, opt.name, opt.kind || 'drawing', opt.id);
+        else { rec = await Media.addCanvas(cv, opt.name || 'Drawing', isPhoto ? 'photo' : 'drawing'); if (isPhoto) { rec.edited = true; await DB.put('media', rec); } opt.id = rec.id; opt.kind = rec.kind; }
+        dirty = false; UI.toast('Saved to Photos 🎉');
+      };
+      ctx.setActions(undoB, redoB, h('button', { class: 'btn pri sm', onclick: save }, 'Save'));
+      const easel = h('div', { class: 'easel' }, cv); const ovl = h('canvas', { class: 'ovl' }); easel.append(ovl);
+      const TOOLS = [['brush', '✏️', 'Pen'], ['marker', '🖍️', 'Marker'], ['spray', '💨', 'Spray'], ['rainbow', '🌈', 'Rainbow'], ['eraser', '🧽', 'Eraser'], ['fill', '🪣', 'Fill'], ['line', '📏', 'Line'], ['rect', '⬜', 'Box'], ['circle', '⭕', 'Circle'], ['text', '🔤', 'Text'], ['sticker', '😀', 'Sticker'], ['fx', '🎛️', 'Filters'], ['crop', '✂️', 'Crop'], ['rotate', '🔄', 'Turn'], ['flip', '↔️', 'Flip'], ['share', '📤', 'Share']];
+      const toolsEl = h('div', { class: 'tools', role: 'toolbar' });
+      const drawTools = () => { toolsEl.innerHTML = ''; for (const [id, e, n] of TOOLS) toolsEl.append(h('button', { class: 'tool', 'aria-pressed': String(tool === id), onclick: () => pickTool(id) }, h('span', null, e), n)); };
+      const PAL = ['#1E1E2E', '#FFFFFF', '#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#00C7BE', '#0A84FF', '#5E5CE6', '#AF52DE', '#FF2D92', '#8E5A3C', '#8E8E93'];
+      const colIn = h('input', { type: 'color', value: color, 'aria-label': 'Any color', oninput: e => { color = e.target.value; drawCols(); } });
+      const colorsEl = h('div', { class: 'colors' });
+      const drawCols = () => { colorsEl.innerHTML = ''; for (const c of PAL) colorsEl.append(h('button', { class: 'swatch', style: { background: c }, 'aria-label': 'Color ' + c, 'aria-pressed': String(c.toLowerCase() === color.toLowerCase()), onclick: () => { color = c; colIn.value = c; drawCols(); } })); colorsEl.append(colIn); };
+      const sizeIn = h('input', { type: 'range', min: 2, max: 80, value: size, 'aria-label': 'Brush size', oninput: e => size = +e.target.value });
+      v.append(h('div', { class: 'studio' }, easel, toolsEl, colorsEl, h('div', { class: 'row nw' }, h('span', { class: 'small muted' }, 'Size'), sizeIn)));
+      drawTools(); drawCols(); paintUndo();
+      let sticker = '⭐';
+      function pickTool(id) {
+        if (id === 'fx') return filterPanel(); if (id === 'rotate') return transform('rot'); if (id === 'flip') return transform('flip'); if (id === 'share') return share();
+        if (id === 'sticker') { const s = UI.sheet({ title: 'Pick a sticker, then tap the picture', body: h('div', { class: 'stickers' }, STICKERS.map(e => h('button', { onclick: () => { sticker = e; tool = 'sticker'; drawTools(); s.close(); } }, e))) }); return; }
+        tool = id; drawTools(); if (id === 'crop') startCrop(); else endCrop();
+        if (id === 'text') UI.toast('Tap where the words should go'); if (id === 'fill') UI.toast('Tap an area to fill it');
+      }
+      const pt = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+      const scale = () => cv.width / cv.getBoundingClientRect().width;
+      let drawing = false, last = null, startP = null, base = null, mid = null;
+      const strokeStyle = () => tool === 'eraser' ? (isPhoto ? g.createPattern(orig, 'no-repeat') : bg) : tool === 'rainbow' ? 'hsl(' + (hue = (hue + 6) % 360) + ' 95% 55%)' : color;
+      cv.addEventListener('pointerdown', e => {
+        if (e.button > 0 || tool === 'crop') return; e.preventDefault(); cv.setPointerCapture(e.pointerId); const p = pt(e);
+        if (tool === 'text') return placeText(p); if (tool === 'sticker') { push(); g.font = Math.max(24, size * 6) + 'px system-ui, "Apple Color Emoji"'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(sticker, p[0], p[1]); return; }
+        if (tool === 'fill') { push(); flood(Math.round(p[0]), Math.round(p[1]), color); return; }
+        push(); drawing = true; last = p; mid = p; startP = p;
+        if (['line', 'rect', 'circle'].includes(tool)) base = g.getImageData(0, 0, cv.width, cv.height);
+        else dab(p, e);
+      });
+      cv.addEventListener('pointermove', e => {
+        if (!drawing) return; const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+        for (const ev of (evs.length ? evs : [e])) {
+          const p = pt(ev);
+          if (base) { g.putImageData(base, 0, 0); shape(startP, p); continue; }
+          if (tool === 'spray') { dab(p, ev); continue; }
+          const w = lineW(ev); g.lineCap = g.lineJoin = 'round'; g.lineWidth = w; g.strokeStyle = strokeStyle(); g.globalAlpha = tool === 'marker' ? 0.35 : 1;
+          const m2 = [(last[0] + p[0]) / 2, (last[1] + p[1]) / 2]; g.beginPath(); g.moveTo(mid[0], mid[1]); g.quadraticCurveTo(last[0], last[1], m2[0], m2[1]); g.stroke(); g.globalAlpha = 1; mid = m2; last = p;
+        }
+      });
+      const up = () => { drawing = false; base = null; };
+      cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+      const lineW = e => size * scale() * (e.pointerType === 'pen' && e.pressure ? 0.4 + e.pressure * 1.2 : 1) * (tool === 'marker' ? 2.2 : tool === 'eraser' ? 2 : 1);
+      function dab(p, e) {
+        if (tool === 'spray') { g.fillStyle = color; const r = size * scale() * 2; for (let i = 0; i < 26; i++) { const a = Math.random() * 6.283, d = Math.sqrt(Math.random()) * r; g.fillRect(p[0] + Math.cos(a) * d, p[1] + Math.sin(a) * d, 1.6 * scale(), 1.6 * scale()); } return; }
+        g.fillStyle = strokeStyle(); g.globalAlpha = tool === 'marker' ? 0.35 : 1; g.beginPath(); g.arc(p[0], p[1], lineW(e) / 2, 0, 6.283); g.fill(); g.globalAlpha = 1;
+      }
+      function shape(a, b) {
+        g.strokeStyle = color; g.lineWidth = size * scale(); g.lineCap = g.lineJoin = 'round'; g.beginPath();
+        if (tool === 'line') { g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); } else if (tool === 'rect') g.rect(a[0], a[1], b[0] - a[0], b[1] - a[1]); else g.ellipse((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, Math.abs(b[0] - a[0]) / 2, Math.abs(b[1] - a[1]) / 2, 0, 0, 6.283);
+        g.stroke();
+      }
+      async function placeText(p) {
+        const t = await UI.prompt('Your words', { placeholder: 'Type something', ok: 'Add' }); if (!t) return; push();
+        const fs = Math.max(20, size * 4 * scale()); g.font = '800 ' + fs + 'px ' + getComputedStyle(document.body).getPropertyValue('--round'); g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.lineWidth = fs / 8; g.strokeStyle = color === '#FFFFFF' || color === '#FFCC00' ? '#000' : '#fff'; g.lineJoin = 'round';
+        t.split('\n').forEach((line, i) => { g.strokeText(line, p[0], p[1] + i * fs * 1.15); g.fillStyle = color; g.fillText(line, p[0], p[1] + i * fs * 1.15); });
+      }
+      function flood(x, y, hex) {
+        const W = cv.width, H = cv.height, d = g.getImageData(0, 0, W, H), a = d.data, i0 = (y * W + x) * 4;
+        const t = [a[i0], a[i0 + 1], a[i0 + 2], a[i0 + 3]], f = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16), 255];
+        if (t.every((v2, k) => Math.abs(v2 - f[k]) < 3)) return;
+        const tol = 48, same = i => Math.abs(a[i] - t[0]) + Math.abs(a[i + 1] - t[1]) + Math.abs(a[i + 2] - t[2]) + Math.abs(a[i + 3] - t[3]) <= tol;
+        const seen = new Uint8Array(W * H), st = [x, y];
+        while (st.length) {
+          let yy = st.pop(), xx = st.pop(); while (xx >= 0 && same((yy * W + xx) * 4) && !seen[yy * W + xx]) xx--; xx++; let upO = false, dnO = false;
+          while (xx < W && !seen[yy * W + xx] && same((yy * W + xx) * 4)) {
+            const p = yy * W + xx, i = p * 4; seen[p] = 1; a[i] = f[0]; a[i + 1] = f[1]; a[i + 2] = f[2]; a[i + 3] = 255;
+            if (yy > 0) { const q = p - W; if (!seen[q] && same(q * 4)) { if (!upO) { st.push(xx, yy - 1); upO = true; } } else upO = false; }
+            if (yy < H - 1) { const q = p + W; if (!seen[q] && same(q * 4)) { if (!dnO) { st.push(xx, yy + 1); dnO = true; } } else dnO = false; }
+            xx++;
+          }
+        }
+        g.putImageData(d, 0, 0);
+      }
+      function transform(kind) {
+        push(); for (const [c, cx] of [[cv, g], [orig, go]]) {
+          const tmp = h('canvas'); tmp.width = c.width; tmp.height = c.height; tmp.getContext('2d').drawImage(c, 0, 0);
+          if (kind === 'rot') { c.width = tmp.height; c.height = tmp.width; cx.save(); cx.translate(c.width, 0); cx.rotate(Math.PI / 2); cx.drawImage(tmp, 0, 0); cx.restore(); }
+          else { cx.save(); cx.clearRect(0, 0, c.width, c.height); cx.translate(c.width, 0); cx.scale(-1, 1); cx.drawImage(tmp, 0, 0); cx.restore(); }
+        }
+      }
+      let crop = null, cropBar = null;
+      function startCrop() {
+        endCrop(); crop = { x: cv.width * 0.1, y: cv.height * 0.1, w: cv.width * 0.8, h: cv.height * 0.8 }; paintCrop();
+        const setAR = ar => { const W = cv.width, H = cv.height; let w = W, ht = W / ar; if (ht > H) { ht = H; w = H * ar; } crop = { x: (W - w) / 2, y: (H - ht) / 2, w, h: ht }; paintCrop(); };
+        cropBar = h('div', { class: 'row', style: { justifyContent: 'center' } }, h('span', { class: 'small muted' }, 'Drag on the picture, or:'), h('button', { class: 'chip', onclick: () => setAR(1) }, 'Square'), h('button', { class: 'chip', onclick: () => setAR(4 / 3) }, '4:3'), h('button', { class: 'chip', onclick: () => setAR(9 / 16) }, 'Phone'), h('button', { class: 'btn pri sm', onclick: doCrop }, '✂️ Crop'), h('button', { class: 'btn sm', onclick: () => { tool = 'brush'; drawTools(); endCrop(); } }, 'Cancel'));
+        toolsEl.after(cropBar);
+      }
+      function paintCrop() {
+        const r = cv.getBoundingClientRect(), er = easel.getBoundingClientRect(); ovl.style.left = (r.left - er.left) + 'px'; ovl.style.top = (r.top - er.top) + 'px'; ovl.style.width = r.width + 'px'; ovl.style.height = r.height + 'px'; ovl.width = r.width * devicePixelRatio; ovl.height = r.height * devicePixelRatio;
+        const o = ovl.getContext('2d'), k = ovl.width / cv.width; o.clearRect(0, 0, ovl.width, ovl.height); o.fillStyle = 'rgba(0,0,0,.55)'; o.fillRect(0, 0, ovl.width, ovl.height); o.clearRect(crop.x * k, crop.y * k, crop.w * k, crop.h * k); o.strokeStyle = '#fff'; o.lineWidth = 2 * devicePixelRatio; o.strokeRect(crop.x * k, crop.y * k, crop.w * k, crop.h * k);
+      }
+      function endCrop() { crop = null; if (cropBar) { cropBar.remove(); cropBar = null; } ovl.width = 0; }
+      cv.addEventListener('pointerdown', e => { if (tool !== 'crop') return; e.preventDefault(); cv.setPointerCapture(e.pointerId); startP = pt(e); drawing = 'crop'; });
+      cv.addEventListener('pointermove', e => { if (drawing !== 'crop') return; const p = pt(e); crop = { x: Math.min(startP[0], p[0]), y: Math.min(startP[1], p[1]), w: Math.abs(p[0] - startP[0]), h: Math.abs(p[1] - startP[1]) }; paintCrop(); });
+      function doCrop() {
+        if (!crop || crop.w < 10 || crop.h < 10) return UI.toast('Drag a box first'); push();
+        for (const [c, cx] of [[cv, g], [orig, go]]) { const d = cx.getImageData(Math.round(crop.x), Math.round(crop.y), Math.round(crop.w), Math.round(crop.h)); c.width = d.width; c.height = d.height; cx.putImageData(d, 0, 0); }
+        tool = 'brush'; drawTools(); endCrop();
+      }
+      function filterPanel() {
+        const before = snap(); let cur = 'none'; const adj = { b: 0, c: 0, s: 0, w: 0 };
+        const small = h('canvas'); const k = 96 / Math.max(cv.width, cv.height); small.width = Math.max(1, Math.round(cv.width * k)); small.height = Math.max(1, Math.round(cv.height * k)); small.getContext('2d').drawImage(cv, 0, 0, small.width, small.height);
+        const sd = small.getContext('2d').getImageData(0, 0, small.width, small.height);
+        const apply = (d, withOrig) => { const f = Filters.PRESETS.find(p => p[0] === cur)[2]; f(d); if (adj.b || adj.c || adj.s || adj.w) Filters.adjust(d, adj); return d; };
+        const preview = debounce(() => { const d = new ImageData(new Uint8ClampedArray(before.main.data), before.main.width, before.main.height); g.putImageData(apply(d), 0, 0); }, 60);
+        const thumbs = h('div', { class: 'fthumbs' }, Filters.PRESETS.map(([id, name, f]) => { const c = h('canvas'); c.width = small.width; c.height = small.height; c.getContext('2d').putImageData(f(new ImageData(new Uint8ClampedArray(sd.data), sd.width, sd.height)), 0, 0); return h('button', { class: 'fthumb', 'aria-pressed': String(id === cur), onclick: e => { cur = id; $$('.fthumb', thumbs).forEach(b => b.setAttribute('aria-pressed', 'false')); e.currentTarget.setAttribute('aria-pressed', 'true'); preview(); } }, c, name); }));
+        const slider = (key, label, min, max) => { const r = h('input', { type: 'range', min, max, value: 0, oninput: () => { adj[key] = +r.value; preview(); } }); return h('label', { class: 'f' }, h('span', null, label), r); };
+        let applied = false;
+        UI.sheet({ title: 'Filters', body: h('div', null, thumbs, slider('b', '☀️ Brightness', -80, 80), slider('c', '◐ Contrast', -60, 80), slider('s', '🎨 Color', -100, 100), slider('w', '🔥 Warmth', -50, 50)),
+          onClose: () => { if (!applied) restore(before); },
+          actions: [{ label: 'Cancel' }, { label: 'Apply', cls: 'pri', onClick: c => {
+            applied = true; preview.flush(); undo.push(before); if (undo.length > 8) undo.shift(); redo.length = 0; dirty = true; paintUndo();
+            const od = go.getImageData(0, 0, orig.width, orig.height); go.putImageData(apply(od), 0, 0); c();
+          } }] });
+      }
+      async function share() { const blob = await new Promise(r => isPhoto ? cv.toBlob(r, 'image/jpeg', 0.92) : cv.toBlob(r, 'image/png')); saveFile(blob, (opt.name || 'drawing').replace(/\W+/g, '-') + (isPhoto ? '.jpg' : '.png')); }
+      const onResize = () => { if (crop) paintCrop(); }; addEventListener('resize', onResize);
+      cleanup = () => removeEventListener('resize', onResize);
+    }
+    if (ctx.param) DB.get('media', ctx.param).then(m => m ? editor({ blob: m.blob, id: m.kind === 'drawing' ? m.id : null, name: m.kind === 'drawing' ? m.name : 'Edited photo', kind: m.kind }) : home()); else home();
+    return () => { if (cleanup) cleanup(); };
+  },
+});
+
+/* ---- 29-cube-data.js ---- */
+/* ===== Cube data: engine, CFOP solver, word moves, lessons and scramble setups (from the user's CFOP Coach, simulator-checked) ===== */
+const Cube = (() => {
+/* ---------- Cube engine ---------- */
+const CubeEngine = (() => {
+  const FACES=['U','R','F','D','L','B'];
+  const NORMALS={U:[0,1,0],D:[0,-1,0],R:[1,0,0],L:[-1,0,0],F:[0,0,1],B:[0,0,-1]};
+  const FACE_INFO={R:[0,1,-1],L:[0,-1,1],U:[1,1,-1],D:[1,-1,1],F:[2,1,-1],B:[2,-1,1]};
+  function solved(n){ const st=[], m=n-1;
+    for(const f of FACES){ const nv=NORMALS[f], ax=nv.findIndex(v=>v), s=nv[ax], o=[0,1,2].filter(i=>i!==ax);
+      for(let a=-m;a<=m;a+=2)for(let b=-m;b<=m;b+=2){ const p=[0,0,0]; p[ax]=s*m; p[o[0]]=a; p[o[1]]=b; st.push({p,n:nv.slice(),c:f,h:p.join()}); } }
+    return {n,st}; }
+  function rot1(v,ax){ const [x,y,z]=v; if(ax===0) return [x,-z,y]; if(ax===1) return [z,y,-x]; return [-y,x,z]; }
+  const tokenize=a=>a.trim().split(/\s+/).filter(Boolean);
+  function parseMove(tok,n){
+    const m=tok.match(/^(\d*)([URFDLBurfdlbMESxyz])(w?)(\d*)('?)$/); if(!m) throw new Error('Bad move '+tok);
+    const pre=m[1]?+m[1]:0, L=m[2], w=m[3], amt=m[4]?+m[4]:1, q0=m[5]?-amt:amt, M=n-1; let ax, coords=[], base;
+    if('xyz'.includes(L)){ ax='xyz'.indexOf(L); base=-1; for(let c=-M;c<=M;c+=2) coords.push(c); }
+    else if('MES'.includes(L)){ ax='MES'.indexOf(L); base=L==='S'?-1:1; coords=n%2?[0]:[]; }
+    else { const up=L.toUpperCase(), fi=FACE_INFO[up]; ax=fi[0]; base=fi[2]; const lower=L!==up;
+      const layers = pre&&w ? Array.from({length:pre},(_,k)=>k+1) : pre ? [pre] : (w||lower) ? [1,2] : [1];
+      coords=layers.filter(k=>k<=n).map(k=>fi[1]*(M-2*(k-1))); }
+    return {ax, coords:new Set(coords), q:((base*q0)%4+4)%4, tok}; }
+  function applyMove(state,mv){ if(typeof mv==='string') mv=parseMove(mv,state.n);
+    for(const s of state.st) if(mv.coords.has(s.p[mv.ax])) for(let i=0;i<mv.q;i++){ s.p=rot1(s.p,mv.ax); s.n=rot1(s.n,mv.ax); }
+    return state; }
+  const applyAlg=(s,a)=>{ for(const t of tokenize(a)) applyMove(s,t); return s; };
+  const invertTok=t=>t.endsWith("'")?t.slice(0,-1):/2$/.test(t)?t:t+"'";
+  const invert=a=>tokenize(a).reverse().map(invertTok).join(' ');
+  const key=(p,n)=>p.join(',')+'|'+n.join(',');
+  const clone=s=>({n:s.n,st:s.st.map(x=>({p:x.p.slice(),n:x.n.slice(),c:x.c,h:x.h}))});
+  return {solved,parseMove,applyMove,applyAlg,invert,invertTok,tokenize,key,clone,NORMALS};
+})();
+
+/* ---------- CFOP solver: cross, F2L pairs, 2-look OLL, 2-look PLL ---------- */
+const Solver=(()=>{
+  const E=CubeEngine;
+  const M18=[]; for(const f of 'URFDLB') for(const s of ['',"'",'2']) M18.push(f+s);
+  const F2LM=["U","U'","U2","R","R'","R2","F","F'","F2","L","L'","L2"];
+  const sol=E.solved(3), eSlots=[], cSlots=[];
+  for(const s of sol.st){ const z=s.p.filter(v=>v===0).length; if(z===1) eSlots.push(E.key(s.p,s.n)); else if(z===0) cSlots.push(E.key(s.p,s.n)); }
+  const eIdx=Object.fromEntries(eSlots.map((k,i)=>[k,i])), cIdx=Object.fromEntries(cSlots.map((k,i)=>[k,i]));
+  function mapFor(tok,slots,idx){ const mv=E.parseMove(tok,3); return slots.map(k=>{ const [ps,ns]=k.split('|'); const st={n:3,st:[{p:ps.split(',').map(Number),n:ns.split(',').map(Number)}]}; E.applyMove(st,mv); return idx[E.key(st.st[0].p,st.st[0].n)]; }); }
+  const EM={}, CM={}; for(const t of M18){ EM[t]=Int8Array.from(mapFor(t,eSlots,eIdx)); CM[t]=Int8Array.from(mapFor(t,cSlots,cIdx)); }
+  const K=(p,n)=>p.join(',')+'|'+n.join(','), D=[0,-1,0];
+  const CROSS=[[0,-2,2],[2,-2,0],[0,-2,-2],[-2,-2,0]].map(p=>eIdx[K(p,D)]);
+  const SLOTS={FR:{c:cIdx[K([2,-2,2],D)],e:eIdx[K([2,0,2],[0,0,1])]},FL:{c:cIdx[K([-2,-2,2],D)],e:eIdx[K([-2,0,2],[0,0,1])]},
+               BR:{c:cIdx[K([2,-2,-2],D)],e:eIdx[K([2,0,-2],[0,0,-1])]},BL:{c:cIdx[K([-2,-2,-2],D)],e:eIdx[K([-2,0,-2],[0,0,-1])]}};
+  const SN=['FR','FL','BR','BL'];
+  const cross=new Uint8Array(331776).fill(255), ci=a=>a[0]*13824+a[1]*576+a[2]*24+a[3];
+  { let fr=[CROSS.slice()]; cross[ci(CROSS)]=0; let d=0; while(fr.length){ const nx=[]; for(const s of fr) for(const t of M18){ const m=EM[t]; const n=[m[s[0]],m[s[1]],m[s[2]],m[s[3]]]; const i=ci(n); if(cross[i]===255){ cross[i]=d+1; nx.push(n);} } fr=nx; d++; } }
+  const pairT={}; for(const s of SN){ const T=new Uint8Array(576).fill(255); const g=SLOTS[s]; T[g.c*24+g.e]=0; let fr=[[g.c,g.e]], d=0;
+    while(fr.length){ const nx=[]; for(const [c,e] of fr) for(const t of M18){ const nc=CM[t][c], ne=EM[t][e]; if(T[nc*24+ne]===255){ T[nc*24+ne]=d+1; nx.push([nc,ne]); } } fr=nx; d++; } pairT[s]=T; }
+  const E_N=E.NORMALS, FACEPOS={U:[1,2],D:[1,-2],R:[0,2],L:[0,-2],F:[2,2],B:[2,-2]};
+  const faceOfN=n=>Object.keys(E_N).find(k=>E_N[k].join()===n.join());
+  function relInfo(state){ const cen={}; for(const s of state.st) if(s.p.filter(v=>v===0).length===2) cen[s.c]=faceOfN(s.n);
+    const byPos={}; for(const s of state.st){ const k=s.p.join(); (byPos[k]=byPos[k]||[]).push(s); } return {cen,byPos}; }
+  function homeOf(faces){ const p=[0,0,0]; for(const f of faces){ const [a,v]=FACEPOS[f]; p[a]=v; } return p; }
+  function findRef(info,home,refN,isCorner){ const rf=faceOfN(refN);
+    for(const k in info.byPos){ const sts=info.byPos[k]; if(homeOf(sts.map(s=>info.cen[s.c])).join()===home.join()){ const s=sts.find(s=>info.cen[s.c]===rf); return (isCorner?cIdx:eIdx)[K(s.p,s.n)]; } }
+    return -1; }
+  function compact(state){ const info=relInfo(state);
+    const cr=[[0,-2,2],[2,-2,0],[0,-2,-2],[-2,-2,0]].map(p=>findRef(info,p,D,false));
+    const pr={FR:[findRef(info,[2,-2,2],D,true),findRef(info,[2,0,2],[0,0,1],false)],FL:[findRef(info,[-2,-2,2],D,true),findRef(info,[-2,0,2],[0,0,1],false)],
+              BR:[findRef(info,[2,-2,-2],D,true),findRef(info,[2,0,-2],[0,0,-1],false)],BL:[findRef(info,[-2,-2,-2],D,true),findRef(info,[-2,0,-2],[0,0,-1],false)]};
+    return {cr,pr}; }
+  function crossMoves(state){ let s=compact(state).cr.slice(); const out=[];
+    while(cross[ci(s)]>0){ const d=cross[ci(s)]; for(const t of M18){ const m=EM[t], n=[m[s[0]],m[s[1]],m[s[2]],m[s[3]]]; if(cross[ci(n)]===d-1){ out.push(t); s=n; break; } } }
+    return out; }
+  const pairSolved=(pr,s)=>pr[s][0]===SLOTS[s].c&&pr[s][1]===SLOTS[s].e;
+  function searchPair(cr,pr,keep,depth){ const path=[];
+    const h=(cr,pr)=>{ let v=cross[ci(cr)]; const p=pairT.FR[pr.FR[0]*24+pr.FR[1]]; if(p>v) v=p; for(const s of keep){ const q=pairT[s][pr[s][0]*24+pr[s][1]]; if(q>v) v=q; } return v; };
+    function rec(cr,pr,d,last){ const hv=h(cr,pr); if(hv===0) return true; if(hv>d) return false;
+      for(const t of F2LM){ if(t[0]===last) continue; const em=EM[t], cm=CM[t];
+        const ncr=[em[cr[0]],em[cr[1]],em[cr[2]],em[cr[3]]], npr={}; for(const s of SN) npr[s]=[cm[pr[s][0]],em[pr[s][1]]];
+        path.push(t); if(rec(ncr,npr,d-1,t[0])) return true; path.pop(); }
+      return false; }
+    return rec(cr,pr,depth,'')?path.slice():null; }
+  const ROTFOR={FR:'',FL:"y'",BR:'y',BL:'y2'};
+  function solveF2L(state){ const st=E.clone(state), steps=[];
+    for(let k=0;k<4;k++){ const c0=compact(st); const unsolved=SN.filter(s=>!pairSolved(c0.pr,s)); if(!unsolved.length) break;
+      let best=null;
+      for(let d=0;d<=14&&!best;d++) for(const s of unsolved){ const rot=ROTFOR[s]; const tmp=E.clone(st); if(rot) E.applyAlg(tmp,rot);
+        const c=compact(tmp); const keep=SN.filter(x=>x!=='FR'&&pairSolved(c.pr,x)); const r=searchPair(c.cr,c.pr,keep,d); if(r){ best={rot,moves:r}; break; } }
+      if(!best) throw new Error('F2L');
+      if(best.rot) E.applyAlg(st,best.rot); E.applyAlg(st,best.moves.join(' ')); steps.push(best); }
+    return {steps,state:st}; }
+  const ufaceDone=st=>{ const info=relInfo(st); return st.st.every(s=>s.n[1]!==1||info.cen[s.c]==='U'); };
+  const uedgesDone=st=>{ const info=relInfo(st); return st.st.every(s=>!(s.n[1]===1&&s.p.filter(v=>v===0).length===1)||info.cen[s.c]==='U'); };
+  const allDone=st=>{ const info=relInfo(st); return st.st.every(s=>E_N[info.cen[s.c]].join()===s.n.join()); };
+  const cornersDone=st=>{ const info=relInfo(st); return st.st.every(s=>s.p.some(v=>v===0)||E_N[info.cen[s.c]].join()===s.n.join()); };
+  const AUF=['',"U","U2","U'"];
+  const OLL_E=[['o1',"F R U R' U' F'"],['o2',"F U R U' R' F'"],['o3',"F R U R' U' F' U2 F U R U' R' F'"]];
+  const OLL_C=[['o4',"R U R' U R U2 R'"],['o5',"R U2 R' U' R U' R'"],['o6',"R U R' U R U' R' U R U2 R'"],['o7',"R U2 R2 U' R2 U' R2 U2 R"],['o8',"R2 D R' U2 R D' R' U2 R'"],['o9',"r U R' U' r' F R F'"],['o10',"F' r U R' U' r' F R"]];
+  const PLL_C=[['p1',"R' F R' B2 R F' R' B2 R2"],['p2',"F R U' R' U' R U R' F' R U R' U' R' F R F'"]];
+  const PLL_E=[['p3',"R U' R U R U R U' R' U' R2"],['p4',"R2 U R U R' U' R' U' R' U R'"],['p5',"M2 U M2 U2 M2 U M2"],['p6',"M' U M2 U M2 U M' U2 M2 U'"]];
+  const ap=(st,a)=>a?E.applyAlg(E.clone(st),a):st;
+  function oneLook(st,set,pred){ if(pred(st)) return {done:true}; for(const [id,alg] of set) for(const a of AUF){ if(pred(ap(st,(a+' '+alg).trim()))) return {id,auf:a,alg}; } return null; }
+  function solve(state){
+    let st=E.clone(state); const out=[];
+    const cm=crossMoves(st); E.applyAlg(st,cm.join(' ')); out.push({stage:'cross',moves:cm});
+    const f=solveF2L(st); st=f.state; f.steps.forEach((s,i)=>out.push({stage:'f2l',n:i+1,rot:s.rot,moves:s.moves}));
+    const run=r=>{ if(r&&!r.done) E.applyAlg(st,(r.auf+' '+r.alg).trim()); };
+    let r=oneLook(st,OLL_E,uedgesDone); if(!r) throw new Error('OLL'); run(r); out.push({stage:'olle',...r});
+    r=oneLook(st,OLL_C,ufaceDone); if(!r) throw new Error('OLL'); run(r); out.push({stage:'ollc',...r});
+    const cOK=s2=>AUF.some(a=>cornersDone(ap(s2,a)));
+    if(cOK(st)) out.push({stage:'pllc',done:true});
+    else { let r1=oneLook(st,PLL_C,cOK), r2=null;
+      if(!r1){ outer: for(const [id,alg] of PLL_C) for(const a of AUF){ const q=oneLook(ap(st,(a+' '+alg).trim()),PLL_C,cOK); if(q&&!q.done){ r1={id,auf:a,alg}; r2=q; break outer; } } }
+      if(!r1) throw new Error('PLL'); run(r1); out.push({stage:'pllc',...r1}); if(r2){ run(r2); out.push({stage:'pllc',...r2}); } }
+    const eOK=s2=>AUF.some(a=>allDone(ap(s2,a)));
+    r=oneLook(st,PLL_E,eOK); if(!r) throw new Error('PLL'); run(r); out.push({stage:'plle',...r});
+    const fin=AUF.find(a=>allDone(ap(st,a))); if(fin) E.applyAlg(st,fin); out.push({stage:'auf',moves:fin?[fin]:[]});
+    if(!allDone(st)) throw new Error('unsolved');
+    return out; }
+  return {solve,crossMoves,M18,OLL_E,OLL_C,PLL_C,PLL_E};
+})();
+
+/* ---------- Plain-word moves and arrow icons ---------- */
+const WORDS={
+  "R":"Right side up","R'":"Right side down","R2":"Right side twice",
+  "L":"Left side down","L'":"Left side up","L2":"Left side twice",
+  "U":"Top to the left","U'":"Top to the right","U2":"Top twice",
+  "D":"Bottom to the right","D'":"Bottom to the left","D2":"Bottom twice",
+  "F":"Front clockwise","F'":"Front counter-clockwise","F2":"Front twice",
+  "B":"Back layer: its top goes left","B'":"Back layer: its top goes right","B2":"Back layer twice",
+  "M":"Middle column down","M'":"Middle column up","M2":"Middle column twice",
+  "r":"Right two columns up","r'":"Right two columns down","r2":"Right two columns twice",
+  "x":"Roll the whole cube up","x'":"Roll the whole cube down","y":"Turn the whole cube left","y'":"Turn the whole cube right","y2":"Turn the whole cube around"
+};
+const say=t=>WORDS[t]||t;
+function icon(tok){
+  const base=tok.replace(/['2]/g,''), prime=tok.includes("'"), dbl=tok.includes('2');
+  const C=12, X0=6, Y0=6; let cells=new Set(), arrow='', dashed=false;
+  const col=c=>[0,1,2].forEach(r=>cells.add(r*3+c)), row=r=>[0,1,2].forEach(c=>cells.add(r*3+c)), all=()=>[...Array(9).keys()].forEach(i=>cells.add(i));
+  const cx=c=>X0+C*c+C/2, cy=r=>Y0+C*r+C/2;
+  const vert=(x,up)=>{ const y1=up?42:6, y2=up?8:40; return `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" class="as"/><path d="${up?`M${x-5} ${y2+6} L${x} ${y2-1} L${x+5} ${y2+6} Z`:`M${x-5} ${y2-6} L${x} ${y2+1} L${x+5} ${y2-6} Z`}" class="ah"/>`; };
+  const horiz=(y,left)=>{ const x1=left?42:6, x2=left?8:40; return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" class="as"/><path d="${left?`M${x2+6} ${y-5} L${x2-1} ${y} L${x2+6} ${y+5} Z`:`M${x2-6} ${y-5} L${x2+1} ${y} L${x2-6} ${y+5} Z`}" class="ah"/>`; };
+  const curl=(cw)=>{ const r=12, c=24; const a0=cw?-150:-30, a1=cw?120:-300; const p=a=>[c+r*Math.cos(a*Math.PI/180), c+r*Math.sin(a*Math.PI/180)];
+    const [x0,y0]=p(a0), [x1,y1]=p(a1); const t=(a1+(cw?90:-90))*Math.PI/180, tx=Math.cos(t), ty=Math.sin(t); const hx=x1+tx*4, hy=y1+ty*4, nx=-ty, ny=tx;
+    return `<path d="M${x0.toFixed(1)} ${y0.toFixed(1)} A${r} ${r} 0 1 ${cw?1:0} ${x1.toFixed(1)} ${y1.toFixed(1)}" class="as" fill="none"/><path d="M${(x1+nx*5-tx*2).toFixed(1)} ${(y1+ny*5-ty*2).toFixed(1)} L${hx.toFixed(1)} ${hy.toFixed(1)} L${(x1-nx*5-tx*2).toFixed(1)} ${(y1-ny*5-ty*2).toFixed(1)} Z" class="ah"/>`; };
+  switch(base){
+    case 'R': col(2); arrow=vert(cx(2),!prime); break;
+    case 'r': col(1); col(2); arrow=vert(cx(2)-C/2,!prime); break;
+    case 'L': col(0); arrow=vert(cx(0),prime); break;
+    case 'M': col(1); arrow=vert(cx(1),prime); break;
+    case 'U': row(0); arrow=horiz(cy(0),!prime); break;
+    case 'D': row(2); arrow=horiz(cy(2),prime); break;
+    case 'F': all(); arrow=curl(!prime); break;
+    case 'B': all(); dashed=true; arrow=curl(prime); break;
+    case 'x': all(); arrow=vert(24,!prime); break;
+    case 'y': all(); arrow=horiz(24,!prime); break;
+  }
+  let g=''; for(let r=0;r<3;r++)for(let c=0;c<3;c++){ const hi=cells.has(r*3+c); g+=`<rect x="${X0+C*c+1}" y="${Y0+C*r+1}" width="${C-2}" height="${C-2}" rx="2" fill="${hi?'var(--cell-hi)':'var(--cell)'}" ${dashed&&hi?'stroke="var(--arrow)" stroke-dasharray="2 2" stroke-width="1"':''}/>`; }
+  const badge=dbl?`<circle cx="40" cy="8" r="7.5" fill="var(--arrow)"/><text x="40" y="11.5" text-anchor="middle" font-size="10" font-weight="700" fill="#fff" font-family="Atkinson Hyperlegible, sans-serif">×2</text>`:'';
+  return `<svg viewBox="0 0 48 48" role="img" aria-label="${say(tok)}"><style>.as{stroke:var(--arrow);stroke-width:4;stroke-linecap:round}.ah{fill:var(--arrow)}</style>${g}${arrow}${badge}</svg>`;
+}
+
+/* ---------- Lessons (all algorithms simulator-checked) ---------- */
+const TRACKS={
+  f2l:{title:'F2L lessons', sub:'White cross on the bottom. We fill the front-right slot; the colored pieces are the corner and edge we pair. Gray pieces don’t matter yet.', focus:'f2l'},
+  oll:{title:'OLL lessons', sub:'Two looks: first make a yellow cross, then turn the corners yellow side up. Only yellow stickers are colored on top.', focus:'oll'},
+  pll:{title:'PLL lessons', sub:'Two looks: first fix the corners, then the edges. The top is already all yellow.', focus:'pll'},
+  solve:{title:'Solve my cube', sub:'Paint your cube’s colors or pick a random case. I’ll solve it with you: cross, F2L, OLL, then PLL, using the moves from the lessons.', focus:'all'}
+};
+const LESSONS=[
+  {id:'f1',t:'f2l',g:'Basic inserts',title:'Three-move insert',alg:"R U R'",
+   look:'The white corner sits right above its slot, with white facing right. Its edge waits at the back of the top layer.',
+   plan:'Right side up carries the corner to the back, next to its edge, so they join. Top to the left brings the pair over the slot. Right side down drops them in.'},
+  {id:'f2',t:'f2l',g:'Basic inserts',title:'Three-move insert, front side',alg:"F' U' F",
+   look:'The corner is above its slot again, but now white faces you. Its edge is on the left of the top layer.',
+   plan:'This is the mirror of the first lesson, done with the front instead of the right side.'},
+  {id:'f3',t:'f2l',g:'Split pairs',title:'Split pair, right',alg:"U R U' R'",
+   look:'Corner above the slot with white facing you. Its edge is on the right of the top layer, ready to slide in.',
+   plan:'Top to the left moves both pieces out of the way. Right side up opens the empty slot. Top to the right brings the pair back over it. Right side down drops both in.'},
+  {id:'f4',t:'f2l',g:'Split pairs',title:'Split pair, front',alg:"U' F' U F",
+   look:'Corner above the slot with white facing right. Its edge is at the front of the top layer.',
+   plan:'The mirror of the last lesson: move the pieces aside, open the slot with the front, bring them back, close the front.'},
+  {id:'f5',t:'f2l',g:'Tricky cases',title:'White faces up',alg:"R U2 R' U' R U R'",
+   look:'The corner is above its slot with white facing straight up. Its edge is on the right of the top layer.',
+   plan:'White facing up can’t go straight in. The first three moves turn the corner so white faces sideways. Then a top turn sets up the three-move insert from lesson one.'},
+  {id:'f6',t:'f2l',g:'Tricky cases',title:'Pieces facing the wrong way',alg:"U' R U' R' U R U R'",
+   look:'The corner is above the slot with white facing right, and the edge is next to it on the right, but their colors don’t line up.',
+   plan:'First we pull them apart into a better spot, then join them, then insert. Watch how the pair forms in the middle of the moves.'},
+  {id:'f7',t:'f2l',g:'Tricky cases',title:'Corner stuck in the slot',alg:"R U' R' U R U' R'",
+   look:'The corner is already in the slot, but twisted: white faces you instead of down. Its edge is on top, on the right.',
+   plan:'Right side up, top to the right, right side down lifts the stuck corner out. Top to the left lines it up. The last three moves insert the pair.'},
+  {id:'o1',t:'oll',g:'Step 1: yellow cross',title:'Yellow line',alg:"F R U R' U' F'",
+   look:'The top shows a yellow line going left to right through the center.',
+   plan:'Keep the line left to right. One six-move sequence turns it into a cross.'},
+  {id:'o2',t:'oll',g:'Step 1: yellow cross',title:'Yellow L shape',alg:"F U R U' R' F'",
+   look:'The top shows a yellow L: yellow edges at the back and on the left, pointing to the back-left corner.',
+   plan:'Hold the L at the back-left. This is the same idea as the line, with two moves swapped.'},
+  {id:'o3',t:'oll',g:'Step 1: yellow cross',title:'Yellow dot',alg:"F R U R' U' F' U2 F U R U' R' F'",
+   look:'Only the center is yellow. No yellow edges on top.',
+   plan:'Do the line sequence, turn the top twice, then do the L sequence.'},
+  {id:'o4',t:'oll',g:'Step 2: yellow corners',title:'Sune (the fish)',alg:"R U R' U R U2 R'",
+   look:'One corner faces yellow up, at the front-left. The front-right corner shows its yellow facing you.',
+   plan:'Seven moves, mostly right side up and down with top turns in between.'},
+  {id:'o5',t:'oll',g:'Step 2: yellow corners',title:'Antisune',alg:"R U2 R' U' R U' R'",
+   look:'One corner faces yellow up, at the back-right. The front-left corner shows its yellow facing you.',
+   plan:'This is the Sune done backwards.'},
+  {id:'o6',t:'oll',g:'Step 2: yellow corners',title:'Double headlights (H)',alg:"R U R' U R U' R' U R U2 R'",
+   look:'No corners face up. Both left corners show yellow on the left side, and both right corners show yellow on the right side.',
+   plan:'Like the Sune, with one extra up-and-down in the middle.'},
+  {id:'o7',t:'oll',g:'Step 2: yellow corners',title:'Pi',alg:"R U2 R2 U' R2 U' R2 U2 R",
+   look:'No corners face up. Both left corners show yellow facing left. The front-right yellow faces you, and the back-right faces away.',
+   plan:'Lots of right side twice. Keep your grip steady.'},
+  {id:'o8',t:'oll',g:'Step 2: yellow corners',title:'Headlights',alg:"R2 D R' U2 R D' R' U2 R'",
+   look:'Two corners face up at the back. The two front corners show their yellow facing you, like car headlights.',
+   plan:'This one uses the bottom layer. It comes back to where it started by the end.'},
+  {id:'o9',t:'oll',g:'Step 2: yellow corners',title:'T shape',alg:"r U R' U' r' F R F'",
+   look:'Two corners face up on the right. The left corners show yellow facing front and back.',
+   plan:'Here the right two columns turn together, so the pink stripe is wider.'},
+  {id:'o10',t:'oll',g:'Step 2: yellow corners',title:'Bowtie',alg:"F' r U R' U' r' F R",
+   look:'Two corners face up diagonally: front-left and back-right. The front-right corner shows yellow facing you.',
+   plan:'A cousin of the T shape, starting and ending with the front.'},
+  {id:'p1',t:'pll',g:'Step 1: corners',title:'Headlights at the back',alg:"R' F R' B2 R F' R' B2 R2",
+   look:'Look at the two top corners on each side. On the back side, both corners match: headlights. The other corners need to swap around.',
+   plan:'Hold the headlights at the back. After this, all corners match. If no side had headlights, do it once from any side and look again.'},
+  {id:'p2',t:'pll',g:'Step 1: corners',title:'No headlights',alg:"F R U' R' U' R U R' F' R U R' U' R' F R F'",
+   look:'No side has two matching corners. Two corners need to swap diagonally across the top.',
+   plan:'A longer one. Take it slow the first few times.'},
+  {id:'p3',t:'pll',g:'Step 2: edges',title:'Edges go right',alg:"R U' R U R U R U' R' U' R2",
+   look:'All corners match and the back side is fully solved. The front middle sticker matches the right side, so the edges need to cycle to the right.',
+   plan:'Hold the solved side at the back.'},
+  {id:'p4',t:'pll',g:'Step 2: edges',title:'Edges go left',alg:"R2 U R U R' U' R' U' R' U R'",
+   look:'All corners match and the back side is fully solved. The front middle sticker matches the left side, so the edges cycle to the left.',
+   plan:'Hold the solved side at the back. If you picked the wrong one, the other one fixes it.'},
+  {id:'p5',t:'pll',g:'Step 2: edges',title:'Opposite swap',alg:"M2 U M2 U2 M2 U M2",
+   look:'No side is solved. Every middle sticker shows the color of the opposite side: front matches back, left matches right.',
+   plan:'Only the middle column and the top move here.'},
+  {id:'p6',t:'pll',g:'Step 2: edges',title:'Neighbor swap',alg:"M' U M2 U M2 U M' U2 M2 U'",
+   look:'No side is solved. Edges swap with their neighbors: the front middle matches the left side, and the right middle matches the back.',
+   plan:'Hold it so the front swaps with the left.'},
+  {id:'p7',t:'pll',g:'Bonus',title:'T perm',alg:"R U R' U' R' F R2 U' R' U' R U R' F'",
+   look:'Headlights on the left side. The right corners are swapped and the left and right edges are swapped.',
+   plan:'One of the most famous moves in cubing. It fixes corners and edges at once.'}
+];
+const byId=Object.fromEntries(LESSONS.map(l=>[l.id,l]));
+const LESSON_DONE='Done. Watch it again, or step through it one arrow at a time while you copy it on your own cube.';
+const LINES={
+  cross:'Step one: the white cross. We put the four white edges around the white center on the bottom.',
+  f2l:'Step two: the first two layers. We pair each white corner with its edge and drop them in together.',
+  pair:'This pair goes in the front-right slot. Watch the colored pieces.',
+  olle:'Step three: make the top yellow. First, the yellow cross.',
+  olleDone:'The yellow cross is already there.',
+  ollc:'Now the yellow corners.',
+  ollcDone:'The top is already all yellow.',
+  pllc:'Step four: move the top pieces into place. First, the corners.',
+  pllcDone:'The corners already match.',
+  pllc2:'One more corner step. Now there are headlights.',
+  plle:'Now the edges.',
+  plleDone:'The edges are already in place.',
+  auf:'Last, turn the top to line everything up.',
+  solved:'Solved! Great job. Press Play to watch it again, or try another one.',
+  check:'Sound check. If you can hear me, the voice is working.',
+  hold:'Hold your cube with yellow on top and green facing you. After each move, copy it on your cube, then press I did it.',
+  setup:'Start with a solved cube, yellow on top and green facing you. These moves turn it into the case.',
+  ready:'Now your cube matches the picture. Here is how to solve it.',
+  next:'Nice! On to the next lesson.',
+  last:'That was the last lesson. Great work!'
+};
+const SETUPS={"f1":["U2 L2 D L2 F2 U' L2 D L2 U' F2 U R2 F2 U' R' U' L D2 L' R'","R2 F2 D2 R2 F2 R2 D2 F2 R D2 U' R2 D2 R2 D2 R","D2 R2 D F2 L2 F2 D2 F2 L2 F2 D R2 D2 R U' F2 L R' D2 L'"],"f2":["F2 U2 F2 D F2 U2 F D U R2 D' R2 D' F","F2 U2 F2 U' R2 F2 U R2 U' F2 R2 U2 F' U F U F2 U2 F' U","U R2 F2 U' F2 R2 D' F2 D R2 U' F2 U F' U F' L' R' U2 L R'"],"f3":["U2 F2 D2 L2 F2 U F2 U' F2 U L' D L' U2 F2 U' L2 D","D2 U2 L2 D F2 D F2 U' R2 U' R' U R' D' U2 L2 D U","F2 D' U L2 D' U L U L D U' F2 D U2"],"f4":["U' R2 F2 D F2 U' R2 D2 U' L2 D' U' L2 D' F2 D' F' D' F D F2","R2 U R2 D2 R2 D F2 L2 U2 L2 D F' U F' D2 U' R2 D2 F'","F2 D' L2 U' L2 U' F2 U F2 U F U' F U' F2 D F2 U2"],"f5":["U' R2 U R2 F2 L2 U' L2 D F2 R2 D' R2 U' R' F D R' D' R2 F'","U L2 D R2 U F2 D2 F2 U' L2 R2 U2 R U' L' F2 L R' D2 U","D' R2 F2 U L2 D' L2 U' F2 L2 D' U R D' R' D U L2 R2 D'"],"f6":["D' L2 D F2 U L2 U2 F2 L2 R U L' R' U L' U L2","U R2 U2 R2 D' F2 D R2 U R2 U2 R2 U R U2 R D' U2 F2 D R","U2 R2 D U R2 F2 L2 D' L2 F2 R2 D' R' U' R U' R' U' R' U'"],"f7":["U2 L2 U' R2 U' L2 U R2 U' L2 U2 F2 L' F2 L' U L U' L' U'","U F2 D' L2 D F2 U2 F2 L2 F2 U' F2 D' L D L2 F2 U' F2 L F2","F2 D R2 D' R2 U R2 U' R2 F2 U' F R' F' R U2 F' U2 F"],"o1":["D F2 U F2 D' U L2 U' L' U F U' F' L' U'","F2 U R2 F2 R2 F2 R2 D2 R2 U' F2 D2 F' U R U' R' F' R2 D2","F2 D' U F2 D2 F2 D U' R2 D2 R2 F' U R U' R' F'"],"o2":["R2 F2 U R2 U' F2 R2 F2 L F R' F' L' F' R F","F2 L2 D2 U2 R2 U' R2 D2 U2 L2 U F' R U R' U' F'","D F2 U F2 D' U L2 U' L' F U F' U' L' U'"],"o3":["R2 U2 R2 U' R2 F2 U2 F2 U' R2 U2 F2 U' R' F' R U2 F' R' F' R"],"o4":["R2 D' L2 U' L2 D' L2 U' L2 D' R2 F' U' F U' F' U2 F D'","R2 U R2 U' R2 U' L2 D R2 D' F2 U F' U2 F' U F U F' L2","U F2 D R2 D' R2 U R2 U' R2 F2 R' U L U' R U L' U2"],"o5":["F2 U' R2 U2 R2 F2 U' F2 U R2 D R2 D2 F D F2 D' U F2 D F'","D U' R2 F2 L2 D L2 F2 R2 D' U2 R U R2 U' R2 U R U","F2 D U2 F2 U' F2 U' R2 U' R2 U' F U2 F U F' U F D'"],"o6":["D2 F2 U' F2 D2 L2 D U2 L2 D' F2 L2 U2 F' U2 L2 F' U2 F2 L2 F","F2 R2 U F2 U2 R2 F2 R2 U F2 R2 U' R U' R2 F2 R' F2 U R","L2 U L2 U L2 F2 L2 F2 U L' U L2 F2 L F2 U' L'"],"o7":["L2 U F2 U' R2 U' F2 D2 F2 U R2 F2 U' R' D' L2 F2 D F2 D R","D' U2 R2 D' F2 D' F2 L2 D2 R2 D F U' F' L2 U F' L2 F","D' F2 U2 L2 F2 U' L2 D U2 F2 D R2 U' R D' F2 D' F2 L2 D R"],"o8":["D R2 D2 U' F2 D' R2 D F2 L2 D2 U2 R' D' L2 D R' D' F2 U'","L2 U2 L2 U F2 U2 L2 U' F2 U2 L2 U' F2 L' D' L2 U' L2 D L'","R2 D' R2 D R2 D' L D R2 D' L' R2 D R2"],"o9":["U2 F2 D' F2 D F2 U' R2 U F2 U F' U2 F' R2 F U2 F U","D2 U R2 U F2 U' R2 U F2 D' F2 D' L F2 R D2 R' F2 L' U2","R2 D' L2 F2 R2 U R2 U' R2 F2 D R2 U' F' D2 F' L2 F D2 F' U"],"o10":["R2 D F2 D' L2 U L2 U' F2 R2 F2 L2 D L F2 L' D' L F2 L F2","L2 U' L2 U R2 U' L2 U L2 R' F' L F R' F' L' F","L2 U R2 D2 R2 U' F2 D2 R2 F2 R2 D2 F2 R' D2 U R2 D2 U' L2 R'"],"p1":["L2 U F2 R2 D2 R2 U R2 U R2 F2 D2 U' R2 D U' L' R' F2 L' R'","U2 R2 D' F2 U R2 U' F2 D' R2 U2 F2 L' F2 L2 F2 L' R' D2 R","F2 U F2 R2 F2 U F2 U' R2 U' R2 U F2 U' F' L F' R2 F L' F'"],"p2":["L2 U L2 U' F2 D F2 D R2 D' R2 F2 U' R U F' U' F2 R' D' F","R2 U' R2 F2 U' R2 U R2 D R2 D' R2 U' F' D' U' F2 D U F' U","U' R2 F2 U L2 U' R2 U R2 U F2 U' F2 L' F' L' F2 U' R' F R'"],"p3":["R2 D L2 R2 U' R2 U L2 R2 F2 U2 F2 D2 F D2 U2 F2 D2 U2 F' D","F2 U R2 D' F2 D F2 U' L2 F2 U F2 R2 F' U' F L2 F' U F' U","U L2 R2 D' R2 D2 U L2 U' F2 U' F2 D U2 F2 D U2 F2 D U2"],"p4":["U' L2 D' L2 D' R2 F2 D U' F2 D' R2 D' F2 D' F2 D' F2 D' F2","F2 U F2 U2 F2 U2 F2 L2 F2 L2 U' F2 L2 F' L2 F2 L2 F2 L2 F'","F2 U' L2 F2 L2 U' L2 F2 U2 L2 F2 U2 L2 U2 L2 U2 L2 U2 L2 U2"],"p5":["R2 D2 R2 F2 D2 L2 D F2 L2 D2 F2 U2 L' D F' D' F2 L' U' F'","U' L2 U2 L2 D' F2 D F2 U2 L2 F2 U2 F2 L2 U R2 D2 U R2 D2 U","L2 U' L2 U' L2 D' L2 R2 U L2 D U' L2 D' R2 D' R2 D' R2 D'"],"p6":["U F2 U2 L2 F2 L2 U2 F2 U L2 U L2 U L2 U L2 U L2","L2 R2 U' L2 R2 D2 F2 L2 D2 F2 R2 F2 D2 F2 L2 U L R D2 L R","D' L2 D' R2 D' F2 D' R2 U' F2 U' R2 U' R2 U' L' R' U2 L' R'"],"p7":["U2 L2 D R2 U' F2 R2 F2 R2 D' L2 U F2 L' U L' F2 L U' L' U'","R2 U F2 U2 R2 F2 U2 F2 U F2 U' F2 U F2 R2 U' F2 U2 F2 U2 F2","F2 D F2 D R2 U R2 D2 F2 U' L2 U' L2 U2 F L2 F2 L2 F2 L2 F"]};
+return { CubeEngine, Solver, WORDS, say, icon, TRACKS, LESSONS, byId, LESSON_DONE, LINES, SETUPS };
+})();
+
+/* ---- 30-cfop.js ---- */
+/* ===== CFOP Learner: 3D cube, word moves + arrows, follow along with your real cube ===== */
+addCSS(`
+.cube-wrap{--cell:#C9CCD6;--cell-hi:#FFC2DE;--arrow:#FF2E93}
+.cube-stage{background:radial-gradient(circle at 50% 40%,#232838,#0E1016);border-radius:20px;overflow:hidden;position:relative}
+.cube-stage canvas{display:block;width:100%;aspect-ratio:1/1;max-height:52vh;touch-action:none;cursor:grab;margin:0 auto}
+.cube-cap{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-top:10px;min-height:76px}
+.cube-cap .ci{flex:0 0 auto;width:52px;height:52px}
+.cube-cap .ci svg{width:52px;height:52px}
+.cube-cap p{margin:0;font-size:18px;line-height:1.35;flex:1;font-weight:600}
+.cube-cap p small{display:block;font-size:13px;color:var(--muted);font-weight:600}
+.mstrip{display:flex;gap:4px;overflow-x:auto;padding:8px 2px;scrollbar-width:none}
+.mstrip::-webkit-scrollbar{display:none}
+.mstrip button{flex:0 0 auto;border:2px solid transparent;background:var(--surface);border-radius:10px;padding:3px;display:flex;flex-direction:column;align-items:center;font-size:10px;color:var(--muted);width:56px}
+.mstrip button svg{width:40px;height:40px}
+.mstrip button.on{border-color:#FF2E93}
+.mstrip button.past{opacity:.45}
+.mstrip .lbl{flex:0 0 auto;align-self:center;font-size:12px;font-weight:700;background:var(--surface2);border-radius:999px;padding:4px 10px;white-space:nowrap}
+.hold-tip{display:flex;gap:10px;flex-wrap:wrap;font-size:13px;font-weight:650;color:var(--muted);margin:8px 2px}
+.hold-tip i{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:4px;border:1px solid rgba(0,0,0,.2)}
+.lessons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:640px){.lessons{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.lesson{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;border:1px solid var(--line);background:var(--surface);border-radius:16px;padding:10px;text-align:center;min-width:0;box-shadow:var(--shadow)}
+.lesson canvas{width:96px;height:96px}
+.lesson b{font-size:14px;line-height:1.25}
+.lesson small{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.lesson .ok{position:absolute;top:8px;right:10px;color:var(--good);font-weight:800}
+.scr{display:flex;flex-wrap:wrap;gap:6px}
+.scr span{display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border-radius:10px;padding:3px 8px 3px 3px;font-size:13px;font-weight:650}
+.scr span svg{width:30px;height:30px}
+.timer{font-size:64px;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;font-family:var(--round);padding:22px 0;border-radius:20px;background:var(--surface);border:1px solid var(--line);width:100%;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+.timer.run{background:var(--good-soft);color:var(--good)}
+`);
+const CubeView = cv => {
+  const COLS = { U: '#FFD500', D: '#F4F6F9', F: '#009E60', B: '#0051BA', R: '#FF5800', L: '#C41E3A' };
+  const DEF = [-0.55, 0.5]; let yaw = DEF[0], pitch = DEF[1], state = null, mv = null, th = 0;
+  const g = cv.getContext('2d');
+  const rot = (v, ax, a) => { const c = Math.cos(a), s = Math.sin(a), [x, y, z] = v; return ax === 0 ? [x, y * c - z * s, y * s + z * c] : ax === 1 ? [x * c + z * s, y, -x * s + z * c] : [x * c - y * s, x * s + y * c, z]; };
+  const view = v => { let [x, y, z] = v, c = Math.cos(yaw), s = Math.sin(yaw); [x, z] = [x * c + z * s, -x * s + z * c]; c = Math.cos(pitch); s = Math.sin(pitch); [y, z] = [y * c - z * s, y * s + z * c]; return [x, y, z]; };
+  function draw() {
+    if (!state) return; const r = cv.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1), W = Math.max(50, Math.round(r.width * dpr)), H = Math.max(50, Math.round(r.height * dpr));
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+    g.clearRect(0, 0, W, H); const D = 22, f = Math.min(W, H) * 1.8, cx = W / 2, cy = H / 2;
+    const P = v => { const k = f / (D - v[2]); return [cx + v[0] * k, cy - v[1] * k]; };
+    const cubies = {}; for (const s of state.st) { const k = s.p.join(); (cubies[k] = cubies[k] || { p: s.p, st: [] }).st.push(s); }
+    const list = [];
+    for (const k in cubies) {
+      const cb = cubies[k], moving = mv && mv.coords.has(cb.p[mv.ax]);
+      const T = v => view(moving ? rot(v, mv.ax, th) : v);
+      const c3 = T(cb.p), faces = [];
+      for (const ax of [0, 1, 2]) for (const sg of [-1, 1]) {
+        const d = [0, 0, 0]; d[ax] = sg; const o = [0, 1, 2].filter(i => i !== ax), sticker = cb.st.find(s => s.n[ax] === sg);
+        if (!sticker && Math.abs(cb.p[ax]) === 2 && Math.sign(cb.p[ax]) === sg) { /* outer face without sticker cannot happen */ }
+        const quad = (half, out) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => { const v = cb.p.slice(); v[ax] += sg * out; v[o[0]] += a * half; v[o[1]] += b * half; return T(v); });
+        const nn = T(d.map((x, i) => x + cb.p[i])).map((x, i) => x - c3[i]);
+        const fc = T(cb.p.map((x, i) => x + d[i]));
+        const toCam = [-fc[0], -fc[1], D - fc[2]]; if (nn[0] * toCam[0] + nn[1] * toCam[1] + nn[2] * toCam[2] <= 0) continue;
+        faces.push({ plate: quad(0.985, 1), st: sticker ? quad(0.8, 1.012) : null, col: sticker ? COLS[sticker.c] : null, shade: 0.75 + 0.25 * Math.max(0, nn[1] * 0.6 + nn[2] * 0.8) });
+      }
+      list.push({ z: c3[2], faces });
+    }
+    list.sort((a, b) => a.z - b.z);
+    g.lineJoin = 'round';
+    for (const cb of list) for (const fc of cb.faces) {
+      const pl = fc.plate.map(P); g.beginPath(); pl.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.fillStyle = '#0B0C10'; g.fill(); g.strokeStyle = '#0B0C10'; g.lineWidth = 1.5; g.stroke();
+      if (fc.st) { const q = fc.st.map(P); g.beginPath(); q.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.fillStyle = fc.col; g.fill(); if (fc.shade < 1) { g.fillStyle = 'rgba(0,0,0,' + (1 - fc.shade).toFixed(3) + ')'; g.fill(); } g.strokeStyle = 'rgba(255,255,255,.14)'; g.lineWidth = 1; g.stroke(); }
+    }
+  }
+  let animEnd = null;
+  function turn(tok, ms) {
+    const E = Cube.CubeEngine; mv = E.parseMove(tok, 3); const target = mv.q === 3 ? -Math.PI / 2 : mv.q * Math.PI / 2; const t0 = performance.now(); const from = state;
+    return new Promise(res => {
+      let done = false; const fin = () => { if (done) return; done = true; mv = null; th = 0; state = E.applyMove(E.clone(from), tok); draw(); animEnd = null; res(); };
+      animEnd = fin;
+      const step = () => { if (done) return; const k = Math.min(1, (performance.now() - t0) / ms); th = target * (k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2); draw(); if (k < 1) requestAnimationFrame(step); else fin(); };
+      requestAnimationFrame(step); setTimeout(fin, ms + 120);
+    });
+  }
+  let drag = null;
+  cv.addEventListener('pointerdown', e => { drag = [e.clientX, e.clientY, yaw, pitch]; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', e => { if (!drag) return; yaw = drag[2] + (e.clientX - drag[0]) * 0.01; pitch = clamp(drag[3] + (e.clientY - drag[1]) * 0.01, -1.4, 1.4); draw(); });
+  cv.addEventListener('pointerup', () => drag = null);
+  cv.addEventListener('dblclick', () => { yaw = DEF[0]; pitch = DEF[1]; draw(); });
+  return { set(s) { if (animEnd) animEnd(); state = Cube.CubeEngine.clone(s); mv = null; draw(); }, turn, draw, reset() { yaw = DEF[0]; pitch = DEF[1]; draw(); }, get state() { return state; } };
+};
+function cubeThumb(state, size = 96) {
+  const c = h('canvas', { width: size * 2, height: size * 2, style: { width: size + 'px', height: size + 'px' } });
+  document.body.append(c); c.style.position = 'fixed'; c.style.left = '-999px';
+  const v = CubeView(c); v.set(state); c.remove(); c.style.position = ''; c.style.left = ''; return c;
+}
+Apps.reg({
+  id: 'cfop', name: 'CFOP Learner', icon: '🧊', color: 'linear-gradient(135deg,#FF2E93,#7B2FF7)', group: 'learn', keys: 'rubik cube speedcube f2l oll pll timer', blurb: 'Rubik’s cube lessons in plain words',
+  mount(v, ctx) {
+    const C = Cube, E = C.CubeEngine;
+    let tab = Prefs.get('cubeTab', 'f2l'), follow = Prefs.get('cubeFollow', true), voice = Prefs.get('cubeVoice', true), pace = Prefs.get('cubePace', 1);
+    let done = Prefs.get('cubeDone', {}), stopPlay = null, timerOff = null;
+    const caseState = l => E.applyAlg(E.solved(3), E.invert(l.alg));
+    const pickSetup = l => { const a = C.SETUPS[l.id]; return a && a.length ? pick(a) : E.invert(l.alg); };
+    const holdTip = () => h('div', { class: 'hold-tip' }, h('span', null, h('i', { style: { background: '#FFD500' } }), 'Yellow on top'), h('span', null, h('i', { style: { background: '#009E60' } }), 'Green facing you'), h('span', null, h('i', { style: { background: '#FF5800' } }), 'Orange on the right'));
+    function home() {
+      if (stopPlay) stopPlay(); if (timerOff) { timerOff(); timerOff = null; }
+      v.innerHTML = ''; ctx.setTitle('CFOP Learner'); ctx.setBack(null); ctx.setActions();
+      const body = h('div', { class: 'cube-wrap' });
+      v.append(UI.tabs([['f2l', 'F2L'], ['oll', 'OLL'], ['pll', 'PLL'], ['solve', '🎲 Solve with me'], ['timer', '⏱️ Timer']], tab, t => { tab = t; Prefs.set('cubeTab', t); fill(); }), body);
+      function fill() {
+        body.innerHTML = ''; if (timerOff) { timerOff(); timerOff = null; }
+        if (tab === 'timer') return timerOff = timer(body);
+        if (tab === 'solve') return practice(body);
+        const SUB = { f2l: 'White cross on the bottom. Each case fills the front-right slot: pair a white corner with its edge, then drop them in together.', oll: 'Two looks: first make a yellow cross, then turn the yellow corners to face up.', pll: 'Two looks: first fix the top corners, then the top edges. The top is already all yellow.' };
+        body.append(h('p', { class: 'muted small', style: { margin: '0 2px 10px' } }, SUB[tab]), holdTip());
+        const groups = {}; for (const l of C.LESSONS.filter(x => x.t === tab)) (groups[l.g] = groups[l.g] || []).push(l);
+        for (const gname in groups) body.append(h('div', { class: 'sec' }, gname), h('div', { class: 'lessons' }, groups[gname].map(l =>
+          h('button', { class: 'lesson', onclick: () => lesson(l) }, done[l.id] ? h('span', { class: 'ok', 'aria-label': 'done' }, '✓') : null, cubeThumb(caseState(l)), h('b', null, l.title)))));
+        body.append(h('p', { class: 'tiny muted mt' },'Tap a case. With “Follow my cube” on, you start from a solved cube: I give you scramble moves that make the case, then we solve it together, one move at a time.'));
+      }
+      fill();
+    }
+    function player(prog) {
+      if (stopPlay) stopPlay();
+      v.innerHTML = ''; ctx.setTitle(prog.title); ctx.setBack(() => { home(); return true; });
+      const cv = h('canvas'), stage = h('div', { class: 'cube-stage' }, cv), view = CubeView(cv);
+      const capIcon = h('span', { class: 'ci' }), capText = h('p'), cap = h('div', { class: 'cube-cap', 'aria-live': 'polite' }, capIcon, capText);
+      const strip = h('div', { class: 'mstrip', 'aria-label': 'Moves' });
+      const backB = h('button', { class: 'btn', 'aria-label': 'Back one step' }, '◀'), mainB = h('button', { class: 'btn pri', style: { flex: 1 } }), againB = h('button', { class: 'btn' }, '↻ Again'), playB = h('button', { class: 'btn' });
+      const followB = h('button', { class: 'chip' }), voiceB = h('button', { class: 'chip' });
+      const steps = prog.steps, before = [E.clone(prog.init)];
+      for (const s of steps) { const st = E.clone(before[before.length - 1]); if (s.k === 'move') E.applyMove(st, s.tok); before.push(st); }
+      let pos = 0, auto = false, busy = false;
+      v.append(h('div', { class: 'cube-wrap' }, stage, cap, h('div', { class: 'row nw mt' }, backB, againB, mainB), h('div', { class: 'row mt' }, playB, followB, voiceB, UI.seg([[0.6, 'Slow'], [1, 'Normal'], [1.6, 'Fast']], pace, p => { pace = p; Prefs.set('cubePace', p); })), strip, holdTip()));
+      const moveIdx = steps.map((s, i) => s.k === 'move' ? i : -1).filter(i => i >= 0);
+      strip.append(...steps.map((s, i) => s.k === 'move' ? h('button', { 'data-i': i, 'aria-label': C.say(s.tok), onclick: () => { auto = false; show(i, true); }, html: C.icon(s.tok) + '<span>' + (moveIdx.indexOf(i) + 1) + '</span>' }) : s.label ? h('span', { class: 'lbl', 'data-i': i }, s.label) : null).filter(Boolean));
+      const paintChips = () => { followB.textContent = (follow ? '✋ Follow my cube: on' : '👀 Just watch'); followB.classList.toggle('on', follow); voiceB.textContent = voice ? '🔊 Voice on' : '🔇 Voice off'; voiceB.classList.toggle('on', voice); };
+      followB.onclick = () => { follow = !follow; Prefs.set('cubeFollow', follow); if (prog.rebuild) player(prog.rebuild(follow)); else paintChips(); };
+      voiceB.onclick = () => { voice = !voice; Prefs.set('cubeVoice', voice); if (!voice) Speak.stop(); paintChips(); };
+      paintChips();
+      async function show(i, animate) {
+        pos = clamp(i, 0, steps.length - 1); const s = steps[pos];
+        $$('button[data-i]', strip).forEach(b => { const k = +b.dataset.i; b.classList.toggle('on', k === pos); b.classList.toggle('past', k < pos); });
+        const cur = strip.querySelector('.on'); if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+        backB.disabled = pos === 0; againB.hidden = s.k !== 'move';
+        if (s.k === 'move') {
+          const n = moveIdx.indexOf(pos) + 1;
+          capIcon.innerHTML = C.icon(s.tok); capText.innerHTML = esc(C.say(s.tok)) + '<small>Move ' + n + ' of ' + moveIdx.length + (prog.setupEnd && pos < prog.setupEnd ? ' · setting up the case' : '') + '</small>';
+          mainB.textContent = follow ? 'I did it ✓' : 'Next ▶';
+          if (voice) Speak.say(C.say(s.tok), { rate: 0.95 });
+          if (animate) { view.set(before[pos]); busy = true; await view.turn(s.tok, 650 / pace); busy = false; } else view.set(before[pos + 1]);
+        } else {
+          capIcon.innerHTML = s.end ? '<span style="font-size:40px">🎉</span>' : '<span style="font-size:40px">💬</span>'; capText.textContent = s.text;
+          mainB.textContent = s.end ? 'Back to lessons' : 'Next ▶'; view.set(before[pos]);
+          if (voice) Speak.say(s.text, { rate: 0.98 });
+          if (s.end && prog.onEnd) prog.onEnd();
+        }
+        playB.textContent = auto ? '⏸ Pause' : '▶ Play all';
+      }
+      const next = () => { const s = steps[pos]; if (s.end) { home(); return; } if (pos < steps.length - 1) show(pos + 1, true); };
+      mainB.onclick = () => { auto = false; if (!busy) next(); };
+      backB.onclick = () => { auto = false; show(pos - 1, false); };
+      againB.onclick = () => show(pos, true);
+      playB.onclick = async () => {
+        if (auto) { auto = false; playB.textContent = '▶ Play all'; return; }
+        auto = true; playB.textContent = '⏸ Pause';
+        while (auto && pos < steps.length - 1) {
+          const s = steps[pos]; await sleep(s.k === 'say' ? Math.max(1600, s.text.split(' ').length * 330) / pace : 350 / pace);
+          if (!auto) break; await show(pos + 1, true);
+        }
+        auto = false; playB.textContent = '▶ Play all';
+      };
+      const onKey = e => { if (e.target.tagName === 'INPUT') return; if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); mainB.click(); } else if (e.key === 'ArrowLeft') backB.click(); };
+      addEventListener('keydown', onKey); const onRs = () => view.draw(); addEventListener('resize', onRs);
+      stopPlay = () => { auto = false; Speak.stop(); removeEventListener('keydown', onKey); removeEventListener('resize', onRs); stopPlay = null; };
+      requestAnimationFrame(() => show(0, false)); setTimeout(() => view.draw(), 60);
+    }
+    function lesson(l) {
+      const build = fol => {
+        const steps = []; let setupEnd = 0;
+        if (fol) { steps.push({ k: 'say', text: C.LINES.setup, label: 'Solved → case' }); E.tokenize(pickSetup(l)).forEach(t => steps.push({ k: 'move', tok: t })); setupEnd = steps.length; steps.push({ k: 'say', text: C.LINES.ready, label: 'Solve it' }); }
+        steps.push({ k: 'say', text: l.look }, { k: 'say', text: l.plan + ' Watch the pink arrow.' });
+        E.tokenize(l.alg).forEach(t => steps.push({ k: 'move', tok: t }));
+        const nx = C.LESSONS[C.LESSONS.indexOf(l) + 1];
+        steps.push({ k: 'say', text: nx && nx.t === l.t ? 'Done! Next up: ' + nx.title + '. Go back to pick it, or tap ◀ to practice this one again.' : C.LINES.last, end: true });
+        return { title: l.title, init: fol ? E.solved(3) : caseState(l), steps, setupEnd, rebuild: build, onEnd: () => { done[l.id] = 1; Prefs.set('cubeDone', done); } };
+      };
+      player(build(follow));
+    }
+    function solveProg(state, setup, title) {
+      const res = C.Solver.solve(state), steps = []; const mv = t => steps.push({ k: 'move', tok: t }); let pair = 0, pllTold = false, setupEnd = 0;
+      const NAMES = { cross: 'Cross', olle: 'Yellow cross', ollc: 'Yellow corners', pllc: 'Top corners', plle: 'Top edges' };
+      if (setup) { steps.push({ k: 'say', text: 'Start with a solved cube, yellow on top and green facing you. Do these scramble moves first.', label: 'Scramble' }); E.tokenize(setup).forEach(mv); setupEnd = steps.length; }
+      for (const s of res) {
+        if (s.stage === 'cross') { if (!s.moves.length) continue; steps.push({ k: 'say', text: C.LINES.cross, label: 'Cross' }); s.moves.forEach(mv); }
+        else if (s.stage === 'f2l') { pair++; if (pair === 1) steps.push({ k: 'say', text: C.LINES.f2l }); if (s.rot) mv(s.rot); steps.push({ k: 'say', text: C.LINES.pair, label: 'Pair ' + pair }); s.moves.forEach(mv); }
+        else if (['olle', 'ollc', 'pllc', 'plle'].includes(s.stage)) {
+          const key = s.stage, intro = key === 'olle' ? C.LINES.olle : key === 'ollc' ? C.LINES.ollc : key === 'pllc' ? (pllTold ? C.LINES.pllc2 : C.LINES.pllc) : C.LINES.plle; if (key === 'pllc') pllTold = true;
+          if (s.done) { steps.push({ k: 'say', text: intro + ' ' + C.LINES[key + 'Done'], label: NAMES[key] }); continue; }
+          const l = C.byId[s.id]; steps.push({ k: 'say', text: intro, label: NAMES[key] + ': ' + l.title }); if (s.auf) mv(s.auf); steps.push({ k: 'say', text: l.look }); E.tokenize(s.alg).forEach(mv);
+        } else if (s.stage === 'auf' && s.moves.length) { steps.push({ k: 'say', text: C.LINES.auf, label: 'Finish' }); s.moves.forEach(mv); }
+      }
+      steps.push({ k: 'say', text: C.LINES.solved, end: true });
+      return { title, init: setup ? E.solved(3) : state, steps, setupEnd };
+    }
+    const scramble = (len = 20) => { const out = []; let last = ''; while (out.length < len) { const t = pick(C.Solver.M18.filter(m => m[0] !== 'B')); if (t[0] === last) continue; last = t[0]; out.push(t); } return out.join(' '); };
+    function practice(el) {
+      el.append(h('p', { class: 'muted small' }, 'I make a random scramble, you copy it on your real cube, then I walk you through the whole solve: cross, F2L, OLL and PLL — using the moves from the lessons.'), holdTip(),
+        h('div', { class: 'grid2 mt' },
+          h('button', { class: 'bigbtn', onclick: () => { const s = scramble(); const st = E.applyAlg(E.solved(3), s); player(solveProg(st, s, 'Solve with me')); } }, h('span', { class: 'e' }, '🎲'), h('b', null, 'Full solve'), h('small', null, 'Scramble, then solve every step')),
+          h('button', { class: 'bigbtn', onclick: () => { const s = scramble(); const st = E.applyAlg(E.solved(3), s); const cm = C.Solver.crossMoves(st); player(solveProg(E.applyAlg(st, cm.join(' ')), s + (cm.length ? ' ' + cm.join(' ') : ''), 'F2L practice')); } }, h('span', { class: 'e' }, '🧩'), h('b', null, 'F2L practice'), h('small', null, 'Starts with the cross already done'))));
+    }
+    function timer(el) {
+      let times = Prefs.get('cubeTimes', []), t0 = 0, run = false, raf = 0, scr = scramble();
+      const disp = h('button', { class: 'timer', 'aria-label': 'Timer. Tap to start or stop.' }, '0.00'), scrBox = h('div', { class: 'scr' }), stats = h('div', { class: 'grid3 mt' }), list = h('div', { class: 'mt' });
+      const fmt = ms => (ms / 1000).toFixed(2);
+      const avg = n => { if (times.length < n) return '—'; const a = times.slice(0, n).map(t => t.ms).sort((x, y) => x - y); const m = a.slice(1, -1); return fmt(m.reduce((x, y) => x + y, 0) / m.length); };
+      const paint = () => {
+        scrBox.innerHTML = ''; E.tokenize(scr).forEach((t, i) => scrBox.append(h('span', { html: C.icon(t) + esc((i + 1) + '. ' + C.say(t)) })));
+        stats.innerHTML = ''; stats.append(h('div', { class: 'stat' }, h('b', null, times.length ? fmt(Math.min(...times.map(t => t.ms))) : '—'), h('small', null, 'Best')), h('div', { class: 'stat' }, h('b', null, avg(5)), h('small', null, 'Average of 5')), h('div', { class: 'stat' }, h('b', null, avg(12)), h('small', null, 'Average of 12')));
+        list.innerHTML = ''; if (times.length) list.append(h('div', { class: 'list' }, times.slice(0, 30).map((t, i) => h('div', { class: 'li' }, h('span', { class: 't' }, h('b', null, fmt(t.ms) + ' s'), h('small', null, fmtDay(new Date(t.at)) + ' · ' + fmtTime(new Date(t.at)))), h('button', { class: 'ib', 'aria-label': 'Delete time', html: SVG.trash, onclick: () => { times.splice(i, 1); Prefs.set('cubeTimes', times); paint(); } })))));
+      };
+      const tick = () => { disp.textContent = fmt(performance.now() - t0); raf = requestAnimationFrame(tick); };
+      const toggle = () => {
+        if (!run) { run = true; t0 = performance.now(); disp.classList.add('run'); tick(); }
+        else { run = false; cancelAnimationFrame(raf); const ms = performance.now() - t0; disp.textContent = fmt(ms); disp.classList.remove('run'); times.unshift({ ms, at: Date.now(), scr }); Prefs.set('cubeTimes', times.slice(0, 200)); scr = scramble(); Sfx.good(); paint(); }
+      };
+      disp.onclick = toggle; const onKey = e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); toggle(); } }; addEventListener('keydown', onKey);
+      el.append(h('div', { class: 'sec', style: { marginTop: '4px' } }, 'Scramble (yellow top, green front)'), scrBox, h('div', { class: 'row mt' }, h('button', { class: 'btn sm', onclick: () => { scr = scramble(); paint(); } }, '🎲 New scramble')), h('div', { class: 'mt' }, disp), h('p', { class: 'tiny muted center' }, 'Tap the timer to start, tap again when solved. Space bar works too.'), stats, list);
+      paint();
+      return () => { cancelAnimationFrame(raf); removeEventListener('keydown', onKey); };
+    }
+    home();
+    return () => { if (stopPlay) stopPlay(); if (timerOff) timerOff(); };
+  },
+});
+
+/* ---- 31-chess.js ---- */
+/* ===== Chess: full rules + a computer opponent (alpha-beta search) ===== */
+addCSS(`
+.chess{max-width:520px;margin:0 auto}
+.board{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));border-radius:10px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.25);aspect-ratio:1/1;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+.sq{position:relative;border:0;padding:0;display:grid;place-items:center;font-size:min(10.5vw,52px);line-height:1;aspect-ratio:1/1;min-width:0}
+.sq.l{background:#EEDDBB}.sq.d{background:#B58863}
+.sq.last.l{background:#F3E37A}.sq.last.d{background:#D6B54B}
+.sq.sel{background:#8FB8F0!important}
+.sq.chk{background:radial-gradient(circle,#FF5A4E 0,#FF5A4E 35%,transparent 75%),#B58863}
+.sq.hint{box-shadow:inset 0 0 0 4px #36B37E}
+.sq .pc{font-family:"Apple Symbols","Segoe UI Symbol","DejaVu Sans",serif;pointer-events:none}
+.sq .pc.w{color:#FFFFFF;text-shadow:0 0 1px #000,0 0 1px #000,0 1px 2px rgba(0,0,0,.6);-webkit-text-stroke:1px #222}
+.sq .pc.b{color:#16161A;text-shadow:0 1px 1px rgba(255,255,255,.35)}
+.sq .dot{position:absolute;width:30%;height:30%;border-radius:50%;background:rgba(20,30,50,.32)}
+.sq .ring{position:absolute;inset:4%;border-radius:50%;border:5px solid rgba(20,30,50,.32)}
+.sq .co{position:absolute;font-size:10px;font-weight:700;opacity:.7;font-family:var(--font)}
+.sq .co.f{right:3px;bottom:1px}.sq .co.r{left:3px;top:2px}
+.sq.l .co{color:#B58863}.sq.d .co{color:#EEDDBB}
+.cstatus{display:flex;align-items:center;gap:8px;margin:10px 2px;min-height:36px}
+.cstatus b{flex:1;font-size:17px}
+.caps{font-size:22px;letter-spacing:-4px;min-height:28px;color:var(--muted)}
+.mlist{font-family:var(--mono);font-size:14px;display:flex;flex-wrap:wrap;gap:4px 10px;max-height:110px;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px}
+`);
+const Chess = (() => {
+  const VAL = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
+  const PST = {
+    p: [0, 0, 0, 0, 0, 0, 0, 0, 50, 50, 50, 50, 50, 50, 50, 50, 10, 10, 20, 30, 30, 20, 10, 10, 5, 5, 10, 25, 25, 10, 5, 5, 0, 0, 0, 20, 20, 0, 0, 0, 5, -5, -10, 0, 0, -10, -5, 5, 5, 10, 10, -20, -20, 10, 10, 5, 0, 0, 0, 0, 0, 0, 0, 0],
+    n: [-50, -40, -30, -30, -30, -30, -40, -50, -40, -20, 0, 0, 0, 0, -20, -40, -30, 0, 10, 15, 15, 10, 0, -30, -30, 5, 15, 20, 20, 15, 5, -30, -30, 0, 15, 20, 20, 15, 0, -30, -30, 5, 10, 15, 15, 10, 5, -30, -40, -20, 0, 5, 5, 0, -20, -40, -50, -40, -30, -30, -30, -30, -40, -50],
+    b: [-20, -10, -10, -10, -10, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 10, 10, 5, 0, -10, -10, 5, 5, 10, 10, 5, 5, -10, -10, 0, 10, 10, 10, 10, 0, -10, -10, 10, 10, 10, 10, 10, 10, -10, -10, 5, 0, 0, 0, 0, 5, -10, -20, -10, -10, -10, -10, -10, -10, -20],
+    r: [0, 0, 0, 0, 0, 0, 0, 0, 5, 10, 10, 10, 10, 10, 10, 5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, 0, 0, 0, 5, 5, 0, 0, 0],
+    q: [-20, -10, -10, -5, -5, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 5, 5, 5, 0, -10, -5, 0, 5, 5, 5, 5, 0, -5, 0, 0, 5, 5, 5, 5, 0, -5, -10, 5, 5, 5, 5, 5, 0, -10, -10, 0, 5, 0, 0, 0, 0, -10, -20, -10, -10, -5, -5, -10, -10, -20],
+    k: [-30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -20, -30, -30, -40, -40, -30, -30, -20, -10, -20, -20, -20, -20, -20, -20, -10, 20, 20, 0, 0, 0, 0, 20, 20, 20, 30, 10, 0, 0, 10, 30, 20],
+    ke: [-50, -40, -30, -20, -20, -30, -40, -50, -30, -20, -10, 0, 0, -10, -20, -30, -30, -10, 20, 30, 30, 20, -10, -30, -30, -10, 30, 40, 40, 30, -10, -30, -30, -10, 30, 40, 40, 30, -10, -30, -30, -10, 20, 30, 30, 20, -10, -30, -30, -30, 0, 0, 0, 0, -30, -30, -50, -30, -30, -30, -30, -30, -30, -50],
+  };
+  const N8 = [-17, -15, -10, -6, 6, 10, 15, 17], K8 = [-9, -8, -7, -1, 1, 7, 8, 9];
+  const col = p => p && (p === p.toUpperCase() ? 'w' : 'b'), typ = p => p && p.toLowerCase();
+  const file = s => s & 7, rank = s => s >> 3;
+  const sqName = s => 'abcdefgh'[file(s)] + (8 - rank(s));
+  function start() { const b = Array(64).fill(''); 'rnbqkbnr'.split('').forEach((p, i) => { b[i] = p; b[56 + i] = p.toUpperCase(); b[8 + i] = 'p'; b[48 + i] = 'P'; }); return { b, turn: 'w', cs: { K: 1, Q: 1, k: 1, q: 1 }, ep: -1, half: 0, full: 1, keys: [] }; }
+  function attacked(S, sq, by) {
+    const b = S.b, f = file(sq);
+    const pawn = by === 'w' ? 'P' : 'p', dir = by === 'w' ? 8 : -8;
+    for (const df of [-1, 1]) { const s = sq + dir + df; if (s >= 0 && s < 64 && Math.abs(file(s) - f) === 1 && b[s] === pawn) return true; }
+    const kn = by === 'w' ? 'N' : 'n'; for (const d of N8) { const s = sq + d; if (s >= 0 && s < 64 && Math.abs(file(s) - f) <= 2 && b[s] === kn) return true; }
+    const kg = by === 'w' ? 'K' : 'k'; for (const d of K8) { const s = sq + d; if (s >= 0 && s < 64 && Math.abs(file(s) - f) <= 1 && b[s] === kg) return true; }
+    const rq = by === 'w' ? ['R', 'Q'] : ['r', 'q'], bq = by === 'w' ? ['B', 'Q'] : ['b', 'q'];
+    for (const [d, set] of [[-8, rq], [8, rq], [-1, rq], [1, rq], [-9, bq], [-7, bq], [7, bq], [9, bq]]) {
+      let s = sq; for (; ;) { const pf = file(s); s += d; if (s < 0 || s > 63 || Math.abs(file(s) - pf) > 1) break; if (b[s]) { if (set.includes(b[s])) return true; break; } }
+    }
+    return false;
+  }
+  const kingSq = (S, c) => S.b.indexOf(c === 'w' ? 'K' : 'k');
+  const inCheck = (S, c) => attacked(S, kingSq(S, c), c === 'w' ? 'b' : 'w');
+  function pseudo(S, capsOnly) {
+    const out = [], b = S.b, me = S.turn, opp = me === 'w' ? 'b' : 'w';
+    for (let s = 0; s < 64; s++) {
+      const p = b[s]; if (!p || col(p) !== me) continue; const t = typ(p), f = file(s);
+      const add = (to, extra) => { if (capsOnly && !b[to] && !(extra && (extra.ep || extra.promo))) return; out.push(Object.assign({ from: s, to, p, cap: b[to] }, extra)); };
+      if (t === 'p') {
+        const d = me === 'w' ? -8 : 8, startR = me === 'w' ? 6 : 1, lastR = me === 'w' ? 0 : 7, one = s + d;
+        const push = (to, cap) => { if (rank(to) === lastR) for (const pr of 'qrbn') add(to, { promo: me === 'w' ? pr.toUpperCase() : pr }); else add(to); };
+        if (one >= 0 && one < 64 && !b[one]) { push(one); if (rank(s) === startR && !b[one + d] && !capsOnly) add(one + d, { dbl: true }); }
+        for (const df of [-1, 1]) { const to = one + df; if (to < 0 || to > 63 || Math.abs(file(to) - f) !== 1) continue; if (b[to] && col(b[to]) === opp) push(to); else if (to === S.ep) add(to, { ep: true, cap: me === 'w' ? 'p' : 'P' }); }
+      } else if (t === 'n' || t === 'k') {
+        for (const d of t === 'n' ? N8 : K8) { const to = s + d; if (to < 0 || to > 63 || Math.abs(file(to) - f) > (t === 'n' ? 2 : 1)) continue; if (!b[to] || col(b[to]) === opp) add(to); }
+        if (t === 'k' && !capsOnly) {
+          const r = me === 'w' ? 56 : 0, K = me === 'w' ? 'K' : 'k', Q = me === 'w' ? 'Q' : 'q';
+          if (s === r + 4 && !attacked(S, s, opp)) {
+            if (S.cs[K] && !b[r + 5] && !b[r + 6] && b[r + 7] === (me === 'w' ? 'R' : 'r') && !attacked(S, r + 5, opp) && !attacked(S, r + 6, opp)) add(r + 6, { castle: 'K' });
+            if (S.cs[Q] && !b[r + 3] && !b[r + 2] && !b[r + 1] && b[r] === (me === 'w' ? 'R' : 'r') && !attacked(S, r + 3, opp) && !attacked(S, r + 2, opp)) add(r + 2, { castle: 'Q' });
+          }
+        }
+      } else {
+        const dirs = t === 'r' ? [-8, 8, -1, 1] : t === 'b' ? [-9, -7, 7, 9] : [-8, 8, -1, 1, -9, -7, 7, 9];
+        for (const d of dirs) { let to = s; for (; ;) { const pf = file(to); to += d; if (to < 0 || to > 63 || Math.abs(file(to) - pf) > 1) break; if (!b[to]) add(to); else { if (col(b[to]) === opp) add(to); break; } } }
+      }
+    }
+    return out;
+  }
+  function make(S, m) {
+    const b = S.b, u = { m, cs: { ...S.cs }, ep: S.ep, half: S.half, full: S.full };
+    b[m.to] = m.promo || m.p; b[m.from] = '';
+    if (m.ep) b[m.to + (S.turn === 'w' ? 8 : -8)] = '';
+    if (m.castle) { const r = S.turn === 'w' ? 56 : 0; if (m.castle === 'K') { b[r + 5] = b[r + 7]; b[r + 7] = ''; } else { b[r + 3] = b[r]; b[r] = ''; } }
+    if (typ(m.p) === 'k') { if (S.turn === 'w') S.cs.K = S.cs.Q = 0; else S.cs.k = S.cs.q = 0; }
+    for (const [sq, k] of [[63, 'K'], [56, 'Q'], [7, 'k'], [0, 'q']]) if (m.from === sq || m.to === sq) S.cs[k] = 0;
+    S.ep = m.dbl ? (m.from + m.to) / 2 : -1; S.half = typ(m.p) === 'p' || m.cap ? 0 : S.half + 1; if (S.turn === 'b') S.full++;
+    S.turn = S.turn === 'w' ? 'b' : 'w'; return u;
+  }
+  function unmake(S, u) {
+    const m = u.m, b = S.b; S.turn = S.turn === 'w' ? 'b' : 'w'; S.cs = u.cs; S.ep = u.ep; S.half = u.half; S.full = u.full;
+    b[m.from] = m.p; b[m.to] = m.ep ? '' : (m.cap || '');
+    if (m.ep) b[m.to + (S.turn === 'w' ? 8 : -8)] = m.cap;
+    if (m.castle) { const r = S.turn === 'w' ? 56 : 0; if (m.castle === 'K') { b[r + 7] = b[r + 5]; b[r + 5] = ''; } else { b[r] = b[r + 3]; b[r + 3] = ''; } }
+  }
+  function legal(S, capsOnly) { const me = S.turn, out = []; for (const m of pseudo(S, capsOnly)) { const u = make(S, m); if (!inCheck(S, me)) out.push(m); unmake(S, u); } return out; }
+  const key = S => S.b.map(p => p || '.').join('') + S.turn + (S.cs.K ? 'K' : '') + (S.cs.Q ? 'Q' : '') + (S.cs.k ? 'k' : '') + (S.cs.q ? 'q' : '') + S.ep;
+  function evaluate(S) {
+    let s = 0, mat = 0; for (let i = 0; i < 64; i++) { const p = S.b[i]; if (p && typ(p) !== 'p' && typ(p) !== 'k') mat += VAL[typ(p)]; }
+    const end = mat <= 2600;
+    for (let i = 0; i < 64; i++) { const p = S.b[i]; if (!p) continue; const t = typ(p), w = col(p) === 'w', idx = w ? i : (7 - rank(i)) * 8 + file(i); const v = VAL[t] + (t === 'k' && end ? PST.ke : PST[t])[idx]; s += w ? v : -v; }
+    return S.turn === 'w' ? s : -s;
+  }
+  function order(ms) { return ms.sort((a, b) => ((b.cap ? 10 * VAL[typ(b.cap)] - VAL[typ(b.p)] : 0) + (b.promo ? 800 : 0)) - ((a.cap ? 10 * VAL[typ(a.cap)] - VAL[typ(a.p)] : 0) + (a.promo ? 800 : 0))); }
+  function search(S, level) {
+    const cfg = [{ d: 1, t: 200, noise: 120 }, { d: 2, t: 700, noise: 35 }, { d: 4, t: 1300, noise: 0 }, { d: 6, t: 2600, noise: 0 }][level];
+    const t0 = performance.now(); let nodes = 0, stop = false;
+    const q = (alpha, beta, depth) => {
+      if ((++nodes & 1023) === 0 && performance.now() - t0 > cfg.t) stop = true;
+      const stand = evaluate(S); if (stand >= beta) return beta; if (stand > alpha) alpha = stand; if (depth <= 0) return alpha;
+      for (const m of order(legal(S, true))) { const u = make(S, m); const sc = -q(-beta, -alpha, depth - 1); unmake(S, u); if (stop) return alpha; if (sc >= beta) return beta; if (sc > alpha) alpha = sc; }
+      return alpha;
+    };
+    const ab = (depth, alpha, beta, ply) => {
+      if ((++nodes & 1023) === 0 && performance.now() - t0 > cfg.t) stop = true;
+      const ms = legal(S); if (!ms.length) return inCheck(S, S.turn) ? -100000 + ply : 0;
+      if (S.half >= 100) return 0;
+      if (depth <= 0) return q(alpha, beta, level >= 2 ? 6 : 2);
+      for (const m of order(ms)) { const u = make(S, m); const sc = -ab(depth - 1, -beta, -alpha, ply + 1); unmake(S, u); if (stop) return alpha; if (sc >= beta) return beta; if (sc > alpha) alpha = sc; }
+      return alpha;
+    };
+    let root = order(legal(S)); if (!root.length) return null; let best = root[0], bestScores = null;
+    for (let d = 1; d <= cfg.d; d++) {
+      const scores = []; let alpha = -Infinity;
+      // easy levels search every root move fully (exact scores, then add "mistake" noise); strong levels prune with alpha-beta
+      for (const m of root) { const u = make(S, m); const sc = -ab(d - 1, -Infinity, cfg.noise ? Infinity : -alpha, 1); unmake(S, u); if (stop) break; scores.push([m, sc]); if (sc > alpha) alpha = sc; }
+      if (stop && d > 1) break;
+      scores.sort((a, b) => b[1] - a[1]); bestScores = scores; root = scores.map(x => x[0]).concat(root.filter(m => !scores.find(x => x[0] === m)));
+      if (stop) break;
+    }
+    if (bestScores && bestScores.length) { const noisy = bestScores.map(([m, sc]) => [m, sc + (Math.random() - 0.5) * 2 * cfg.noise]); noisy.sort((a, b) => b[1] - a[1]); best = noisy[0][0]; }
+    return best;
+  }
+  function san(S, m) {
+    if (m.castle) return m.castle === 'K' ? 'O-O' : 'O-O-O';
+    const t = typ(m.p); let s = '';
+    if (t === 'p') { if (m.cap) s = 'abcdefgh'[file(m.from)] + 'x'; s += sqName(m.to); if (m.promo) s += '=' + m.promo.toUpperCase(); }
+    else {
+      s = t.toUpperCase(); const others = legal(S).filter(o => o.p === m.p && o.to === m.to && o.from !== m.from);
+      if (others.length) { if (others.every(o => file(o.from) !== file(m.from))) s += 'abcdefgh'[file(m.from)]; else if (others.every(o => rank(o.from) !== rank(m.from))) s += 8 - rank(m.from); else s += sqName(m.from); }
+      if (m.cap) s += 'x'; s += sqName(m.to);
+    }
+    const u = make(S, m); const chk = inCheck(S, S.turn), mate = chk && !legal(S).length; unmake(S, u);
+    return s + (mate ? '#' : chk ? '+' : '');
+  }
+  function status(S) {
+    const ms = legal(S); const chk = inCheck(S, S.turn);
+    if (!ms.length) return chk ? { over: true, win: S.turn === 'w' ? 'b' : 'w', why: 'Checkmate' } : { over: true, why: 'Stalemate — it’s a draw' };
+    if (S.half >= 100) return { over: true, why: '50 moves with no capture — draw' };
+    const pcs = S.b.filter(p => p && typ(p) !== 'k');
+    if (!pcs.length || (pcs.length === 1 && 'nb'.includes(typ(pcs[0])))) return { over: true, why: 'Not enough pieces to win — draw' };
+    const k = key(S); if (S.keys.filter(x => x === k).length >= 3) return { over: true, why: 'Same position 3 times — draw' };
+    return { over: false, check: chk };
+  }
+  return { start, legal, make, unmake, search, san, status, key, inCheck, sqName, col, typ, VAL, kingSq };
+})();
+Apps.reg({
+  id: 'chess', name: 'Chess', icon: '♟️', color: 'linear-gradient(135deg,#8D6E63,#4E342E)', group: 'play', keys: 'board game strategy checkmate', blurb: 'Play the computer or a friend',
+  mount(v, ctx) {
+    const GLY = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+    const LEVELS = ['Easy', 'Medium', 'Hard', 'Expert'];
+    let S, cfg, moves = [], sans = [], sel = -1, targets = [], last = null, hint = null, thinking = false, over = null, flipped = false, alive = true;
+    const boardEl = h('div', { class: 'board', role: 'grid', 'aria-label': 'Chess board' });
+    const status = h('div', { class: 'cstatus' }), capsTop = h('div', { class: 'caps' }), capsBot = h('div', { class: 'caps' }), mlist = h('div', { class: 'mlist', 'aria-label': 'Moves' });
+    const btns = h('div', { class: 'row mt' },
+      h('button', { class: 'btn', onclick: () => undo() }, '↩️ Undo'), h('button', { class: 'btn', onclick: () => doHint() }, '💡 Hint'),
+      h('button', { class: 'btn', onclick: () => { flipped = !flipped; draw(); } }, '🔄 Flip'), h('button', { class: 'btn pri', onclick: () => newGame() }, 'New game'));
+    v.append(h('div', { class: 'chess' }, capsTop, boardEl, capsBot, status, btns, h('div', { class: 'sec' }, 'Moves'), mlist, h('button', { class: 'btn ghost mt', onclick: rules }, '📘 How the pieces move')));
+    const save = () => Prefs.set('chessGame', { cfg, moves: moves.map(m => [m.from, m.to, m.promo || '']) });
+    function load() {
+      const g = Prefs.get('chessGame', null); cfg = g && g.cfg || { mode: 'ai', you: 'w', level: 1 };
+      S = Chess.start(); S.keys = [Chess.key(S)]; moves = []; sans = []; flipped = cfg.mode === 'ai' && cfg.you === 'b';
+      if (g) for (const [f, t, pr] of g.moves) { const m = Chess.legal(S).find(x => x.from === f && x.to === t && (x.promo || '') === pr); if (!m) break; apply(m, true); }
+      draw(); maybeAI();
+    }
+    function apply(m, quiet) {
+      sans.push(Chess.san(S, m)); Chess.make(S, m); S.keys.push(Chess.key(S)); moves.push(m); last = m; sel = -1; targets = []; hint = null;
+      const st = Chess.status(S); over = st.over ? st : null;
+      if (!quiet) { if (m.cap) Sfx.tone(300, 0.08, { type: 'square', vol: 0.06 }); else Sfx.tap(); if (over) setTimeout(() => (over.win ? (cfg.mode === 'ai' && over.win !== cfg.you ? Sfx.bad() : Sfx.win()) : null), 200); save(); }
+    }
+    function undo() {
+      if (thinking || !moves.length) return; let n = cfg.mode === 'ai' ? (S.turn === cfg.you ? 2 : 1) : 1; n = Math.min(n, moves.length);
+      const keep = moves.slice(0, moves.length - n); S = Chess.start(); S.keys = [Chess.key(S)]; moves = []; sans = []; last = null; over = null;
+      for (const m of keep) apply(Chess.legal(S).find(x => x.from === m.from && x.to === m.to && (x.promo || '') === (m.promo || '')), true);
+      save(); draw();
+    }
+    function aiTurn() { return cfg.mode === 'ai' && S.turn !== cfg.you && !over; }
+    function maybeAI() {
+      if (!aiTurn()) return; thinking = true; draw();
+      setTimeout(() => { if (!alive) return; const m = Chess.search(S, cfg.level); thinking = false; if (m) apply(m); draw(); }, 280);
+    }
+    function doHint() { if (over || thinking || aiTurn()) return; status.firstChild && (status.firstChild.textContent = 'Thinking of a good move…'); setTimeout(() => { hint = Chess.search(S, 2); draw(); }, 30); }
+    async function promoPick() { return new Promise(res => { const c = S.turn; const s = UI.sheet({ title: 'Turn your pawn into…', onClose: () => res(null), body: h('div', { class: 'row', style: { justifyContent: 'center' } }, ['q', 'r', 'b', 'n'].map(t => h('button', { class: 'btn', style: { fontSize: '40px', minWidth: '64px' }, onclick: () => { res(c === 'w' ? t.toUpperCase() : t); s.close(); } }, GLY[t] + '︎'))) }); }); }
+    async function tap(sq) {
+      if (over || thinking || aiTurn()) return;
+      const p = S.b[sq];
+      if (sel >= 0 && targets.some(m => m.to === sq)) {
+        let opts = targets.filter(m => m.to === sq), m = opts[0];
+        if (opts.length > 1) { const pr = await promoPick(); if (!pr) return; m = opts.find(x => x.promo === pr); }
+        apply(m); draw(); maybeAI(); return;
+      }
+      if (p && Chess.col(p) === S.turn) { sel = sq; targets = Chess.legal(S).filter(m => m.from === sq); } else { sel = -1; targets = []; }
+      draw();
+    }
+    function draw() {
+      boardEl.innerHTML = ''; const kSq = Chess.inCheck(S, S.turn) ? Chess.kingSq(S, S.turn) : -1;
+      for (let i = 0; i < 64; i++) {
+        const sq = flipped ? 63 - i : i, r = sq >> 3, f = sq & 7, light = (r + f) % 2 === 0, p = S.b[sq];
+        const t = targets.find(m => m.to === sq);
+        const cls = 'sq ' + (light ? 'l' : 'd') + (last && (last.from === sq || last.to === sq) ? ' last' : '') + (sq === sel ? ' sel' : '') + (sq === kSq ? ' chk' : '') + (hint && (hint.from === sq || hint.to === sq) ? ' hint' : '');
+        boardEl.append(h('button', { class: cls, 'aria-label': Chess.sqName(sq) + (p ? ' ' + (Chess.col(p) === 'w' ? 'white ' : 'black ') + ({ k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' })[Chess.typ(p)] : ''), onclick: () => tap(sq) },
+          p ? h('span', { class: 'pc ' + Chess.col(p) }, GLY[Chess.typ(p)] + '︎') : null, t ? h('span', { class: t.cap ? 'ring' : 'dot' }) : null,
+          (flipped ? r === 0 : r === 7) ? h('span', { class: 'co f' }, 'abcdefgh'[f]) : null, (flipped ? f === 7 : f === 0) ? h('span', { class: 'co r' }, 8 - r) : null));
+      }
+      const cap = { w: [], b: [] }; const cnt = {}; for (const p of S.b) if (p) cnt[p] = (cnt[p] || 0) + 1;
+      const full = { p: 8, n: 2, b: 2, r: 2, q: 1 }; let diff = 0;
+      for (const t in full) for (const c of ['w', 'b']) { const P = c === 'w' ? t.toUpperCase() : t, miss = Math.max(0, full[t] - (cnt[P] || 0)); for (let i = 0; i < miss; i++) cap[c].push(GLY[t] + '︎'); diff += (c === 'w' ? -1 : 1) * miss * Chess.VAL[t]; }
+      const bottom = flipped ? 'b' : 'w', top = bottom === 'w' ? 'b' : 'w';
+      const capLine = c => { const lost = c === 'w' ? cap.b : cap.w, adv = (c === 'w' ? diff : -diff) / 100; return lost.join('') + (adv > 0 ? '  +' + adv : ''); };
+      capsTop.textContent = capLine(top); capsBot.textContent = capLine(bottom);
+      status.innerHTML = '';
+      const who = c => cfg.mode === 'ai' ? (c === cfg.you ? 'You' : 'Computer') : (c === 'w' ? 'White' : 'Black');
+      let msg = over ? (over.win ? '🏆 ' + over.why + '! ' + (cfg.mode === 'ai' ? (over.win === cfg.you ? 'You win!' : 'The computer wins.') : (over.win === 'w' ? 'White' : 'Black') + ' wins!') : '🤝 ' + over.why) : thinking ? '🤔 Computer is thinking…' : (Chess.inCheck(S, S.turn) ? '⚠️ Check! ' : '') + (cfg.mode === 'ai' ? (S.turn === cfg.you ? 'Your move' : '') : who(S.turn) + ' to move');
+      if (hint && !over) msg = '💡 Try moving from ' + Chess.sqName(hint.from) + ' to ' + Chess.sqName(hint.to);
+      status.append(h('b', null, msg), h('span', { class: 'pill' }, cfg.mode === 'ai' ? '🤖 ' + LEVELS[cfg.level] : '👥 2 players'));
+      mlist.innerHTML = ''; for (let i = 0; i < sans.length; i += 2) mlist.append(h('span', null, (i / 2 + 1) + '. ' + sans[i] + (sans[i + 1] ? ' ' + sans[i + 1] : '')));
+      mlist.scrollTop = mlist.scrollHeight;
+      if (!moves.length) mlist.append(h('span', { class: 'muted' }, 'No moves yet'));
+    }
+    function newGame() {
+      let mode = cfg.mode, you = cfg.you, level = cfg.level;
+      const body = h('div', null,
+        h('label', { class: 'f' }, h('span', null, 'Play against'), UI.seg([['ai', '🤖 Computer'], ['two', '👥 A friend']], mode, m => { mode = m; aiOpts.hidden = m !== 'ai'; })),
+        h('div', { id: 'aiOpts' }));
+      const aiOpts = body.querySelector('#aiOpts');
+      aiOpts.append(h('label', { class: 'f' }, h('span', null, 'You play'), UI.seg([['w', '⚪ White'], ['b', '⚫ Black'], ['r', '🎲 Random']], you, x => you = x)),
+        h('label', { class: 'f' }, h('span', null, 'Computer level'), UI.seg(LEVELS.map((l, i) => [i, l]), level, x => level = x)));
+      aiOpts.hidden = mode !== 'ai';
+      UI.sheet({ title: 'New game', body, actions: [{ label: 'Cancel' }, { label: 'Start', cls: 'pri', onClick: c => {
+        cfg = { mode, you: you === 'r' ? (Math.random() < 0.5 ? 'w' : 'b') : you, level }; Prefs.set('chessGame', { cfg, moves: [] }); c(); load();
+      } }] });
+    }
+    function rules() {
+      const r = (g, n, t) => h('div', { class: 'li' }, h('span', { class: 'ic', style: { fontSize: '28px' } }, g + '︎'), h('span', { class: 't' }, h('b', null, n), h('small', { style: { whiteSpace: 'normal' } }, t)));
+      UI.sheet({ title: 'How the pieces move', body: h('div', null, h('div', { class: 'list' },
+        r('♚', 'King', 'One square any way. Keep him safe! If he is attacked and can’t escape, that’s checkmate.'),
+        r('♛', 'Queen', 'Any number of squares in a straight line or diagonal. The strongest piece.'),
+        r('♜', 'Rook', 'Any number of squares up, down, left or right.'),
+        r('♝', 'Bishop', 'Any number of squares diagonally. Stays on one color.'),
+        r('♞', 'Knight', 'Jumps in an L: two squares one way, then one to the side. It can hop over pieces.'),
+        r('♟', 'Pawn', 'Forward one (two on its first move). Captures one square diagonally. Reach the far side to become a queen!')),
+        h('p', { class: 'small muted mt' }, 'Special moves: castling (king jumps two squares toward a rook, rook hops over), and en passant (a pawn can capture a pawn that just jumped two squares past it).')) });
+    }
+    load();
+    return () => { alive = false; };
+  },
+});
+
+/* ---- 32-cards.js ---- */
+/* ===== Flashcards: your own decks with spaced review ===== */
+addCSS(`
+.deck{display:flex;flex-direction:column;align-items:flex-start;gap:4px;border:0;border-radius:18px;padding:14px;color:#fff;text-align:left;min-height:118px;box-shadow:var(--shadow);min-width:0}
+.deck .e{font-size:30px;line-height:1}
+.deck b{font-size:17px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.deck small{opacity:.9;font-size:13px}
+.flip{perspective:1200px;margin:6px 0 12px}
+.flip .in{position:relative;min-height:260px;transition:transform .45s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}
+.flip.on .in{transform:rotateY(180deg)}
+.flip .face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:var(--surface);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:22px;text-align:center;font-size:clamp(20px,5.5vw,30px);font-weight:700;white-space:pre-wrap;word-break:break-word;overflow:auto}
+.flip .face small{position:absolute;top:12px;left:16px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.flip .back{transform:rotateY(180deg);background:var(--accent-soft)}
+.choices{display:grid;gap:8px}
+.choices button{text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:14px;font-size:17px;font-weight:600;min-height:54px}
+.choices button.right{background:var(--good-soft);border-color:var(--good)}
+.choices button.wrong{background:var(--bad-soft);border-color:var(--bad)}
+`);
+const DECK_COLORS = ['linear-gradient(135deg,#6C63FF,#3F37C9)', 'linear-gradient(135deg,#FF8A5B,#E5446D)', 'linear-gradient(135deg,#2EC4B6,#118AB2)', 'linear-gradient(135deg,#F9C74F,#F8961E)', 'linear-gradient(135deg,#90BE6D,#43AA8B)', 'linear-gradient(135deg,#C77DFF,#7B2CBF)'];
+const BOX_DAYS = [0, 1, 3, 7, 14, 30];
+const SAMPLE_DECKS = {
+  'World capitals': ['🌍', 'France\tParis', 'Japan\tTokyo', 'Brazil\tBrasília', 'Canada\tOttawa', 'Australia\tCanberra', 'Egypt\tCairo', 'India\tNew Delhi', 'Mexico\tMexico City', 'Kenya\tNairobi', 'Germany\tBerlin', 'Argentina\tBuenos Aires', 'South Korea\tSeoul'],
+  'Spanish starter': ['🇪🇸', 'Hello\tHola', 'Thank you\tGracias', 'Please\tPor favor', 'Good morning\tBuenos días', 'Water\tAgua', 'Friend\tAmigo / Amiga', 'Cat\tGato', 'Dog\tPerro', 'House\tCasa', 'Book\tLibro', 'Red\tRojo', 'How are you?\t¿Cómo estás?'],
+  'Science facts': ['🔬', 'Closest star to Earth\tThe Sun', 'H2O is…\tWater', 'Planet with the biggest rings\tSaturn', 'Gas plants breathe in\tCarbon dioxide', 'Hardest natural material\tDiamond', 'Boiling point of water\t100 °C (212 °F)', 'Largest organ of the human body\tSkin', 'Force that pulls things down\tGravity', 'Speed of light (about)\t300,000 km per second', 'Smallest unit of life\tThe cell'],
+};
+const Cards = {
+  async decks() { return (await DB.all('decks')).sort((a, b) => a.created - b.created); },
+  async cards(deck) { return (await DB.all('cards')).filter(c => c.deck === deck); },
+  due: c => (c.due || 0) <= Date.now(),
+  async addSample(name) { const [emoji, ...rows] = SAMPLE_DECKS[name]; const d = { id: uid(), name, emoji, color: pick(DECK_COLORS), created: Date.now() }; await DB.put('decks', d); for (const r of rows) { const [f, b] = r.split('\t'); await DB.put('cards', { id: uid(), deck: d.id, front: f, back: b, box: 0, due: 0, created: Date.now() }); } return d; },
+  norm: s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim(),
+  close(a, b) { a = this.norm(a); b = this.norm(b); if (a === b) return true; if (b.length < 5) return false; const m = a.length, n = b.length; if (Math.abs(m - n) > 1) return false; const d = Array.from({ length: m + 1 }, (_, i) => [i]); for (let j = 1; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[m][n] <= 1; },
+  async grade(c, ok) { c.seen = (c.seen || 0) + 1; if (ok) { c.right = (c.right || 0) + 1; c.box = Math.min(5, (c.box || 0) + 1); } else { c.wrong = (c.wrong || 0) + 1; c.box = 0; } c.due = Date.now() + BOX_DAYS[c.box] * 86400e3; await DB.put('cards', c); },
+};
+Apps.reg({
+  id: 'cards', name: 'Flashcards', icon: '🗂️', color: 'linear-gradient(135deg,#7F7FD5,#5B5BD6)', group: 'learn', keys: 'study quiz memorize decks review', blurb: 'Make cards, learn anything',
+  async badge() { return (await DB.all('cards')).filter(c => Cards.due(c) && c.seen).length; },
+  mount(v, ctx) {
+    async function home() {
+      v.innerHTML = ''; ctx.setTitle('Flashcards'); ctx.setBack(null); ctx.setActions();
+      const decks = await Cards.decks(), all = await DB.all('cards');
+      v.append(h('button', { class: 'fab', 'aria-label': 'New deck', html: SVG.plus, onclick: newDeck }));
+      if (!decks.length) {
+        v.append(UI.empty('🗂️', 'Make your first deck', 'A deck is a set of cards: a question on the front, the answer on the back. I show you hard cards more often.'),
+          h('div', { class: 'center' }, h('button', { class: 'btn pri', onclick: newDeck }, '＋ New deck')), h('div', { class: 'sec' }, 'Or start with a sample'),
+          h('div', { class: 'list' }, Object.keys(SAMPLE_DECKS).map(n => h('button', { class: 'li', onclick: async () => { const d = await Cards.addSample(n); deck(d); } }, h('span', { class: 'ic' }, SAMPLE_DECKS[n][0]), h('span', { class: 't' }, h('b', null, n), h('small', null, (SAMPLE_DECKS[n].length - 1) + ' cards')), h('span', { class: 'chev' }, '›')))));
+        return;
+      }
+      const due = all.filter(Cards.due).length;
+      v.append(h('p', { class: 'muted', style: { margin: '0 2px 12px' } }, due ? '📚 ' + due + ' cards ready to review.' : '✅ Nothing due right now. Great job!'));
+      v.append(h('div', { class: 'grid2 w' }, decks.map(d => { const cs = all.filter(c => c.deck === d.id), dn = cs.filter(Cards.due).length; return h('button', { class: 'deck', style: { background: d.color }, onclick: () => deck(d) }, h('span', { class: 'e' }, d.emoji || '🗂️'), h('b', null, d.name), h('small', null, cs.length + ' cards' + (dn ? ' · ' + dn + ' due' : ' · all done ✓'))); })));
+      const left = Object.keys(SAMPLE_DECKS).filter(n => !decks.some(d => d.name === n));
+      if (left.length) v.append(h('div', { class: 'sec' }, 'Sample decks'), h('div', { class: 'chips' }, left.map(n => h('button', { class: 'chip', onclick: async () => { await Cards.addSample(n); home(); } }, SAMPLE_DECKS[n][0] + ' ' + n))));
+    }
+    function newDeck(d0) {
+      const d = d0 && d0.id ? d0 : null;
+      const name = h('input', { type: 'text', value: d ? d.name : '', placeholder: 'Deck name (e.g. Science test)' }), emoji = h('input', { type: 'text', value: d ? d.emoji : '📘', maxlength: 4, style: { width: '72px', textAlign: 'center', fontSize: '24px' } });
+      let color = d ? d.color : pick(DECK_COLORS);
+      UI.sheet({ title: d ? 'Edit deck' : 'New deck', body: h('div', null, h('div', { class: 'row nw' }, emoji, name), h('div', { class: 'mt' }, UI.swatches(DECK_COLORS, color, c => color = c))),
+        actions: [{ label: 'Cancel' }, { label: d ? 'Save' : 'Create', cls: 'pri', onClick: async c => { if (!name.value.trim()) return UI.toast('Name your deck'); const rec = Object.assign(d || { id: uid(), created: Date.now() }, { name: name.value.trim(), emoji: emoji.value.trim() || '📘', color }); await DB.put('decks', rec); c(); deck(rec); } }] });
+    }
+    async function deck(d) {
+      v.innerHTML = ''; ctx.setTitle(d.name); ctx.setBack(() => { home(); return true; });
+      ctx.setActions(h('button', { class: 'ib', 'aria-label': 'Deck options', html: SVG.more, onclick: () => UI.menu(d.name, [
+        { icon: '✏️', label: 'Rename or recolor', run: () => newDeck(d) },
+        { icon: '📋', label: 'Add many cards at once', run: () => bulk(d) },
+        { icon: '📤', label: 'Share as text', run: async () => shareText((await Cards.cards(d.id)).map(c => c.front + ' = ' + c.back).join('\n'), d.name) },
+        { icon: '🔄', label: 'Reset progress', run: async () => { for (const c of await Cards.cards(d.id)) { c.box = 0; c.due = 0; c.seen = c.right = c.wrong = 0; await DB.put('cards', c); } deck(d); } },
+        { icon: '🗑️', label: 'Delete deck', danger: true, run: async () => { if (await UI.ask('Delete “' + d.name + '” and all its cards?', { ok: 'Delete', danger: true })) { for (const c of await Cards.cards(d.id)) await DB.del('cards', c.id); await DB.del('decks', d.id); home(); } } },
+      ]) }));
+      const cs = (await Cards.cards(d.id)).sort((a, b) => a.created - b.created), due = cs.filter(Cards.due).length, known = cs.filter(c => (c.box || 0) >= 3).length;
+      v.append(h('div', { class: 'grid3' }, h('div', { class: 'stat' }, h('b', null, cs.length), h('small', null, 'Cards')), h('div', { class: 'stat' }, h('b', null, due), h('small', null, 'Due now')), h('div', { class: 'stat' }, h('b', null, cs.length ? Math.round(100 * known / cs.length) + '%' : '—'), h('small', null, 'Learned'))),
+        h('div', { class: 'grid3 mt' },
+          h('button', { class: 'bigbtn', disabled: !cs.length, onclick: () => study(d, cs, 'flip') }, h('span', { class: 'e' }, '🃏'), h('b', null, 'Study'), h('small', null, 'Flip cards')),
+          h('button', { class: 'bigbtn', disabled: cs.length < 4, onclick: () => study(d, cs, 'quiz') }, h('span', { class: 'e' }, '✅'), h('b', null, 'Quiz'), h('small', null, cs.length < 4 ? 'Needs 4 cards' : 'Pick the answer')),
+          h('button', { class: 'bigbtn', disabled: !cs.length, onclick: () => study(d, cs, 'type') }, h('span', { class: 'e' }, '⌨️'), h('b', null, 'Type it'), h('small', null, 'Spell the answer'))),
+        h('div', { class: 'row', style: { margin: '20px 4px 8px' } }, h('div', { class: 'sec', style: { margin: 0, flex: 1 } }, 'Cards'), h('button', { class: 'btn sm', onclick: () => bulk(d) }, '📋 Paste many'), h('button', { class: 'btn pri sm', onclick: () => editCard(d, null) }, '＋ Card')));
+      if (!cs.length) v.append(UI.empty('✍️', 'No cards yet', 'Add a card: a question on the front and the answer on the back.'));
+      else v.append(h('div', { class: 'list' }, cs.map(c => h('button', { class: 'li', onclick: () => editCard(d, c) }, h('span', { class: 'ic', style: { fontSize: '13px', fontWeight: 800 } }, ['🆕', '1', '2', '3', '4', '⭐'][c.box || 0]), h('span', { class: 't' }, h('b', null, c.front), h('small', null, c.back))))));
+    }
+    function editCard(d, c) {
+      const f = h('textarea', { placeholder: 'Front (question)', style: { minHeight: '80px' } }), b = h('textarea', { placeholder: 'Back (answer)', style: { minHeight: '80px' } });
+      f.value = c ? c.front : ''; b.value = c ? c.back : '';
+      const saveIt = async (close, again) => { if (!f.value.trim() || !b.value.trim()) return UI.toast('Fill in both sides'); await DB.put('cards', Object.assign(c || { id: uid(), deck: d.id, box: 0, due: 0, created: Date.now() }, { front: f.value.trim(), back: b.value.trim() })); if (again) { f.value = b.value = ''; f.focus(); UI.toast('Added — keep going!'); } else { close(); deck(d); } };
+      const s = UI.sheet({ title: c ? 'Edit card' : 'New card', body: h('div', { class: 'stack' }, f, b, c ? h('button', { class: 'btn bad sm', onclick: async () => { await DB.del('cards', c.id); s.close(); deck(d); } }, 'Delete card') : null),
+        onClose: () => { if (!c) deck(d); },
+        actions: c ? [{ label: 'Cancel' }, { label: 'Save', cls: 'pri', onClick: cl => saveIt(cl) }] : [{ label: 'Done' }, { label: 'Add + next', cls: 'pri', onClick: cl => saveIt(cl, true) }] });
+    }
+    function bulk(d) {
+      const ta = h('textarea', { placeholder: 'One card per line:\ndog = perro\ncat = gato\n\n(“ - ”, “ = ”, “:” or a tab between the two sides)', style: { minHeight: '200px' } });
+      UI.sheet({ title: 'Add many cards', body: ta, actions: [{ label: 'Cancel' }, { label: 'Add cards', cls: 'pri', onClick: async c => {
+        let n = 0; for (const line of ta.value.split('\n')) { const m = line.match(/^(.+?)\s*(?:\t| = | - | – |: |=)\s*(.+)$/); if (!m) continue; await DB.put('cards', { id: uid(), deck: d.id, front: m[1].trim(), back: m[2].trim(), box: 0, due: 0, created: Date.now() + n }); n++; }
+        UI.toast(n ? 'Added ' + n + ' cards' : 'No cards found — use “front = back”'); if (n) { c(); deck(d); }
+      } }] });
+    }
+    function study(d, all, mode) {
+      let reverse = Prefs.get('cardsRev', false);
+      let queue = all.filter(Cards.due).sort((a, b) => (a.due || 0) - (b.due || 0)); let practice = false;
+      if (!queue.length) { queue = shuffle(all); practice = true; }
+      queue = queue.slice(0, 30); let i = 0, right = 0, wrong = 0;
+      v.innerHTML = ''; ctx.setTitle(d.name); ctx.setBack(() => { deck(d); return true; });
+      ctx.setActions(h('button', { class: 'btn ghost sm', onclick: () => { reverse = !reverse; Prefs.set('cardsRev', reverse); UI.toast(reverse ? 'Showing answers first' : 'Showing questions first'); show(); } }, '⇄ Flip sides'));
+      const bar = h('i'), info = h('div', { class: 'small muted row' }), box = h('div');
+      v.append(h('div', { class: 'prog' }, bar), info, box);
+      const Q = c => reverse ? c.back : c.front, A = c => reverse ? c.front : c.back;
+      function show() {
+        bar.style.width = (100 * i / queue.length) + '%'; info.innerHTML = ''; info.append(h('span', { class: 'sp' }, practice ? 'Extra practice (nothing due)' : 'Card ' + Math.min(i + 1, queue.length) + ' of ' + queue.length), h('span', null, '✅ ' + right + '  ❌ ' + wrong));
+        box.innerHTML = '';
+        if (i >= queue.length) { Sfx.win(); box.append(UI.empty(right >= wrong ? '🎉' : '💪', right + ' right, ' + wrong + ' to practice', practice ? 'Practice makes perfect!' : 'Cards you missed will come back soon.'), h('div', { class: 'row', style: { justifyContent: 'center' } }, h('button', { class: 'btn', onclick: () => deck(d) }, 'Back to deck'), h('button', { class: 'btn pri', onclick: () => study(d, all, mode) }, 'Go again'))); return; }
+        const c = queue[i];
+        const say = h('button', { class: 'btn sm', onclick: e => { e.stopPropagation(); Speak.say(Q(c)); } }, '🔊');
+        if (mode === 'flip') {
+          const fl = h('div', { class: 'flip', role: 'button', 'aria-label': 'Tap to flip card', tabindex: 0 }, h('div', { class: 'in' }, h('div', { class: 'face' }, h('small', null, reverse ? 'Answer' : 'Question'), Q(c)), h('div', { class: 'face back' }, h('small', null, reverse ? 'Question' : 'Answer'), A(c))));
+          const grade = h('div', { class: 'grid2', hidden: true }, h('button', { class: 'btn bad', style: { minHeight: '56px' }, onclick: () => next(c, false) }, '😕 Not yet'), h('button', { class: 'btn good', style: { minHeight: '56px' }, onclick: () => next(c, true) }, '😀 Got it'));
+          const flipIt = () => { fl.classList.toggle('on'); grade.hidden = false; tapHint.hidden = true; };
+          const tapHint = h('button', { class: 'btn pri wide', style: { minHeight: '56px' }, onclick: flipIt }, 'Show answer');
+          fl.onclick = flipIt; fl.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flipIt(); } };
+          box.append(fl, tapHint, grade, h('div', { class: 'center mt' }, say));
+        } else if (mode === 'quiz') {
+          const opts = shuffle([A(c), ...shuffle(all.filter(x => A(x) !== A(c)).map(A)).filter((x, k, arr) => arr.indexOf(x) === k).slice(0, 3)]);
+          let answered = false;
+          box.append(h('div', { class: 'card center', style: { fontSize: '24px', fontWeight: 700, padding: '28px 18px', margin: '10px 0' } }, Q(c), h('div', null, say)),
+            h('div', { class: 'choices' }, opts.map(o => h('button', { onclick: e => { if (answered) return; answered = true; const ok = o === A(c); e.currentTarget.classList.add(ok ? 'right' : 'wrong'); if (!ok) $$('.choices button', box).find(b => b.textContent === A(c)).classList.add('right'); ok ? Sfx.good() : Sfx.bad(); setTimeout(() => next(c, ok), ok ? 600 : 1500); } }, o))));
+        } else {
+          const inp = h('input', { type: 'text', placeholder: 'Type the answer', autocapitalize: 'off', autocomplete: 'off', spellcheck: 'false', enterkeyhint: 'go' }), fb = h('div', { class: 'mt', style: { minHeight: '60px' } });
+          let answered = false;
+          const check = () => { if (answered) { next(c, okNow); return; } answered = true; okNow = Cards.close(inp.value, A(c)); okNow ? Sfx.good() : Sfx.bad(); fb.innerHTML = ''; fb.append(h('div', { class: okNow ? 'pill good' : 'pill bad', style: { fontSize: '15px' } }, okNow ? '✓ Correct!' : '✗ The answer is: ' + A(c))); go.textContent = 'Next ▶'; };
+          let okNow = false;
+          const go = h('button', { class: 'btn pri', onclick: check }, 'Check');
+          inp.addEventListener('keydown', e => { if (e.key === 'Enter') check(); });
+          box.append(h('div', { class: 'card center', style: { fontSize: '24px', fontWeight: 700, padding: '28px 18px', margin: '10px 0' } }, Q(c), h('div', null, say)), h('div', { class: 'row nw' }, inp, go), fb);
+          setTimeout(() => inp.focus(), 60);
+        }
+      }
+      async function next(c, ok) { if (ok) right++; else { wrong++; if (queue.filter(x => x === c).length < 2) queue.push(c); } if (!practice || !ok) await Cards.grade(c, ok); i++; show(); }
+      show();
+    }
+    home();
+  },
+});
+
+/* ---- 33-games.js ---- */
+/* ===== Fun games: Meteor Dash, Memory Match, Tic-Tac-Toe, Sudoku, Word Scramble, Slide Puzzle ===== */
+addCSS(`
+.gcard{display:flex;gap:12px;align-items:center;border:0;border-radius:18px;padding:14px;color:#fff;text-align:left;min-height:84px;box-shadow:var(--shadow);width:100%}
+.gcard .e{font-size:38px;line-height:1}
+.gcard b{font-size:18px;display:block}
+.gcard small{opacity:.9;font-size:13px}
+.arena{position:relative;border-radius:18px;overflow:hidden;background:#070A18;touch-action:none;user-select:none;-webkit-user-select:none}
+.arena canvas{display:block;width:100%;height:min(68vh,620px);height:min(68dvh,620px)}
+.arena .over{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#fff;text-align:center;background:rgba(5,8,20,.55);padding:20px}
+.arena .over h2{font-size:30px}
+.mm{display:grid;gap:8px;max-width:520px;margin:0 auto}
+.mm button{aspect-ratio:3/4;border:0;border-radius:14px;font-size:clamp(26px,8vw,44px);background:linear-gradient(135deg,#6C63FF,#3F37C9);color:transparent;transition:transform .25s,background .25s;box-shadow:var(--shadow)}
+.mm button.up,.mm button.done{background:var(--surface);color:inherit;transform:rotateY(180deg) scaleX(-1)}
+.mm button.done{opacity:.55}
+.ttt{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:360px;margin:12px auto}
+.ttt button{aspect-ratio:1/1;border:0;border-radius:18px;background:var(--surface);font-size:56px;font-weight:800;box-shadow:var(--shadow);font-family:var(--round)}
+.ttt button.x{color:#FF4D6D}.ttt button.o{color:#3A86FF}
+.ttt button.win{background:var(--good-soft)}
+.sud{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));max-width:460px;margin:8px auto;border:2px solid var(--ink);border-radius:8px;overflow:hidden;background:var(--line)}
+.sud button{aspect-ratio:1/1;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--surface);font-size:clamp(16px,5vw,24px);font-weight:600;padding:0;min-width:0;position:relative;color:var(--accent)}
+.sud button.g{color:var(--ink);font-weight:800}
+.sud button.c3{border-right:2px solid var(--ink)}.sud button.r3{border-bottom:2px solid var(--ink)}
+.sud button.hl{background:var(--surface2)}.sud button.same{background:var(--accent-soft)}
+.sud button.sel{background:#BBD3FF;color:#111}
+.sud button.bad{color:var(--bad)!important;background:var(--bad-soft)}
+.sud .nt{position:absolute;inset:1px;display:grid;grid-template-columns:repeat(3,1fr);font-size:clamp(7px,2vw,10px);color:var(--muted);font-weight:600;line-height:1}
+.numpad{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:4px;max-width:460px;margin:8px auto}
+.numpad button{border:1px solid var(--line);background:var(--surface);border-radius:10px;font-size:22px;font-weight:700;min-height:48px;padding:0}
+.ltiles{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;min-height:58px}
+.ltile{width:48px;height:54px;border:0;border-radius:12px;background:linear-gradient(#FFE08A,#F5B83D);color:#5A3A00;font-size:26px;font-weight:800;box-shadow:0 3px 0 #C98A12;font-family:var(--round);text-transform:uppercase}
+.ltile.used{visibility:hidden}
+.ltile.ans{background:linear-gradient(#C9C4FF,#9D96FF);color:#1E1660;box-shadow:0 3px 0 #6C63FF}
+.slide{display:grid;gap:6px;max-width:380px;margin:12px auto;touch-action:manipulation}
+.slide button{aspect-ratio:1/1;border:0;border-radius:14px;font-size:clamp(22px,7vw,36px);font-weight:800;background:linear-gradient(135deg,#43AA8B,#2A9D8F);color:#fff;box-shadow:0 3px 0 #1E7466;font-family:var(--round)}
+.slide button.blank{visibility:hidden}
+`);
+const GAMES = [
+  ['meteor', '☄️', 'Meteor Dash', 'Dodge space rocks, grab stars', 'linear-gradient(135deg,#3A1C71,#D76D77)'],
+  ['memory', '🃏', 'Memory Match', 'Find all the pairs', 'linear-gradient(135deg,#6C63FF,#3F37C9)'],
+  ['ttt', '❌', 'Tic-Tac-Toe', 'Beat the bot or a friend', 'linear-gradient(135deg,#FF4D6D,#3A86FF)'],
+  ['sudoku', '🔢', 'Sudoku', 'Fill the grid with 1–9', 'linear-gradient(135deg,#118AB2,#073B4C)'],
+  ['words', '🔤', 'Word Scramble', 'Unscramble the letters', 'linear-gradient(135deg,#F8961E,#F3722C)'],
+  ['slide', '🧩', 'Slide Puzzle', 'Put the numbers in order', 'linear-gradient(135deg,#43AA8B,#2A9D8F)'],
+];
+const WORDLIST = 'apple,beach,brave,bread,bunny,candy,chair,cloud,dance,dream,eagle,earth,flame,frost,ghost,giant,grape,happy,heart,horse,house,juice,jelly,kitten,laugh,lemon,light,magic,maple,money,moon,music,night,ocean,panda,party,pizza,plant,queen,quiet,rainbow,river,robot,rocket,shark,sheep,smile,snake,space,spoon,storm,sugar,sunny,table,tiger,toast,train,tulip,unicorn,water,whale,winter,zebra,pencil,garden,planet,castle,dragon,forest,island,jungle,monkey,orange,parrot,pirate,puzzle,rabbit,school,silver,soccer,spider,summer,turtle,violin,window,yellow,banana,bubble,cookie,dinosaur,elephant,football,hamburger,kangaroo,keyboard,mountain,penguin,popcorn,sandwich,scissors,skeleton,snowman,squirrel,strawberry,sunflower,telescope,tomato,treasure,umbrella,volcano,waterfall,airplane,backpack,blanket,butterfly,camera,cheese,chicken,crayon,diamond,doctor,donut,feather,firefly,flower,guitar,hammer,helmet,honey,jacket,ladder,lizard,marble,mirror,muffin,octopus,pillow,pumpkin,rocket,saddle,shadow,thunder,tornado,trumpet,wizard';
+Apps.reg({
+  id: 'games', name: 'Games', icon: '🎮', color: 'linear-gradient(135deg,#00C9FF,#5B2EFF)', group: 'play', keys: 'play fun arcade puzzle sudoku memory', blurb: 'Six quick fun games',
+  mount(v, ctx) {
+    let cleanup = null;
+    const best = (k, val, lower) => { const all = Prefs.get('gameBest', {}); if (val == null) return all[k]; if (all[k] == null || (lower ? val < all[k] : val > all[k])) { all[k] = val; Prefs.set('gameBest', all); return true; } return false; };
+    function home() {
+      if (cleanup) { cleanup(); cleanup = null; } v.innerHTML = ''; ctx.setTitle('Games'); ctx.setBack(null); ctx.setActions();
+      v.append(h('div', { class: 'stack' }, GAMES.map(([id, e, n, d, c]) => h('button', { class: 'gcard', style: { background: c }, onclick: () => open(id, n) }, h('span', { class: 'e' }, e), h('span', null, h('b', null, n), h('small', null, d + (best(id) != null ? ' · Best: ' + (id === 'sudoku' || id === 'memory' || id === 'slide' ? fmtDur(best(id)) : best(id)) : '')))))));
+    }
+    function open(id, name) {
+      if (cleanup) cleanup(); v.innerHTML = ''; ctx.setTitle(name); ctx.setBack(() => { home(); return true; }); ctx.setActions();
+      cleanup = ({ meteor, memory, ttt, sudoku, words, slide })[id](v) || null;
+    }
+    /* ---------- Meteor Dash ---------- */
+    function meteor(el) {
+      const cv = h('canvas'), over = h('div', { class: 'over' }), arena = h('div', { class: 'arena' }, cv, over); el.append(arena, h('p', { class: 'tiny muted center mt' }, 'Slide your finger (or use ← →) to steer. Stars give points. Three hits and it’s over.'));
+      const g = cv.getContext('2d'); let W, H, dpr, ship, rocks, stars, parts, bg, score, lives, t, run = false, raf, last, inv, keys = {}, target = null, spawnR = 0, spawnS = 0;
+      const size = () => { const r = cv.getBoundingClientRect(); dpr = Math.min(2, devicePixelRatio || 1); W = r.width; H = r.height; cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0); };
+      const reset = () => { size(); ship = { x: W / 2, y: H - 70, r: 18 }; rocks = []; stars = []; parts = []; score = 0; lives = 3; t = 0; inv = 0; bg = Array.from({ length: 70 }, () => ({ x: Math.random() * W, y: Math.random() * H, s: Math.random() * 1.6 + .3 })); };
+      const menu = (title, sub) => { over.hidden = false; over.innerHTML = ''; over.append(h('h2', null, title), sub ? h('p', null, sub) : null, h('button', { class: 'btn pri', onclick: start }, run ? 'Play' : '▶ Play'), best('meteor') != null ? h('small', null, 'Best: ' + best('meteor')) : null); };
+      const start = () => { reset(); over.hidden = true; run = true; last = performance.now(); cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); };
+      const boom = (x, y, c, n = 18) => { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = Math.random() * 220 + 40; parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, l: .7, c }); } };
+      function loop(now) {
+        const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt; if (!run) return;
+        const diff = 1 + t / 25;
+        if (keys.ArrowLeft) ship.x -= 420 * dt; if (keys.ArrowRight) ship.x += 420 * dt;
+        if (target != null) ship.x += (target - ship.x) * Math.min(1, dt * 14);
+        ship.x = clamp(ship.x, 20, W - 20);
+        spawnR -= dt; if (spawnR <= 0) { spawnR = Math.max(0.18, 0.9 / diff); const r = 12 + Math.random() * 26; rocks.push({ x: Math.random() * W, y: -r, r, vy: (90 + Math.random() * 90) * diff, vx: (Math.random() - .5) * 60, a: 0, va: (Math.random() - .5) * 3, pts: Array.from({ length: 9 }, () => 0.75 + Math.random() * 0.35) }); }
+        spawnS -= dt; if (spawnS <= 0) { spawnS = 1.6 + Math.random() * 1.6; stars.push({ x: 20 + Math.random() * (W - 40), y: -10, vy: 140 + 30 * diff }); }
+        score += dt * 10 * diff; inv = Math.max(0, inv - dt);
+        g.fillStyle = '#070A18'; g.fillRect(0, 0, W, H);
+        for (const s of bg) { s.y += s.s * 40 * dt * diff; if (s.y > H) { s.y = 0; s.x = Math.random() * W; } g.fillStyle = 'rgba(255,255,255,' + (0.3 + s.s / 3) + ')'; g.fillRect(s.x, s.y, s.s, s.s); }
+        for (const r of rocks) {
+          r.y += r.vy * dt; r.x += r.vx * dt; r.a += r.va * dt;
+          g.save(); g.translate(r.x, r.y); g.rotate(r.a); g.beginPath(); r.pts.forEach((k, i) => { const a = i / r.pts.length * 6.283; g.lineTo(Math.cos(a) * r.r * k, Math.sin(a) * r.r * k); }); g.closePath();
+          g.fillStyle = '#7A6A5C'; g.fill(); g.strokeStyle = '#B9A48E'; g.lineWidth = 2; g.stroke(); g.restore();
+          if (inv <= 0 && Math.hypot(r.x - ship.x, r.y - ship.y) < r.r * 0.85 + ship.r * 0.7) { lives--; inv = 1.6; boom(ship.x, ship.y, '#FF6B6B', 26); r.y = H + 99; Sfx.bad(); try { navigator.vibrate && navigator.vibrate(120); } catch (e) { } if (lives <= 0) return end(); }
+        }
+        rocks = rocks.filter(r => r.y < H + 60);
+        for (const s of stars) {
+          s.y += s.vy * dt; g.save(); g.translate(s.x, s.y); g.rotate(t * 2); g.beginPath(); for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5 - Math.PI / 2, rr = i % 2 ? 5 : 12; g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } g.closePath(); g.fillStyle = '#FFD84D'; g.shadowColor = '#FFD84D'; g.shadowBlur = 12; g.fill(); g.restore();
+          if (Math.hypot(s.x - ship.x, s.y - ship.y) < 28) { s.y = H + 99; score += 25; boom(s.x, s.y, '#FFD84D', 12); Sfx.good(); }
+        }
+        stars = stars.filter(s => s.y < H + 20);
+        for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.l -= dt; g.globalAlpha = Math.max(0, p.l / .7); g.fillStyle = p.c; g.fillRect(p.x, p.y, 3, 3); } g.globalAlpha = 1; parts = parts.filter(p => p.l > 0);
+        if (!(inv > 0 && Math.floor(t * 10) % 2)) {
+          g.save(); g.translate(ship.x, ship.y);
+          g.fillStyle = 'rgba(255,140,40,' + (0.6 + Math.random() * .4) + ')'; g.beginPath(); g.moveTo(-7, 14); g.lineTo(0, 26 + Math.random() * 10); g.lineTo(7, 14); g.fill();
+          g.beginPath(); g.moveTo(0, -22); g.lineTo(16, 16); g.lineTo(0, 9); g.lineTo(-16, 16); g.closePath(); const sg = g.createLinearGradient(0, -22, 0, 16); sg.addColorStop(0, '#E0F2FF'); sg.addColorStop(1, '#4C8DFF'); g.fillStyle = sg; g.fill();
+          g.fillStyle = '#1C2B5A'; g.beginPath(); g.ellipse(0, -4, 4, 7, 0, 0, 6.283); g.fill(); g.restore();
+        }
+        g.fillStyle = '#fff'; g.font = '700 20px ' + getComputedStyle(document.body).fontFamily; g.fillText('⭐ ' + Math.floor(score), 14, 30); g.textAlign = 'right'; g.fillText('❤️'.repeat(Math.max(0, lives)), W - 14, 30); g.textAlign = 'left';
+        raf = requestAnimationFrame(loop);
+      }
+      function end() { run = false; const s = Math.floor(score); const nb = best('meteor', s); if (nb) Sfx.win(); menu(nb ? '🏆 New best: ' + s : 'Score: ' + s, 'You survived ' + Math.floor(t) + ' seconds.'); }
+      const pdown = e => { const r = cv.getBoundingClientRect(); target = e.clientX - r.left; };
+      cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pdown(e); }); cv.addEventListener('pointermove', e => { if (e.buttons || e.pointerType === 'touch') pdown(e); }); cv.addEventListener('pointerup', () => target = null);
+      const kd = e => { keys[e.key] = e.type === 'keydown'; if (e.key.startsWith('Arrow')) { e.preventDefault(); target = null; } };
+      addEventListener('keydown', kd); addEventListener('keyup', kd);
+      const vis = () => { if (document.hidden && run) { run = false; menu('Paused'); } };
+      document.addEventListener('visibilitychange', vis);
+      requestAnimationFrame(() => { reset(); g.fillStyle = '#070A18'; g.fillRect(0, 0, W, H); menu('☄️ Meteor Dash', 'Dodge the rocks, catch the stars!'); });
+      return () => { run = false; cancelAnimationFrame(raf); removeEventListener('keydown', kd); removeEventListener('keyup', kd); document.removeEventListener('visibilitychange', vis); };
+    }
+    /* ---------- Memory Match ---------- */
+    function memory(el) {
+      const SETS = '🐶🐱🦊🐼🐸🦄🐙🦋🐢🦁🐧🐝🍕🍩🍓🚀⚽🎸🌈⭐🎈🍉🌵🐳'.match(/\p{Extended_Pictographic}/gu);
+      let size = Prefs.get('memSize', 8), cards, up = [], moves = 0, found = 0, t0 = 0, timer = null, lock = false;
+      const grid = h('div', { class: 'mm' }), info = h('div', { class: 'row mb' });
+      el.append(UI.seg([[6, 'Easy'], [8, 'Medium'], [12, 'Hard']], size, s => { size = s; Prefs.set('memSize', s); deal(); }), h('div', { class: 'mt' }, info), grid);
+      const paint = () => { info.innerHTML = ''; info.append(h('span', { class: 'pill' }, '🔁 ' + moves + ' moves'), h('span', { class: 'pill' }, '⏱️ ' + fmtDur(t0 ? (Date.now() - t0) / 1000 : 0)), h('span', { class: 'sp' }), best('memory' + size) != null ? h('span', { class: 'small muted' }, 'Best ' + fmtDur(best('memory' + size))) : null); };
+      function deal() {
+        clearInterval(timer); t0 = 0; moves = 0; found = 0; up = []; lock = false;
+        cards = shuffle(shuffle(SETS).slice(0, size).flatMap(e => [e, e])); grid.style.gridTemplateColumns = 'repeat(' + (size === 6 ? 4 : size === 8 ? 4 : 6) + ',minmax(0,1fr))';
+        grid.innerHTML = ''; cards.forEach((e, i) => grid.append(h('button', { 'aria-label': 'Card ' + (i + 1), onclick: ev => flip(i, ev.currentTarget) }, e))); paint();
+      }
+      function flip(i, b) {
+        if (lock || b.classList.contains('up') || b.classList.contains('done')) return;
+        if (!t0) { t0 = Date.now(); timer = setInterval(paint, 1000); }
+        b.classList.add('up'); up.push([i, b]); Sfx.tap();
+        if (up.length === 2) {
+          moves++; const [[a, ba], [c, bc]] = up; up = [];
+          if (cards[a] === cards[c]) { setTimeout(() => { ba.classList.add('done'); bc.classList.add('done'); }, 250); found++; Sfx.good(); if (found === size) { clearInterval(timer); const s = Math.round((Date.now() - t0) / 1000); const nb = best('memory' + size, s, true); best('memory', s, true); setTimeout(() => { Sfx.win(); UI.toast((nb ? '🏆 New best! ' : '🎉 ') + 'All pairs in ' + moves + ' moves, ' + fmtDur(s)); }, 400); } }
+          else { lock = true; setTimeout(() => { ba.classList.remove('up'); bc.classList.remove('up'); lock = false; }, 800); }
+        }
+        paint();
+      }
+      deal(); return () => clearInterval(timer);
+    }
+    /* ---------- Tic-Tac-Toe ---------- */
+    function ttt(el) {
+      let mode = Prefs.get('tttMode', 'hard'), b, turn, done, score = Prefs.get('tttScore', { x: 0, o: 0, d: 0 });
+      const LINES = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+      const grid = h('div', { class: 'ttt' }), info = h('div', { class: 'center', style: { fontSize: '18px', fontWeight: 700, minHeight: '28px' } }), sc = h('div', { class: 'grid3' });
+      el.append(UI.seg([['easy', '🤖 Easy'], ['hard', '🤖 Hard'], ['two', '👥 Friend']], mode, m => { mode = m; Prefs.set('tttMode', m); reset(); }), grid, info, sc, h('div', { class: 'center mt' }, h('button', { class: 'btn pri', onclick: () => reset() }, 'New round')));
+      const win = bb => { for (const l of LINES) if (bb[l[0]] && bb[l[0]] === bb[l[1]] && bb[l[1]] === bb[l[2]]) return l; return null; };
+      const mm = (bb, p) => { const w = win(bb); if (w) return bb[w[0]] === 'o' ? 10 : -10; if (bb.every(Boolean)) return 0; let bestS = p === 'o' ? -99 : 99; for (let i = 0; i < 9; i++) if (!bb[i]) { bb[i] = p; const s = mm(bb, p === 'o' ? 'x' : 'o'); bb[i] = ''; bestS = p === 'o' ? Math.max(bestS, s) : Math.min(bestS, s); } return bestS; };
+      const bot = () => { const free = b.map((x, i) => x ? -1 : i).filter(i => i >= 0); if (mode === 'easy' && Math.random() < 0.6) return pick(free); let bi = free[0], bs = -99; for (const i of free) { b[i] = 'o'; const s = mm(b, 'x'); b[i] = ''; if (s > bs) { bs = s; bi = i; } } return bi; };
+      function reset() { b = Array(9).fill(''); turn = 'x'; done = false; draw(); }
+      function play(i) {
+        if (done || b[i] || (mode !== 'two' && turn === 'o')) return; b[i] = turn; Sfx.tap(); turn = turn === 'x' ? 'o' : 'x'; check();
+        if (!done && mode !== 'two') setTimeout(() => { b[bot()] = 'o'; turn = 'x'; check(); draw(); }, 350);
+        draw();
+      }
+      function check() { const w = win(b); if (w) { done = w; score[b[w[0]]]++; Prefs.set('tttScore', score); (mode !== 'two' && b[w[0]] === 'o') ? Sfx.bad() : Sfx.win(); } else if (b.every(Boolean)) { done = true; score.d++; Prefs.set('tttScore', score); } }
+      function draw() {
+        grid.innerHTML = ''; b.forEach((x, i) => grid.append(h('button', { class: (x || '') + (Array.isArray(done) && done.includes(i) ? ' win' : ''), 'aria-label': 'Square ' + (i + 1) + (x ? ' ' + x : ''), onclick: () => play(i) }, x === 'x' ? '✕' : x === 'o' ? '◯' : '')));
+        info.textContent = Array.isArray(done) ? (b[done[0]] === 'x' ? (mode === 'two' ? '✕ wins!' : '🎉 You win!') : (mode === 'two' ? '◯ wins!' : '🤖 The bot wins!')) : done ? '🤝 It’s a tie!' : (mode === 'two' ? (turn === 'x' ? '✕' : '◯') + ' to play' : turn === 'x' ? 'Your turn (✕)' : 'Bot is thinking…');
+        sc.innerHTML = ''; sc.append(h('div', { class: 'stat' }, h('b', null, score.x), h('small', null, mode === 'two' ? '✕ wins' : 'You')), h('div', { class: 'stat' }, h('b', null, score.d), h('small', null, 'Ties')), h('div', { class: 'stat' }, h('b', null, score.o), h('small', null, mode === 'two' ? '◯ wins' : 'Bot')));
+      }
+      reset();
+    }
+    /* ---------- Sudoku ---------- */
+    function sudoku(el) {
+      const solveCount = (a, limit = 2) => { let n = 0; const rec = () => { let idx = a.indexOf(0); if (idx < 0) { n++; return n >= limit; } const r = Math.floor(idx / 9), c = idx % 9; for (const d of [1, 2, 3, 4, 5, 6, 7, 8, 9]) if (ok(a, r, c, d)) { a[idx] = d; if (rec()) { a[idx] = 0; return true; } a[idx] = 0; } return false; }; rec(); return n; };
+      const ok = (a, r, c, d) => { for (let i = 0; i < 9; i++) if (a[r * 9 + i] === d || a[i * 9 + c] === d) return false; const br = r - r % 3, bc = c - c % 3; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) if (a[(br + i) * 9 + bc + j] === d) return false; return true; };
+      const full = () => { const a = Array(81).fill(0); const rec = i => { if (i === 81) return true; const r = Math.floor(i / 9), c = i % 9; for (const d of shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9])) if (ok(a, r, c, d)) { a[i] = d; if (rec(i + 1)) return true; a[i] = 0; } return false; }; rec(0); return a; };
+      const make = holes => { const sol = full(), puz = sol.slice(); let removed = 0; for (const i of shuffle([...Array(81).keys()])) { if (removed >= holes) break; const k = puz[i]; puz[i] = 0; if (solveCount(puz.slice()) !== 1) puz[i] = k; else removed++; } return { sol, puz, cur: puz.slice(), notes: Array.from({ length: 81 }, () => []), level: holes, t: 0, mistakes: 0 }; };
+      let G = Prefs.get('sudoku', null), sel = -1, notesMode = false, timer = null;
+      const grid = h('div', { class: 'sud', role: 'grid' }), pad = h('div', { class: 'numpad' }), info = h('div', { class: 'row' });
+      const noteB = h('button', { class: 'btn sm', onclick: () => { notesMode = !notesMode; noteB.classList.toggle('pri', notesMode); } }, '✏️ Notes');
+      el.append(info, grid, pad, h('div', { class: 'row', style: { justifyContent: 'center' } }, noteB, h('button', { class: 'btn sm', onclick: () => input(0) }, '⌫ Erase'), h('button', { class: 'btn sm', onclick: hint }, '💡 Hint'), h('button', { class: 'btn sm pri', onclick: newGame }, 'New')));
+      for (let d = 1; d <= 9; d++) pad.append(h('button', { onclick: () => input(d) }, d));
+      function newGame() { UI.menu('New Sudoku', [['🙂', 'Easy', 36], ['🤔', 'Medium', 46], ['😤', 'Hard', 52]].map(([i, n, holes]) => ({ icon: i, label: n, run: () => { UI.toast('Making a puzzle…'); setTimeout(() => { G = make(holes); sel = -1; save(); draw(); start(); }, 30); } }))); }
+      const save = () => Prefs.set('sudoku', G);
+      const start = () => { clearInterval(timer); timer = setInterval(() => { if (!G || G.won || document.hidden) return; G.t++; if (G.t % 5 === 0) save(); paintInfo(); }, 1000); };
+      const paintInfo = () => { info.innerHTML = ''; if (!G) return; info.append(h('span', { class: 'pill' }, ['', 'Easy', 'Medium', 'Hard'][G.level === 36 ? 1 : G.level === 46 ? 2 : 3]), h('span', { class: 'pill' }, '⏱️ ' + fmtDur(G.t)), h('span', { class: 'pill' + (G.mistakes ? ' bad' : '') }, '❌ ' + G.mistakes), h('span', { class: 'sp' })); };
+      function input(d) {
+        if (!G || G.won || sel < 0 || G.puz[sel]) return;
+        if (notesMode && d) { const n = G.notes[sel]; const k = n.indexOf(d); k >= 0 ? n.splice(k, 1) : n.push(d); }
+        else { G.cur[sel] = d; G.notes[sel] = []; if (d && d !== G.sol[sel]) { G.mistakes++; Sfx.bad(); } else if (d) { Sfx.tap(); const r = Math.floor(sel / 9), c = sel % 9; for (let i = 0; i < 9; i++) { G.notes[r * 9 + i] = G.notes[r * 9 + i].filter(x => x !== d); G.notes[i * 9 + c] = G.notes[i * 9 + c].filter(x => x !== d); } } }
+        if (G.cur.every((x, i) => x === G.sol[i])) { G.won = true; Sfx.win(); const nb = best('sudoku', G.t, true); UI.toast((nb ? '🏆 New best! ' : '🎉 Solved! ') + fmtDur(G.t)); }
+        save(); draw();
+      }
+      function hint() { if (!G || G.won) return; let i = sel >= 0 && !G.puz[sel] && G.cur[sel] !== G.sol[sel] ? sel : G.cur.findIndex((x, k) => x !== G.sol[k]); if (i < 0) return; sel = i; notesMode = false; noteB.classList.remove('pri'); input(G.sol[i]); }
+      function draw() {
+        grid.innerHTML = ''; if (!G) return; const sv = sel >= 0 ? G.cur[sel] : 0;
+        for (let i = 0; i < 81; i++) {
+          const r = Math.floor(i / 9), c = i % 9, val = G.cur[i];
+          const rel = sel >= 0 && (Math.floor(sel / 9) === r || sel % 9 === c || (Math.floor(Math.floor(sel / 9) / 3) === Math.floor(r / 3) && Math.floor(sel % 9 / 3) === Math.floor(c / 3)));
+          const cls = (G.puz[i] ? 'g' : '') + (c % 3 === 2 && c < 8 ? ' c3' : '') + (r % 3 === 2 && r < 8 ? ' r3' : '') + (i === sel ? ' sel' : sv && val === sv ? ' same' : rel ? ' hl' : '') + (val && val !== G.sol[i] ? ' bad' : '');
+          grid.append(h('button', { class: cls, 'aria-label': 'Row ' + (r + 1) + ' column ' + (c + 1) + (val ? ': ' + val : ''), onclick: () => { sel = i; draw(); } }, val ? String(val) : G.notes[i].length ? h('span', { class: 'nt' }, [1, 2, 3, 4, 5, 6, 7, 8, 9].map(d => h('span', null, G.notes[i].includes(d) ? d : ''))) : ''));
+        }
+        $$('button', pad).forEach((b, k) => { const cnt = G.cur.filter(x => x === k + 1).length; b.style.opacity = cnt >= 9 ? .3 : 1; });
+        paintInfo();
+      }
+      const kd = e => { if (/^[1-9]$/.test(e.key)) input(+e.key); else if (e.key === 'Backspace' || e.key === 'Delete') input(0); else if (e.key.startsWith('Arrow') && sel >= 0) { const m = { ArrowUp: -9, ArrowDown: 9, ArrowLeft: -1, ArrowRight: 1 }[e.key]; sel = clamp(sel + m, 0, 80); draw(); } };
+      addEventListener('keydown', kd);
+      if (!G) { G = make(36); save(); } draw(); start();
+      return () => { clearInterval(timer); removeEventListener('keydown', kd); save(); };
+    }
+    /* ---------- Word Scramble ---------- */
+    function words(el) {
+      const list = [...new Set(WORDLIST.split(','))]; let word, letters, ans, score = 0, streak = 0, hints = 0;
+      const sbox = h('div', { class: 'grid3' }), clue = h('p', { class: 'center muted', style: { minHeight: '48px', margin: '10px 0' } }), ansEl = h('div', { class: 'ltiles', style: { marginBottom: '14px' } }), pool = h('div', { class: 'ltiles' });
+      el.append(sbox, clue, h('div', { class: 'card' }, ansEl, pool), h('div', { class: 'row mt', style: { justifyContent: 'center' } }, h('button', { class: 'btn', onclick: () => { hints++; giveHint(); } }, '💡 Hint'), h('button', { class: 'btn', onclick: () => { ans = []; draw(); } }, '↺ Clear'), h('button', { class: 'btn', onclick: () => { streak = 0; UI.toast('It was: ' + word.toUpperCase()); next(); } }, 'Skip ▶')));
+      const paintS = () => { sbox.innerHTML = ''; sbox.append(h('div', { class: 'stat' }, h('b', null, score), h('small', null, 'Score')), h('div', { class: 'stat' }, h('b', null, streak), h('small', null, 'Streak 🔥')), h('div', { class: 'stat' }, h('b', null, best('words') || 0), h('small', null, 'Best'))); };
+      function next() {
+        const lvl = Math.min(10, 4 + Math.floor(score / 50)); const pool2 = list.filter(w => w.length <= lvl + 1 && w.length >= Math.min(lvl - 1, 7));
+        word = pick(pool2.length ? pool2 : list); do { letters = shuffle(word.split('')).map((ch, i) => ({ ch, i })); } while (letters.map(x => x.ch).join('') === word && word.length > 2);
+        ans = []; hints = 0; clue.textContent = word.length + ' letters'; draw(); paintS();
+        if (typeof Dict !== 'undefined') Dict.lookup(word).then(r => { if (r && r.senses && r.senses[0] && clue.textContent.endsWith('letters')) clue.textContent = '“' + r.senses[0][1].replace(new RegExp(word, 'gi'), '___') + '”'; }).catch(() => { });
+      }
+      function giveHint() { const k = ans.length; if (k >= word.length) return; const need = word[k]; if (ans.some((a, j) => a.ch !== word[j])) { ans = []; } const t = letters.find(l => l.ch === word[ans.length] && !ans.includes(l)); if (t) ans.push(t); draw(); check(); }
+      function check() {
+        if (ans.length !== word.length) return; const guess = ans.map(a => a.ch).join('');
+        if (guess === word) { const pts = Math.max(2, word.length * 5 - hints * 4); score += pts; streak++; Sfx.good(); best('words', score); UI.toast('✅ ' + word.toUpperCase() + ' +' + pts); setTimeout(next, 600); }
+        else { Sfx.bad(); ansEl.classList.add('flash-bad'); setTimeout(() => { ansEl.classList.remove('flash-bad'); ans = []; draw(); }, 600); streak = 0; paintS(); }
+      }
+      function draw() {
+        ansEl.innerHTML = ''; pool.innerHTML = '';
+        for (let k = 0; k < word.length; k++) { const a = ans[k]; ansEl.append(a ? h('button', { class: 'ltile ans', onclick: () => { ans.splice(k); draw(); } }, a.ch) : h('span', { class: 'ltile', style: { background: 'var(--surface2)', boxShadow: 'none', display: 'inline-block' } })); }
+        for (const l of letters) pool.append(h('button', { class: 'ltile' + (ans.includes(l) ? ' used' : ''), onclick: () => { if (ans.includes(l)) return; ans.push(l); Sfx.tap(); draw(); check(); } }, l.ch));
+      }
+      next();
+    }
+    /* ---------- Slide Puzzle ---------- */
+    function slide(el) {
+      let n = Prefs.get('slideN', 3), tiles, moves, t0, timer;
+      const grid = h('div', { class: 'slide' }), info = h('div', { class: 'row', style: { justifyContent: 'center' } });
+      el.append(UI.seg([[3, '3 × 3'], [4, '4 × 4'], [5, '5 × 5']], n, x => { n = x; Prefs.set('slideN', x); deal(); }), h('div', { class: 'mt' }, info), grid, h('div', { class: 'center' }, h('button', { class: 'btn pri', onclick: () => deal() }, 'Shuffle')));
+      const paint = () => { info.innerHTML = ''; info.append(h('span', { class: 'pill' }, '🔁 ' + moves), h('span', { class: 'pill' }, '⏱️ ' + fmtDur(t0 ? (Date.now() - t0) / 1000 : 0))); };
+      function deal() {
+        clearInterval(timer); t0 = 0; moves = 0; tiles = [...Array(n * n).keys()].map(i => (i + 1) % (n * n));
+        let blank = n * n - 1, prev = -1; for (let k = 0; k < n * n * 40; k++) { const opts = nb(blank).filter(x => x !== prev); const m = pick(opts); [tiles[blank], tiles[m]] = [tiles[m], tiles[blank]]; prev = blank; blank = m; }
+        grid.style.gridTemplateColumns = 'repeat(' + n + ',minmax(0,1fr))'; draw();
+      }
+      const nb = i => { const r = Math.floor(i / n), c = i % n, o = []; if (r > 0) o.push(i - n); if (r < n - 1) o.push(i + n); if (c > 0) o.push(i - 1); if (c < n - 1) o.push(i + 1); return o; };
+      function tap(i) {
+        const b = tiles.indexOf(0); if (!nb(b).includes(i)) return; if (!t0) { t0 = Date.now(); timer = setInterval(paint, 1000); }
+        [tiles[b], tiles[i]] = [tiles[i], tiles[b]]; moves++; Sfx.tap(); draw();
+        if (tiles.every((x, k) => x === (k + 1) % (n * n))) { clearInterval(timer); const s = Math.round((Date.now() - t0) / 1000); const nbst = best('slide' + n, s, true); best('slide', s, true); Sfx.win(); UI.toast((nbst ? '🏆 New best! ' : '🎉 Solved in ') + moves + ' moves, ' + fmtDur(s)); }
+      }
+      function draw() { grid.innerHTML = ''; tiles.forEach((x, i) => grid.append(h('button', { class: x ? '' : 'blank', 'aria-label': x ? 'Tile ' + x : 'Empty', onclick: () => tap(i) }, x || ''))); paint(); }
+      deal(); return () => clearInterval(timer);
+    }
+    home();
+    return () => { if (cleanup) cleanup(); };
+  },
+});
+
+/* ---- 34-learn.js ---- */
+/* ===== Learn: math practice, periodic table, solar system, world quiz, word quiz ===== */
+addCSS(`
+.ptable{display:grid;grid-template-columns:repeat(18,minmax(30px,1fr));gap:2px;overflow-x:auto;padding-bottom:6px;min-width:0}
+.ptable-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -4px;padding:0 4px}
+.ptable-wrap .ptable{min-width:640px}
+.el{aspect-ratio:1/1.15;border:0;border-radius:5px;padding:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1;color:#111;min-width:0}
+.el b{font-size:14px}
+.el small{font-size:8px;opacity:.7}
+.el.dim{opacity:.25}
+.qbig{font-size:44px;font-weight:800;text-align:center;font-family:var(--round);padding:14px 0 6px;font-variant-numeric:tabular-nums}
+.ansbox{font-size:34px;font-weight:800;text-align:center;min-height:56px;border-radius:14px;background:var(--surface2);padding:6px;font-family:var(--round);margin-bottom:10px}
+.orbit canvas{width:100%;height:340px;display:block;border-radius:18px;background:radial-gradient(circle at 50% 50%,#1B1F3B,#05060D)}
+`);
+const ELEMENTS = 'H,Hydrogen,1.008,nm|He,Helium,4.0026,ng|Li,Lithium,6.94,am|Be,Beryllium,9.0122,ae|B,Boron,10.81,md|C,Carbon,12.011,nm|N,Nitrogen,14.007,nm|O,Oxygen,15.999,nm|F,Fluorine,18.998,hg|Ne,Neon,20.180,ng|Na,Sodium,22.990,am|Mg,Magnesium,24.305,ae|Al,Aluminium,26.982,pt|Si,Silicon,28.085,md|P,Phosphorus,30.974,nm|S,Sulfur,32.06,nm|Cl,Chlorine,35.45,hg|Ar,Argon,39.948,ng|K,Potassium,39.098,am|Ca,Calcium,40.078,ae|Sc,Scandium,44.956,tm|Ti,Titanium,47.867,tm|V,Vanadium,50.942,tm|Cr,Chromium,51.996,tm|Mn,Manganese,54.938,tm|Fe,Iron,55.845,tm|Co,Cobalt,58.933,tm|Ni,Nickel,58.693,tm|Cu,Copper,63.546,tm|Zn,Zinc,65.38,tm|Ga,Gallium,69.723,pt|Ge,Germanium,72.630,md|As,Arsenic,74.922,md|Se,Selenium,78.971,nm|Br,Bromine,79.904,hg|Kr,Krypton,83.798,ng|Rb,Rubidium,85.468,am|Sr,Strontium,87.62,ae|Y,Yttrium,88.906,tm|Zr,Zirconium,91.224,tm|Nb,Niobium,92.906,tm|Mo,Molybdenum,95.95,tm|Tc,Technetium,98,tm|Ru,Ruthenium,101.07,tm|Rh,Rhodium,102.91,tm|Pd,Palladium,106.42,tm|Ag,Silver,107.87,tm|Cd,Cadmium,112.41,tm|In,Indium,114.82,pt|Sn,Tin,118.71,pt|Sb,Antimony,121.76,md|Te,Tellurium,127.60,md|I,Iodine,126.90,hg|Xe,Xenon,131.29,ng|Cs,Caesium,132.91,am|Ba,Barium,137.33,ae|La,Lanthanum,138.91,ln|Ce,Cerium,140.12,ln|Pr,Praseodymium,140.91,ln|Nd,Neodymium,144.24,ln|Pm,Promethium,145,ln|Sm,Samarium,150.36,ln|Eu,Europium,151.96,ln|Gd,Gadolinium,157.25,ln|Tb,Terbium,158.93,ln|Dy,Dysprosium,162.50,ln|Ho,Holmium,164.93,ln|Er,Erbium,167.26,ln|Tm,Thulium,168.93,ln|Yb,Ytterbium,173.05,ln|Lu,Lutetium,174.97,ln|Hf,Hafnium,178.49,tm|Ta,Tantalum,180.95,tm|W,Tungsten,183.84,tm|Re,Rhenium,186.21,tm|Os,Osmium,190.23,tm|Ir,Iridium,192.22,tm|Pt,Platinum,195.08,tm|Au,Gold,196.97,tm|Hg,Mercury,200.59,tm|Tl,Thallium,204.38,pt|Pb,Lead,207.2,pt|Bi,Bismuth,208.98,pt|Po,Polonium,209,pt|At,Astatine,210,hg|Rn,Radon,222,ng|Fr,Francium,223,am|Ra,Radium,226,ae|Ac,Actinium,227,ac|Th,Thorium,232.04,ac|Pa,Protactinium,231.04,ac|U,Uranium,238.03,ac|Np,Neptunium,237,ac|Pu,Plutonium,244,ac|Am,Americium,243,ac|Cm,Curium,247,ac|Bk,Berkelium,247,ac|Cf,Californium,251,ac|Es,Einsteinium,252,ac|Fm,Fermium,257,ac|Md,Mendelevium,258,ac|No,Nobelium,259,ac|Lr,Lawrencium,266,ac|Rf,Rutherfordium,267,tm|Db,Dubnium,268,tm|Sg,Seaborgium,269,tm|Bh,Bohrium,270,tm|Hs,Hassium,269,tm|Mt,Meitnerium,278,tm|Ds,Darmstadtium,281,tm|Rg,Roentgenium,282,tm|Cn,Copernicium,285,tm|Nh,Nihonium,286,pt|Fl,Flerovium,289,pt|Mc,Moscovium,290,pt|Lv,Livermorium,293,pt|Ts,Tennessine,294,hg|Og,Oganesson,294,ng'.split('|').map((s, i) => { const [sym, name, mass, cat] = s.split(','); return { n: i + 1, sym, name, mass: +mass, cat }; });
+const EL_CATS = { am: ['Alkali metal', '#FF9F9F'], ae: ['Alkaline earth metal', '#FFD08A'], tm: ['Transition metal', '#F5C6E8'], pt: ['Post-transition metal', '#C8D6E5'], md: ['Metalloid', '#C7E9B0'], nm: ['Nonmetal', '#A0E7E5'], hg: ['Halogen', '#FFF59D'], ng: ['Noble gas', '#C3B1E1'], ln: ['Lanthanide', '#FFCBA4'], ac: ['Actinide', '#F4A3A8'] };
+const EL_FACTS = { H: 'The lightest element. Stars like the Sun burn it to shine.', He: 'Makes balloons float and your voice squeaky.', Li: 'Used in rechargeable phone batteries.', C: 'Diamonds and pencil “lead” are both pure carbon. All living things contain it.', N: 'About 78% of the air you breathe.', O: 'You need it to live. About 21% of the air.', F: 'Helps protect teeth — it’s in toothpaste.', Ne: 'Glows bright red-orange in neon signs.', Na: 'Half of table salt (sodium chloride).', Mg: 'Burns with a dazzling white flash in fireworks.', Al: 'Light metal used for cans and planes.', Si: 'Computer chips are made from it. Sand is mostly silicon and oxygen.', S: 'Its compounds smell like rotten eggs.', Cl: 'Keeps swimming pools clean.', K: 'Bananas are full of it.', Ca: 'Makes your bones and teeth strong.', Ti: 'Strong and light — used in jets and bike frames.', Fe: 'Steel is mostly iron. It also carries oxygen in your blood.', Ni: 'Used in coins and magnets.', Cu: 'Carries electricity in wires. The Statue of Liberty is copper.', Zn: 'Protects steel from rust.', Ag: 'The best conductor of electricity of all metals.', Sn: 'Used to coat “tin” cans.', I: 'Your body needs a little; it’s added to salt.', W: 'Has the highest melting point of any metal.', Pt: 'Rare and precious — used in jewelry and car exhausts.', Au: 'Gold never rusts, so ancient gold still shines.', Hg: 'The only metal that is liquid at room temperature.', Pb: 'Very heavy and soft. Once used in pipes and paint.', U: 'Powers nuclear power plants.', Pu: 'Powers some space probes far from the Sun.', Og: 'The heaviest element ever made.' };
+const PLANETS = [
+  { n: 'Sun', e: '☀️', c: '#FFC93C', r: 22, a: 0, info: [['Type', 'Star'], ['Width', '1,392,700 km'], ['Surface', 'about 5,500 °C'], ['Age', '4.6 billion years']], fact: 'The Sun holds 99.8% of all the mass in the solar system.' },
+  { n: 'Mercury', e: '🪨', c: '#B5B5B5', r: 3, a: 1, d: '58 million km', info: [['Width', '4,879 km'], ['Day', '176 Earth days (sunrise to sunrise)'], ['Year', '88 days'], ['Moons', '0'], ['Temperature', '−180 to 430 °C']], fact: 'The smallest planet and the closest to the Sun.' },
+  { n: 'Venus', e: '🌕', c: '#E8C27A', r: 5, a: 1.5, d: '108 million km', info: [['Width', '12,104 km'], ['Day', '243 Earth days — it spins backwards!'], ['Year', '225 days'], ['Moons', '0'], ['Temperature', 'about 465 °C']], fact: 'The hottest planet, because thick clouds trap the heat.' },
+  { n: 'Earth', e: '🌍', c: '#4C9BE8', r: 5, a: 2, d: '150 million km', info: [['Width', '12,742 km'], ['Day', '24 hours'], ['Year', '365¼ days'], ['Moons', '1'], ['Temperature', 'about 15 °C on average']], fact: 'The only planet we know with life — and liquid water on its surface.' },
+  { n: 'Mars', e: '🔴', c: '#D2603A', r: 4, a: 2.5, d: '228 million km', info: [['Width', '6,779 km'], ['Day', '24 h 37 min'], ['Year', '687 days'], ['Moons', '2 (Phobos, Deimos)'], ['Temperature', 'about −65 °C']], fact: 'Home of Olympus Mons, the tallest volcano in the solar system.' },
+  { n: 'Jupiter', e: '🟠', c: '#D9A066', r: 12, a: 3.4, d: '778 million km', info: [['Width', '139,820 km'], ['Day', '10 hours'], ['Year', '12 Earth years'], ['Moons', '90+'], ['Made of', 'Mostly gas']], fact: 'The biggest planet. Its Great Red Spot is a storm bigger than Earth.' },
+  { n: 'Saturn', e: '🪐', c: '#E3C77E', r: 10, a: 4.3, ring: true, d: '1.4 billion km', info: [['Width', '116,460 km'], ['Day', '10.7 hours'], ['Year', '29 Earth years'], ['Moons', '140+'], ['Rings', 'Ice and rock']], fact: 'Saturn is so light it would float in a giant bathtub.' },
+  { n: 'Uranus', e: '🔵', c: '#8FD8E0', r: 7, a: 5.1, d: '2.9 billion km', info: [['Width', '50,724 km'], ['Day', '17 hours'], ['Year', '84 Earth years'], ['Moons', '28'], ['Temperature', 'about −195 °C']], fact: 'It spins on its side, like a rolling ball.' },
+  { n: 'Neptune', e: '🔷', c: '#4166F5', r: 7, a: 5.8, d: '4.5 billion km', info: [['Width', '49,244 km'], ['Day', '16 hours'], ['Year', '165 Earth years'], ['Moons', '16'], ['Wind', 'Up to 2,100 km/h']], fact: 'The windiest planet. It was found using math before anyone saw it.' },
+];
+Apps.reg({
+  id: 'learn', name: 'Learn', icon: '🎓', color: 'linear-gradient(135deg,#11998E,#38EF7D)', group: 'learn', keys: 'education school math science planets periodic table geography quiz', blurb: 'Math, science and the world',
+  mount(v, ctx) {
+    let cleanup = null;
+    const best = (k, val) => { const all = Prefs.get('learnBest', {}); if (val == null) return all[k] || 0; if (val > (all[k] || 0)) { all[k] = val; Prefs.set('learnBest', all); return true; } return false; };
+    function home() {
+      if (cleanup) { cleanup(); cleanup = null; } v.innerHTML = ''; ctx.setTitle('Learn'); ctx.setBack(null); ctx.setActions();
+      const T = [['math', '➗', 'Math practice', 'Add, subtract, times, divide'], ['times', '✖️', 'Times tables', 'Master 1 to 12'], ['ptable', '⚗️', 'Periodic table', 'All 118 elements'], ['space', '🪐', 'Solar system', 'Planets and the Sun'], ['world', '🌎', 'World quiz', 'Capitals, flags, countries'], ['wordq', '📚', 'Word quiz', 'What does it mean?']];
+      v.append(h('div', { class: 'grid2 w' }, T.map(([id, e, n, d]) => h('button', { class: 'bigbtn', onclick: () => open(id, n) }, h('span', { class: 'e' }, e), h('b', null, n), h('small', null, d)))));
+    }
+    function open(id, n) { if (cleanup) cleanup(); v.innerHTML = ''; ctx.setTitle(n); ctx.setBack(() => { home(); return true; }); cleanup = ({ math, times, ptable, space, world, wordq })[id](v) || null; }
+    /* ---------- math ---------- */
+    function drill(el, { title, gen, key }) {
+      let q, input = '', n = 0, right = 0, streak = 0, t0 = Date.now(); const N = 10;
+      const prog = h('i'), qEl = h('div', { class: 'qbig' }), aEl = h('div', { class: 'ansbox' }), info = h('div', { class: 'row small muted' });
+      const pad = h('div', { class: 'keypad' }, [1, 2, 3, 4, 5, 6, 7, 8, 9, '−', 0, '⌫'].map(k => h('button', { onclick: () => press(String(k)) }, k)), h('button', { class: 'btn pri', style: { gridColumn: 'span 3', fontSize: '20px' }, onclick: () => press('ok') }, 'Check ✓'));
+      el.append(h('div', { class: 'prog' }, prog), info, qEl, aEl, pad);
+      const nextQ = () => { q = gen(); input = ''; paint(); };
+      const paint = () => { prog.style.width = (100 * n / N) + '%'; qEl.textContent = q.text + ' = ?'; aEl.textContent = input || ' '; info.innerHTML = ''; info.append(h('span', { class: 'sp' }, 'Question ' + Math.min(n + 1, N) + ' of ' + N), h('span', null, '✅ ' + right + '  🔥 ' + streak)); };
+      function press(k) {
+        if (n >= N) return;
+        if (k === '⌫') input = input.slice(0, -1); else if (k === '−') input = input.startsWith('-') ? input.slice(1) : '-' + input; else if (k === 'ok') { if (!input || input === '-') return; const ok = +input === q.a; n++; if (ok) { right++; streak++; Sfx.good(); aEl.classList.add('flash-good'); } else { streak = 0; Sfx.bad(); UI.toast(q.text + ' = ' + q.a); aEl.classList.add('flash-bad'); } setTimeout(() => aEl.classList.remove('flash-good', 'flash-bad'), 500); if (n >= N) return finish(); nextQ(); return; } else if (input.replace('-', '').length < 6) input += k;
+        paint();
+      }
+      function finish() {
+        prog.style.width = '100%'; const secs = Math.round((Date.now() - t0) / 1000), stars = right >= 10 ? 3 : right >= 8 ? 2 : right >= 5 ? 1 : 0; const nb = best(key, right * 1000 - secs);
+        if (stars >= 2) Sfx.win(); el.innerHTML = '';
+        el.append(UI.empty('⭐'.repeat(stars) || '💪', right + ' out of ' + N + ' right', 'Time: ' + fmtDur(secs) + (nb ? ' · 🏆 Your best!' : '')), h('div', { class: 'row', style: { justifyContent: 'center' } }, h('button', { class: 'btn', onclick: home }, 'Done'), h('button', { class: 'btn pri', onclick: () => { el.innerHTML = ''; drill(el, { title, gen, key }); } }, 'Play again')));
+      }
+      const kd = e => { if (/^\d$/.test(e.key)) press(e.key); else if (e.key === 'Backspace') press('⌫'); else if (e.key === 'Enter') press('ok'); else if (e.key === '-') press('−'); };
+      addEventListener('keydown', kd); nextQ(); return () => removeEventListener('keydown', kd);
+    }
+    function math(el) {
+      let ops = Prefs.get('mathOps', ['+', '-']), level = Prefs.get('mathLvl', 1);
+      const r = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+      const gen = () => {
+        const op = pick(ops), L = [10, 20, 100, 1000][level];
+        if (op === '+') { const a = r(0, L), b = r(0, L); return { text: a + ' + ' + b, a: a + b }; }
+        if (op === '-') { let a = r(0, L), b = r(0, L); if (level < 2 && b > a) [a, b] = [b, a]; return { text: a + ' − ' + b, a: a - b }; }
+        const M = [5, 10, 12, 20][level];
+        if (op === '×') { const a = r(1, M), b = r(1, M); return { text: a + ' × ' + b, a: a * b }; }
+        const b = r(1, M), a = r(0, M); return { text: (a * b) + ' ÷ ' + b, a };
+      };
+      const body = h('div');
+      const opsEl = h('div', { class: 'chips' }, ['+', '-', '×', '÷'].map(o => { const b = h('button', { class: 'chip', 'aria-pressed': String(ops.includes(o)), style: { fontSize: '20px', minWidth: '54px', justifyContent: 'center' } }, o === '-' ? '−' : o); b.onclick = () => { ops = ops.includes(o) ? ops.filter(x => x !== o) : ops.concat(o); if (!ops.length) ops = [o]; Prefs.set('mathOps', ops); $$('.chip', opsEl).forEach((c, k) => c.setAttribute('aria-pressed', String(ops.includes(['+', '-', '×', '÷'][k])))); }; return b; }));
+      body.append(h('label', { class: 'f' }, h('span', null, 'Which kinds?'), opsEl), h('label', { class: 'f' }, h('span', null, 'How hard?'), UI.seg([[0, '🐣 Easy'], [1, '🙂 Medium'], [2, '🤓 Hard'], [3, '🚀 Pro']], level, l => { level = l; Prefs.set('mathLvl', l); })),
+        h('button', { class: 'btn pri wide mt', onclick: () => { el.innerHTML = ''; cleanup = drill(el, { title: 'Math', gen, key: 'math' + level }); } }, '▶ Start 10 questions'), h('p', { class: 'tiny muted center mt' }, 'Best score: ' + Math.floor(best('math' + level) / 1000) + ' / 10'));
+      el.append(body);
+    }
+    function times(el) {
+      const g = h('div', { class: 'grid3 w' });
+      for (let t = 1; t <= 12; t++) g.append(h('button', { class: 'bigbtn', style: { minHeight: '70px', alignItems: 'center' }, onclick: () => { el.innerHTML = ''; const order = shuffle([...Array(12).keys()].map(i => i + 1)); let k = 0; cleanup = drill(el, { title: '×' + t, key: 'times' + t, gen: () => { const b = order[k++ % 12]; return Math.random() < 0.5 ? { text: t + ' × ' + b, a: t * b } : { text: b + ' × ' + t, a: t * b }; } }); } }, h('b', { style: { fontSize: '22px' } }, '× ' + t), h('small', null, best('times' + t) >= 10000 ? '⭐ mastered' : best('times' + t) ? Math.floor(best('times' + t) / 1000) + '/10' : 'not tried')));
+      el.append(h('p', { class: 'muted small' }, 'Pick a table. Get 10 out of 10 to master it.'), g);
+    }
+    /* ---------- periodic table ---------- */
+    function ptable(el) {
+      let filter = null;
+      const pos = n => { if (n === 1) return [1, 1]; if (n === 2) return [1, 18]; const P = [[3, 10, 2], [11, 18, 3], [19, 36, 4], [37, 54, 5], [55, 86, 6], [87, 118, 7]];
+        for (const [a, b, p] of P) if (n >= a && n <= b) { if (p <= 3) { const i = n - a; return [p, i < 2 ? i + 1 : i + 11]; } if (p <= 5) return [p, n - a + 1]; if ((n >= 57 && n <= 71) || (n >= 89 && n <= 103)) return [p === 6 ? 9 : 10, (n >= 89 ? n - 89 : n - 57) + 3]; const i = n - a; return [p, i < 2 ? i + 1 : i - 14 + 1]; } };
+      const state = n => [1, 2, 7, 8, 9, 10, 17, 18, 36, 54, 86].includes(n) ? '💨 Gas' : [35, 80].includes(n) ? '💧 Liquid' : n >= 104 ? '❔ Unknown (made in labs)' : '🧱 Solid';
+      const wrap = h('div', { class: 'ptable-wrap' }), legend = h('div', { class: 'chips mt' });
+      const draw = () => {
+        const t = h('div', { class: 'ptable', role: 'grid' });
+        for (const e of ELEMENTS) { const [r, c] = pos(e.n); t.append(h('button', { class: 'el' + (filter && filter !== e.cat ? ' dim' : ''), style: { gridRow: r, gridColumn: c, background: EL_CATS[e.cat][1] }, 'aria-label': e.name, onclick: () => show(e) }, h('small', null, e.n), h('b', null, e.sym))); }
+        t.append(h('div', { style: { gridRow: 8, gridColumn: '1 / span 18', height: '8px' } }), h('div', { class: 'tiny muted', style: { gridRow: 6, gridColumn: 3, display: 'grid', placeItems: 'center', fontSize: '9px' } }, '57–71'), h('div', { class: 'tiny muted', style: { gridRow: 7, gridColumn: 3, display: 'grid', placeItems: 'center', fontSize: '9px' } }, '89–103'));
+        wrap.innerHTML = ''; wrap.append(t);
+      };
+      legend.append(...Object.entries(EL_CATS).map(([k, [n, c]]) => h('button', { class: 'chip', style: { background: c, color: '#111', borderColor: 'transparent' }, onclick: () => { filter = filter === k ? null : k; draw(); } }, n)));
+      function show(e) {
+        const fact = EL_FACTS[e.sym];
+        UI.sheet({ title: e.name, body: h('div', null, h('div', { class: 'row nw', style: { gap: '16px' } }, h('div', { style: { width: '96px', height: '110px', borderRadius: '14px', background: EL_CATS[e.cat][1], color: '#111', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' } }, h('small', null, e.n), h('b', { style: { fontSize: '40px' } }, e.sym), h('small', null, e.mass)),
+          h('div', null, h('p', null, h('b', null, 'Atomic number: '), e.n), h('p', null, h('b', null, 'Mass: '), e.mass + ' u'), h('p', null, h('b', null, 'Group: '), EL_CATS[e.cat][0]), h('p', null, h('b', null, 'At room temp: '), state(e.n)))),
+          fact ? h('div', { class: 'info-banner mt' }, '💡 ' + fact) : null, h('button', { class: 'btn sm mt', onclick: () => Speak.say(e.name) }, '🔊 Say it')) });
+      }
+      el.append(h('p', { class: 'muted small' }, 'Tap an element to learn about it. Tap a color to highlight that family. Swipe sideways on small screens.'), wrap, legend);
+      draw();
+    }
+    /* ---------- solar system ---------- */
+    function space(el) {
+      const cv = h('canvas'), list = h('div', { class: 'list mt' }); el.append(h('div', { class: 'orbit' }, cv), h('p', { class: 'tiny muted center' }, 'Not to scale — the real distances are WAY bigger! Tap a planet.'), list);
+      const g = cv.getContext('2d'); let raf, t = 0, hits = [];
+      const loop = () => {
+        const r = cv.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1); if (cv.width !== r.width * d) { cv.width = r.width * d; cv.height = r.height * d; } g.setTransform(d, 0, 0, d, 0, 0);
+        const W = r.width, H = r.height, cx = W / 2, cy = H / 2, maxR = Math.min(W, H * 1.6) / 2 - 14; g.clearRect(0, 0, W, H); t += 0.004; hits = [];
+        PLANETS.forEach((p, i) => {
+          if (!i) { const gr = g.createRadialGradient(cx, cy, 2, cx, cy, p.r * 2); gr.addColorStop(0, '#FFF3B0'); gr.addColorStop(.5, p.c); gr.addColorStop(1, 'rgba(255,150,0,0)'); g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, p.r * 2, 0, 6.28); g.fill(); hits.push([cx, cy, p.r + 6, p]); return; }
+          const R = 30 + (maxR - 30) * (i - 1) / 7, yr = 0.55; g.strokeStyle = 'rgba(255,255,255,.12)'; g.beginPath(); g.ellipse(cx, cy, R, R * yr, 0, 0, 6.28); g.stroke();
+          const ang = t * 6 / Math.pow(i, 1.3) + i * 1.7, x = cx + Math.cos(ang) * R, y = cy + Math.sin(ang) * R * yr;
+          if (p.ring) { g.strokeStyle = 'rgba(227,199,126,.8)'; g.lineWidth = 2; g.beginPath(); g.ellipse(x, y, p.r * 1.8, p.r * .6, -0.3, 0, 6.28); g.stroke(); g.lineWidth = 1; }
+          g.fillStyle = p.c; g.beginPath(); g.arc(x, y, p.r, 0, 6.28); g.fill(); hits.push([x, y, p.r + 10, p]);
+        });
+        raf = requestAnimationFrame(loop);
+      };
+      cv.addEventListener('click', e => { const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top; const hit = hits.filter(([a, b, rr]) => Math.hypot(a - x, b - y) < rr).pop(); if (hit) show(hit[3]); });
+      const show = p => UI.sheet({ title: p.e + ' ' + p.n, body: h('div', null, h('div', { class: 'info-banner' }, '💡 ' + p.fact), h('div', { class: 'list' }, (p.d ? [['Distance from Sun', p.d]] : []).concat(p.info).map(([k, val]) => h('div', { class: 'li' }, h('span', { class: 't' }, h('small', null, k), h('b', { style: { whiteSpace: 'normal' } }, val))))), h('button', { class: 'btn sm mt', onclick: () => Speak.say(p.n + '. ' + p.fact) }, '🔊 Read it to me')) });
+      list.append(...PLANETS.map(p => h('button', { class: 'li', onclick: () => show(p) }, h('span', { class: 'ic' }, p.e), h('span', { class: 't' }, h('b', null, p.n), h('small', null, p.d ? p.d + ' from the Sun' : 'Our star')), h('span', { class: 'chev' }, '›'))));
+      loop(); return () => cancelAnimationFrame(raf);
+    }
+    /* ---------- quizzes ---------- */
+    function mcq(el, { key, make, rounds = 10 }) {
+      let n = 0, right = 0; const box = h('div'), prog = h('i'); el.append(h('div', { class: 'prog mb' }, prog), box);
+      async function next() {
+        prog.style.width = (100 * n / rounds) + '%'; box.innerHTML = '';
+        if (n >= rounds) { const nb = best(key, right); if (right >= 8) Sfx.win(); box.append(UI.empty(right >= 9 ? '🏆' : right >= 6 ? '🎉' : '💪', right + ' / ' + rounds, nb ? 'That’s your best!' : 'Best: ' + best(key) + ' / ' + rounds), h('div', { class: 'row', style: { justifyContent: 'center' } }, h('button', { class: 'btn', onclick: home }, 'Done'), h('button', { class: 'btn pri', onclick: () => { n = 0; right = 0; next(); } }, 'Play again'))); return; }
+        box.append(h('div', { class: 'empty' }, 'Loading…'));
+        const q = await make(); box.innerHTML = ''; let done = false;
+        box.append(h('div', { class: 'card center', style: { padding: '22px 16px', margin: '4px 0 12px' } }, q.big ? h('div', { style: { fontSize: '72px', lineHeight: 1 } }, q.big) : null, q.node || null, h('div', { style: { fontSize: '20px', fontWeight: 700, marginTop: '6px' } }, q.q)),
+          h('div', { class: 'choices' }, q.opts.map(o => h('button', { onclick: e => { if (done) return; done = true; const ok = o === q.a; n++; if (ok) { right++; Sfx.good(); } else Sfx.bad(); e.currentTarget.classList.add(ok ? 'right' : 'wrong'); $$('.choices button', box).find(b => b.textContent === q.a).classList.add('right'); setTimeout(next, ok ? 700 : 1600); } }, o))));
+      }
+      next();
+    }
+    function world(el) {
+      el.append(h('p', { class: 'muted small' }, 'Uses the offline world map data.'), h('div', { class: 'grid3' },
+        [['cap', '🏛️', 'Capitals'], ['flag', '🏳️', 'Flags'], ['map', '🗺️', 'Find it']].map(([m, e, n]) => h('button', { class: 'bigbtn', onclick: () => start(m) }, h('span', { class: 'e' }, e), h('b', null, n)))));
+      async function start(mode) {
+        el.innerHTML = ''; const C = await WorldData.load().catch(() => null);
+        if (!C) { el.append(UI.empty('🌐', 'World data isn’t saved yet', 'Open Nova Pocket once with internet so it can save the map.')); return; }
+        const pool = Object.entries(C.facts).filter(([id, f]) => f.capital && f.flag && f.region);
+        mcq(el, { key: 'world-' + mode, make: async () => {
+          const [id, f] = pick(pool); const others = shuffle(pool.filter(([, g]) => g.name !== f.name && g.capital !== f.capital));
+          if (mode === 'cap') return { q: 'What is the capital of ' + f.name + '?', big: f.flag, a: f.capital, opts: shuffle([f.capital, ...others.slice(0, 3).map(([, g]) => g.capital)]) };
+          if (mode === 'flag') return { q: 'Which country has this flag?', big: f.flag, a: f.name, opts: shuffle([f.name, ...others.slice(0, 3).map(([, g]) => g.name)]) };
+          const c = h('canvas', { style: { width: '100%', height: '200px', display: 'block', borderRadius: '12px', background: '#BFE3F7' } }); setTimeout(() => WorldData.drawMini(c, id), 20);
+          return { q: 'Which country is shown in red?', node: c, a: f.name, opts: shuffle([f.name, ...others.filter(([, g]) => g.region === f.region).slice(0, 3).concat(others.slice(0, 3)).slice(0, 3).map(([, g]) => g.name)]) };
+        } });
+      }
+    }
+    function wordq(el) {
+      if (typeof Dict === 'undefined') { el.append(UI.empty('📚', 'Dictionary missing')); return; }
+      const list = [...new Set(WORDLIST.split(','))];
+      mcq(el, { key: 'wordq', make: async () => {
+        for (let tries = 0; tries < 6; tries++) { const w = pick(list); const r = await Dict.lookup(w).catch(() => null); if (r && r.senses.length) { const def = r.senses[0][1]; return { q: '“' + def.replace(new RegExp(w, 'gi'), '___') + '”', a: w, opts: shuffle([w, ...shuffle(list.filter(x => x !== w)).slice(0, 3)]) }; } }
+        const w = pick(list); return { q: 'Which word is spelled correctly?', a: w, opts: shuffle([w, w.split('').reverse().join(''), w + w[0], w.slice(1)]) };
+      } });
+    }
+    home();
+    return () => { if (cleanup) cleanup(); };
+  },
+});
+
+/* ---- 40-dict.js ---- */
+/* ===== Dictionary: 87,000 English words from WordNet, all offline ===== */
+addCSS(`
+.dword{font-size:34px;font-weight:800;font-family:var(--round);word-break:break-word}
+.dpos{font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin:18px 0 6px}
+.dsense{display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.dsense:first-of-type{border-top:0}
+.dsense .num{flex:0 0 auto;width:24px;height:24px;border-radius:12px;background:var(--surface2);display:grid;place-items:center;font-size:13px;font-weight:700}
+.dsense p{margin:0;font-size:17px}
+.dsense em{display:block;color:var(--muted);font-size:15px;margin-top:3px}
+.sugg{position:relative}
+.sugg .list{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:5;max-height:50vh;overflow:auto}
+`);
+const Dict = {
+  files: {},
+  letter: w => { const c = w[0]; return c >= 'a' && c <= 'z' ? c : '0'; },
+  file(l) { return this.files[l] || (this.files[l] = fetch('data/dict/' + l + '.json').then(r => { if (!r.ok) throw new Error('missing'); return r.json(); }).catch(e => { delete this.files[l]; throw e; })); },
+  norm: w => String(w || '').toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim(),
+  async raw(w) { if (!w) return null; const d = await this.file(this.letter(w)); return d[w] ? { word: w, senses: d[w] } : null; },
+  stems(w) {
+    const out = [], add = x => { if (x && x.length > 1 && x !== w && !out.includes(x)) out.push(x); }, e = (s, n) => w.endsWith(s) ? w.slice(0, -n) : null;
+    add(e('ies', 3) && e('ies', 3) + 'y'); add(e('es', 2)); add(e('s', 1)); add(e('ied', 3) && e('ied', 3) + 'y'); add(e('ed', 2)); add(e('ed', 1));
+    if (w.endsWith('ed') && w.length > 4 && w[w.length - 3] === w[w.length - 4]) add(w.slice(0, -3));
+    add(e('ing', 3)); add(e('ing', 3) && e('ing', 3) + 'e'); if (w.endsWith('ing') && w.length > 5 && w[w.length - 4] === w[w.length - 5]) add(w.slice(0, -4));
+    add(e('ier', 3) && e('ier', 3) + 'y'); add(e('iest', 4) && e('iest', 4) + 'y'); add(e('er', 2)); add(e('er', 1)); add(e('est', 3)); add(e('est', 2)); add(e('ly', 2)); add(e('ily', 3) && e('ily', 3) + 'y');
+    add({ men: 'man', women: 'woman', children: 'child', mice: 'mouse', feet: 'foot', teeth: 'tooth', geese: 'goose', people: 'person', went: 'go', ran: 'run', ate: 'eat', saw: 'see', took: 'take', gave: 'give', came: 'come', made: 'make', said: 'say', got: 'get', did: 'do', was: 'be', were: 'be', is: 'be', are: 'be', had: 'have', has: 'have', better: 'good', best: 'good', worse: 'bad', worst: 'bad' }[w]);
+    return out;
+  },
+  async lookup(w) { w = this.norm(w); if (!w) return null; let r = await this.raw(w); if (r) return r; for (const b of this.stems(w)) { r = await this.raw(b); if (r) return Object.assign({ from: w }, r); } return null; },
+  async suggest(p, n = 8) { p = this.norm(p); if (!p) return []; const d = await this.file(this.letter(p)); const out = []; for (const k in d) if (k.startsWith(p)) { out.push(k); if (out.length > 400) break; } return out.sort((a, b) => a.length - b.length || a.localeCompare(b)).slice(0, n); },
+  async near(w) {
+    w = this.norm(w); const d = await this.file(this.letter(w)); const res = [];
+    const lev = (a, b) => { const m = a.length, n = b.length; let prev = Array.from({ length: n + 1 }, (_, j) => j); for (let i = 1; i <= m; i++) { const cur = [i]; let rowMin = i; for (let j = 1; j <= n; j++) { cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); rowMin = Math.min(rowMin, cur[j]); } if (rowMin > 2) return 9; prev = cur; } return prev[n]; };
+    for (const k in d) { if (Math.abs(k.length - w.length) > 2 || k.includes(' ')) continue; const x = lev(k, w); if (x <= 2) res.push([x, k]); }
+    return res.sort((a, b) => a[0] - b[0] || a[1].length - b[1].length).slice(0, 8).map(x => x[1]);
+  },
+  async wordOfDay() {
+    const seed = hashStr(ymd(new Date())), L = 'abcdefghilmnoprstuw'[seed % 19], d = await this.file(L);
+    const keys = Object.keys(d).filter(k => /^[a-z]{5,11}$/.test(k) && d[k][0][2]); return keys.length ? { word: keys[seed % keys.length], senses: d[keys[seed % keys.length]] } : null;
+  },
+};
+Apps.reg({
+  id: 'dict', name: 'Dictionary', icon: '📖', color: 'linear-gradient(135deg,#4A6CF7,#1E3A8A)', group: 'learn', keys: 'words meaning define definition spelling thesaurus synonyms', blurb: '87,000 words, offline',
+  mount(v, ctx) {
+    let hist = Prefs.get('dictHist', []), saved = Prefs.get('dictSaved', []);
+    const q = h('input', { type: 'search', placeholder: 'Look up a word', autocapitalize: 'off', autocomplete: 'off', spellcheck: 'false', enterkeyhint: 'search', 'aria-label': 'Word' });
+    const sug = h('div', { class: 'list', hidden: true }), out = h('div', { class: 'mt' });
+    v.append(h('div', { class: 'sugg' }, h('div', { class: 'search' }, q), sug), out);
+    const go = async w => { sug.hidden = true; q.value = w; q.blur(); await show(w); };
+    q.addEventListener('keydown', e => { if (e.key === 'Enter' && q.value.trim()) go(q.value.trim()); });
+    q.addEventListener('input', debounce(async () => {
+      const s = q.value.trim(); if (s.length < 2) { sug.hidden = true; return; }
+      try { const list = await Dict.suggest(s); sug.innerHTML = ''; sug.hidden = !list.length; list.forEach(w => sug.append(h('button', { class: 'li', onclick: () => go(w) }, h('span', { class: 't' }, h('b', null, w))))); } catch (e) { sug.hidden = true; }
+    }, 150));
+    const onDoc = e => { if (!sug.contains(e.target) && e.target !== q) sug.hidden = true; }; document.addEventListener('pointerdown', onDoc);
+    async function home() {
+      ctx.setBack(null); out.innerHTML = '';
+      try {
+        const wod = await Dict.wordOfDay();
+        if (wod) out.append(h('button', { class: 'card', style: { width: '100%', textAlign: 'left', display: 'block', background: 'linear-gradient(135deg,var(--accent-soft),var(--surface))' }, onclick: () => go(wod.word) }, h('div', { class: 'tiny muted', style: { fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase' } }, '✨ Word of the day'), h('div', { class: 'dword', style: { fontSize: '28px' } }, wod.word), h('p', { style: { margin: '4px 0 0' } }, wod.senses[0][1])));
+      } catch (e) { out.append(h('div', { class: 'note-banner' }, '📥 The dictionary is still being saved for offline use. Keep the app open with internet for a minute.')); }
+      if (saved.length) out.append(h('div', { class: 'sec' }, '⭐ Saved words'), h('div', { class: 'chips' }, saved.map(w => h('button', { class: 'chip', onclick: () => go(w) }, w))));
+      if (hist.length) out.append(h('div', { class: 'row', style: { margin: '22px 4px 8px' } }, h('div', { class: 'sec', style: { margin: 0, flex: 1 } }, 'Recent'), h('button', { class: 'btn ghost sm', onclick: () => { hist = []; Prefs.set('dictHist', hist); home(); } }, 'Clear')), h('div', { class: 'chips' }, hist.slice(0, 24).map(w => h('button', { class: 'chip', onclick: () => go(w) }, w))));
+      out.append(h('p', { class: 'tiny muted mt2' }, 'Tip: tap 🔊 to hear a word. Tap a green word to look it up.'));
+    }
+    async function show(w) {
+      out.innerHTML = ''; out.append(h('div', { class: 'empty' }, 'Looking…'));
+      let r; try { r = await Dict.lookup(w); } catch (e) { out.innerHTML = ''; out.append(UI.empty('📥', 'Dictionary not saved yet', 'Connect to the internet once so I can save all 87,000 words.')); return; }
+      out.innerHTML = ''; ctx.setBack(() => { q.value = ''; home(); return true; });
+      if (!r) {
+        out.append(UI.empty('🤔', 'No word “' + w + '”', 'Check the spelling, or try one of these:'));
+        const near = await Dict.near(w).catch(() => []); out.append(h('div', { class: 'chips', style: { justifyContent: 'center' } }, near.length ? near.map(x => h('button', { class: 'chip', onclick: () => go(x) }, x)) : h('span', { class: 'muted' }, 'No close matches.')));
+        return;
+      }
+      hist = [r.word].concat(hist.filter(x => x !== r.word)).slice(0, 50); Prefs.set('dictHist', hist);
+      const isSaved = () => saved.includes(r.word);
+      const star = h('button', { class: 'btn sm', onclick: () => { saved = isSaved() ? saved.filter(x => x !== r.word) : [r.word].concat(saved); Prefs.set('dictSaved', saved); star.textContent = isSaved() ? '⭐ Saved' : '☆ Save'; } }, isSaved() ? '⭐ Saved' : '☆ Save');
+      const card = h('div', { class: 'card' }, h('div', { class: 'row nw' }, h('div', { class: 'dword', style: { flex: 1 } }, r.word), h('button', { class: 'btn sm', 'aria-label': 'Say it', onclick: () => Speak.say(r.word, { rate: 0.9 }) }, '🔊'), star),
+        r.from ? h('p', { class: 'small muted' }, 'You searched “' + r.from + '” — showing the base word.') : null);
+      let lastPos = '', n = 0;
+      for (const [pos, def, ex, syn] of r.senses) {
+        if (pos !== lastPos) { card.append(h('div', { class: 'dpos' }, pos)); lastPos = pos; n = 0; }
+        n++; card.append(h('div', { class: 'dsense' }, h('span', { class: 'num' }, n), h('div', null, h('p', null, def), ex ? h('em', null, '“' + ex + '”') : null,
+          syn && syn.length ? h('div', { class: 'chips', style: { marginTop: '6px' } }, syn.map(s => h('button', { class: 'chip', style: { color: 'var(--good)', fontSize: '13px', minHeight: '28px', padding: '3px 10px' }, onclick: () => go(s) }, s))) : null)));
+      }
+      out.append(card, h('div', { class: 'row mt' }, h('button', { class: 'btn sm', onclick: () => shareText(r.word + ': ' + r.senses.slice(0, 3).map((s, i) => (i + 1) + '. ' + s[1]).join(' '), r.word) }, '📤 Share'), h('button', { class: 'btn sm', onclick: async () => { const decks = await Cards.decks(); let d = decks.find(x => x.name === 'My words'); if (!d) { d = { id: uid(), name: 'My words', emoji: '📖', color: DECK_COLORS[0], created: Date.now() }; await DB.put('decks', d); } await DB.put('cards', { id: uid(), deck: d.id, front: r.word, back: r.senses[0][1], box: 0, due: 0, created: Date.now() }); UI.toast('Added to Flashcards → My words'); } }, '🗂️ Make a flashcard')));
+    }
+    if (ctx.param) go(ctx.param); else home();
+    if (!isTouch() && !ctx.param) setTimeout(() => q.focus(), 60);
+    return () => document.removeEventListener('pointerdown', onDoc);
+  },
+});
+
+/* ---- 41-map.js ---- */
+/* ===== World map: every country, your GPS spot, saved places — all offline ===== */
+addCSS(`
+.mapbox{position:relative;border-radius:18px;overflow:hidden;background:#A9D3F0;touch-action:none;user-select:none;-webkit-user-select:none}
+.mapbox canvas{display:block;width:100%;height:min(66vh,640px);height:min(66dvh,640px);cursor:grab}
+.mapctl{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:6px}
+.mapctl button{width:44px;height:44px;border-radius:12px;border:0;background:var(--surface);box-shadow:0 2px 8px rgba(0,0,0,.2);font-size:20px;font-weight:700;color:var(--ink)}
+.mapinfo{position:absolute;left:10px;bottom:10px;right:10px;pointer-events:none;display:flex;justify-content:flex-start}
+.mapinfo span{background:rgba(255,255,255,.88);color:#123;border-radius:10px;padding:4px 10px;font-size:12px;font-weight:650}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:16px}
+.facts dt{color:var(--muted);font-weight:600}
+.facts dd{margin:0;font-weight:650}
+`);
+const REGION_COLORS = { Africa: '#F6D58E', Americas: '#BFE3A5', Asia: '#F7B9A1', Europe: '#C8C2F2', Oceania: '#A8E0D8', Antarctic: '#F2F5F8', '': '#E4E4E4' };
+const WorldData = {
+  p: null,
+  load() { return this.p || (this.p = Promise.all([fetch('data/world.json').then(r => r.json()), fetch('data/countries.json').then(r => r.json())]).then(([t, f]) => this.build(t, f)).catch(e => { this.p = null; throw e; })); },
+  merc(lon, lat) { lat = clamp(lat, -85, 85); return [(lon + 180) / 360, (1 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / Math.PI) / 2]; },
+  unmerc(x, y) { return [x * 360 - 180, Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180 / Math.PI]; },
+  build(topo, facts) {
+    const tf = topo.transform, S = 1000;
+    const arcs = topo.arcs.map(a => { let x = 0, y = 0; return a.map(([dx, dy]) => { x += dx; y += dy; return tf ? [x * tf.scale[0] + tf.translate[0], y * tf.scale[1] + tf.translate[1]] : [dx, dy]; }); });
+    const ring = idx => {
+      const pts = []; for (const i of idx) { const a = i < 0 ? arcs[~i].slice().reverse() : arcs[i]; for (let k = pts.length ? 1 : 0; k < a.length; k++) pts.push(a[k]); }
+      // shapes that cross the date line (Russia, Fiji…): make longitudes continuous, then pin them to the map edge
+      let off = 0; const un = pts.map(([lo, la], k) => { if (k) { const d = lo - pts[k - 1][0]; if (d > 180) off -= 360; else if (d < -180) off += 360; } return [lo + off, la]; });
+      const mean = un.reduce((a, p) => a + p[0], 0) / (un.length || 1), shift = mean > 180 ? -360 : mean < -180 ? 360 : 0;
+      return un.map(([lo, la]) => this.merc(clamp(lo + shift, -180, 180), la).map(v => v * S));
+    };
+    const countries = [];
+    for (const g of topo.objects.countries.geometries) {
+      const polys = g.type === 'Polygon' ? [g.arcs] : g.type === 'MultiPolygon' ? g.arcs : []; if (!polys.length) continue;
+      const rings = polys.map(p => p.map(ring)); const path = new Path2D(); let bb = [1e9, 1e9, -1e9, -1e9], big = null, bigA = 0;
+      for (const poly of rings) for (let ri = 0; ri < poly.length; ri++) {
+        const r = poly[ri]; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+        r.forEach(([x, y], k) => { k ? path.lineTo(x, y) : path.moveTo(x, y); x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }); path.closePath();
+        bb = [Math.min(bb[0], x0), Math.min(bb[1], y0), Math.max(bb[2], x1), Math.max(bb[3], y1)];
+        const A = (x1 - x0) * (y1 - y0); if (ri === 0 && A > bigA) { bigA = A; big = [(x0 + x1) / 2, (y0 + y1) / 2, x1 - x0]; }
+      }
+      const f = facts[g.id] || { name: (g.properties || {}).name || '?' };
+      countries.push({ id: g.id, name: f.name, f, rings, path, bb, label: big, color: REGION_COLORS[f.region || ''] || REGION_COLORS[''] });
+    }
+    return (this.data = { countries, facts, S });
+  },
+  hit(D, x, y) {
+    for (const c of D.countries) {
+      if (x < c.bb[0] || x > c.bb[2] || y < c.bb[1] || y > c.bb[3]) continue; let inside = false;
+      for (const poly of c.rings) for (const r of poly) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const [xi, yi] = r[i], [xj, yj] = r[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside; }
+      if (inside) return c;
+    }
+    return null;
+  },
+  async countryAt(lat, lon) { const D = await this.load(); const [x, y] = this.merc(lon, lat).map(v => v * D.S); return this.hit(D, x, y); },
+  async drawMini(cv, id) {
+    const D = await this.load(), c = D.countries.find(k => k.id === id); if (!c) return; const r = cv.getBoundingClientRect(), d = devicePixelRatio || 1; cv.width = r.width * d; cv.height = r.height * d; const g = cv.getContext('2d');
+    const w = Math.max(c.bb[2] - c.bb[0], 30), hh = Math.max(c.bb[3] - c.bb[1], 30), cx = (c.bb[0] + c.bb[2]) / 2, cy = (c.bb[1] + c.bb[3]) / 2, s = Math.min(cv.width / (w * 4), cv.height / (hh * 4));
+    g.fillStyle = '#A9D3F0'; g.fillRect(0, 0, cv.width, cv.height); g.setTransform(s, 0, 0, s, cv.width / 2 - cx * s, cv.height / 2 - cy * s);
+    for (const k of D.countries) { g.fillStyle = k === c ? '#E5383B' : '#F1EDE4'; g.fill(k.path); g.lineWidth = 0.6 / s * d; g.strokeStyle = '#9AA5B1'; g.stroke(k.path); }
+  },
+};
+const geoHere = () => new Promise((res, rej) => { if (!navigator.geolocation) return rej(new Error('No location on this device')); navigator.geolocation.getCurrentPosition(p => res(p.coords), e => rej(new Error(e.code === 1 ? 'Location is turned off for Nova Pocket. Allow it in Settings → Privacy → Location.' : 'Could not find you. Try near a window or outside.')), { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }); });
+const haversine = (a, b, c, d) => { const R = 6371, r = Math.PI / 180, x = Math.sin((c - a) * r / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin((d - b) * r / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
+const fmtKm = km => km < 1 ? Math.round(km * 1000) + ' m' : km < 100 ? km.toFixed(1) + ' km' : Math.round(km).toLocaleString() + ' km';
+Apps.reg({
+  id: 'map', name: 'Map', icon: '🗺️', color: 'linear-gradient(135deg,#56CCF2,#2F80ED)', group: 'day', keys: 'world countries gps location places globe geography', blurb: 'World map + your GPS spot',
+  async mount(v, ctx) {
+    const cv = h('canvas', { 'aria-label': 'World map. Drag to move, pinch or use + and − to zoom, tap a country.' }), info = h('div', { class: 'mapinfo' });
+    const box = h('div', { class: 'mapbox' }, cv, h('div', { class: 'mapctl' }, h('button', { 'aria-label': 'Zoom in', onclick: () => zoomAt(1.6) }, '+'), h('button', { 'aria-label': 'Zoom out', onclick: () => zoomAt(1 / 1.6) }, '−'), h('button', { 'aria-label': 'Show my location', onclick: locate }, '📍')), info);
+    const search = h('input', { type: 'search', placeholder: 'Find a country', 'aria-label': 'Find a country' });
+    const placesBox = h('div');
+    v.append(h('div', { class: 'search mb' }, search), box, h('div', { class: 'row mt' }, h('button', { class: 'btn', onclick: locate }, '📍 Where am I?'), h('button', { class: 'btn', onclick: () => addPlace() }, '⭐ Save a place'), h('span', { class: 'sp' })), placesBox,
+      h('p', { class: 'tiny muted mt' }, 'Your phone’s GPS works without internet. This map shows countries, not streets — for street directions use Apple Maps with an offline map downloaded.'));
+    let D; try { D = await WorldData.load(); } catch (e) { box.replaceWith(UI.empty('🌐', 'Map not saved yet', 'Open Nova Pocket once with internet so it can save the world map.')); return; }
+    const g = cv.getContext('2d'); let W = 0, H = 0, dpr = 1, s = 1, tx = 0, ty = 0, sel = null, me = null, places = [], raf = 0;
+    const fit = (x0, y0, x1, y1, pad = 0.12) => { const w = x1 - x0, hh = y1 - y0; s = Math.min(W / (w * (1 + pad * 2)), H / (hh * (1 + pad * 2))); s = clamp(s, minS(), 400); tx = W / 2 - (x0 + w / 2) * s; ty = H / 2 - (y0 + hh / 2) * s; clampView(); draw(); };
+    const minS = () => Math.max(W / D.S, H / (D.S * 0.8)) * 0.98;
+    const clampView = () => { s = clamp(s, minS(), 400); tx = clamp(tx, W - D.S * s, 0); const yTop = D.S * 0.06, yBot = D.S * 0.93; ty = clamp(ty, H - yBot * s, -yTop * s); };
+    const size = () => { const r = cv.getBoundingClientRect(); dpr = Math.min(2, devicePixelRatio || 1); W = r.width; H = r.height; cv.width = W * dpr; cv.height = H * dpr; };
+    const toWorld = (px, py) => [(px - tx) / s, (py - ty) / s];
+    function draw() { cancelAnimationFrame(raf); raf = requestAnimationFrame(paint); }
+    function paint() {
+      g.setTransform(dpr, 0, 0, dpr, 0, 0); g.fillStyle = '#A9D3F0'; g.fillRect(0, 0, W, H);
+      g.setTransform(s * dpr, 0, 0, s * dpr, tx * dpr, ty * dpr);
+      g.lineWidth = 1 / s; g.strokeStyle = 'rgba(255,255,255,.45)';
+      for (let lon = -180; lon <= 180; lon += 30) { const [x] = WorldData.merc(lon, 0); g.beginPath(); g.moveTo(x * D.S, 0); g.lineTo(x * D.S, D.S); g.stroke(); }
+      for (let lat = -60; lat <= 60; lat += 30) { const [, y] = WorldData.merc(0, lat); g.beginPath(); g.moveTo(0, y * D.S); g.lineTo(D.S, y * D.S); g.stroke(); }
+      const vx0 = -tx / s, vy0 = -ty / s, vx1 = (W - tx) / s, vy1 = (H - ty) / s;
+      for (const c of D.countries) { if (c.bb[2] < vx0 || c.bb[0] > vx1 || c.bb[3] < vy0 || c.bb[1] > vy1) continue; g.fillStyle = c === sel ? '#FF8A65' : c.color; g.fill(c.path); }
+      g.lineWidth = 0.8 / s; g.strokeStyle = 'rgba(70,80,95,.55)'; for (const c of D.countries) { if (c.bb[2] < vx0 || c.bb[0] > vx1 || c.bb[3] < vy0 || c.bb[1] > vy1) continue; g.stroke(c.path); }
+      if (sel) { g.lineWidth = 2.2 / s; g.strokeStyle = '#C2410C'; g.stroke(sel.path); }
+      g.setTransform(dpr, 0, 0, dpr, 0, 0); g.textAlign = 'center'; g.textBaseline = 'middle';
+      for (const c of D.countries) {
+        if (!c.label) continue; const px = c.label[0] * s + tx, py = c.label[1] * s + ty, wpx = c.label[2] * s;
+        if (px < -50 || px > W + 50 || py < -20 || py > H + 20 || wpx < Math.max(28, c.name.length * 5.2)) continue;
+        const fs = clamp(wpx / c.name.length * 1.1, 9, 15); g.font = '650 ' + fs + 'px ' + getComputedStyle(document.body).fontFamily; g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.8)'; g.strokeText(c.name, px, py); g.fillStyle = '#2B2F3A'; g.fillText(c.name, px, py);
+      }
+      g.font = '22px system-ui'; for (const p of places) { const [x, y] = WorldData.merc(p.lon, p.lat).map(q => q * D.S); const px = x * s + tx, py = y * s + ty; if (px < -20 || px > W + 20 || py < -20 || py > H + 20) continue; g.textBaseline = 'bottom'; g.fillText('📍', px, py + 4); g.font = '700 12px ' + getComputedStyle(document.body).fontFamily; g.lineWidth = 3; g.strokeStyle = '#fff'; g.strokeText(p.name, px, py + 14); g.fillStyle = '#B91C1C'; g.fillText(p.name, px, py + 14); g.font = '22px system-ui'; }
+      if (me) { const [x, y] = WorldData.merc(me.lon, me.lat).map(q => q * D.S); const px = x * s + tx, py = y * s + ty; g.fillStyle = 'rgba(10,132,255,.18)'; g.beginPath(); g.arc(px, py, Math.max(10, me.acc / 1000 / 40075 * D.S * s * Math.cos(me.lat * Math.PI / 180) ** -1), 0, 6.283); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.arc(px, py, 9, 0, 6.283); g.fill(); g.fillStyle = '#0A84FF'; g.beginPath(); g.arc(px, py, 6.5, 0, 6.283); g.fill(); }
+      const [lo, la] = WorldData.unmerc((W / 2 - tx) / s / D.S, (H / 2 - ty) / s / D.S);
+      info.innerHTML = ''; info.append(h('span', null, 'Center: ' + Math.abs(la).toFixed(1) + '°' + (la >= 0 ? 'N' : 'S') + ', ' + Math.abs(lo).toFixed(1) + '°' + (lo >= 0 ? 'E' : 'W') + ' · zoom ' + (s / minS()).toFixed(1) + '×'));
+    }
+    function zoomAt(k, px = W / 2, py = H / 2) { const [wx, wy] = toWorld(px, py); s = clamp(s * k, minS(), 400); tx = px - wx * s; ty = py - wy * s; clampView(); draw(); }
+    const ptrs = new Map(); let pinch = null, moved = 0, downAt = 0, longT = null;
+    cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); moved = 0; downAt = Date.now(); if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), s }; clearTimeout(longT); } else { const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top; clearTimeout(longT); longT = setTimeout(() => { if (moved < 8) { const [wx, wy] = toWorld(px, py); const [lo, la] = WorldData.unmerc(wx / D.S, wy / D.S); addPlace(la, lo); } }, 650); } });
+    cv.addEventListener('pointermove', e => {
+      if (!ptrs.has(e.pointerId)) return; const prev = ptrs.get(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+      if (ptrs.size === 2 && pinch) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a[0] - b[0], a[1] - b[1]); const r = cv.getBoundingClientRect(); const k = (pinch.s * d / pinch.d) / s; zoomAt(k, (a[0] + b[0]) / 2 - r.left, (a[1] + b[1]) / 2 - r.top); moved += 10; return; }
+      const dx = e.clientX - prev[0], dy = e.clientY - prev[1]; moved += Math.abs(dx) + Math.abs(dy); if (moved > 8) clearTimeout(longT); tx += dx; ty += dy; clampView(); draw();
+    });
+    const up = e => {
+      clearTimeout(longT); ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null;
+      if (moved < 8 && Date.now() - downAt < 600 && e.type === 'pointerup') { const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top; const [wx, wy] = toWorld(px, py);
+        const pin = places.find(p => { const [x, y] = WorldData.merc(p.lon, p.lat).map(q => q * D.S * s); return Math.hypot(x + tx - px, y + ty - py + 12) < 18; });
+        if (pin) return showPlace(pin); const c = WorldData.hit(D, wx, wy); sel = c; draw(); if (c) showCountry(c); }
+    };
+    cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+    cv.addEventListener('wheel', e => { e.preventDefault(); const r = cv.getBoundingClientRect(); zoomAt(Math.exp(-e.deltaY * 0.002), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+    cv.addEventListener('dblclick', e => { const r = cv.getBoundingClientRect(); zoomAt(2, e.clientX - r.left, e.clientY - r.top); });
+    function showCountry(c) {
+      const f = c.f; const row = (k, val) => val ? [h('dt', null, k), h('dd', null, val)] : [];
+      UI.sheet({ title: (f.flag ? f.flag + ' ' : '') + c.name, onClose: () => { sel = null; draw(); }, body: h('div', null,
+        f.official && f.official !== c.name ? h('p', { class: 'muted small' }, f.official) : null,
+        h('dl', { class: 'facts' }, row('Capital', f.capital), row('Region', [f.sub || f.region].filter(Boolean).join('')), row('Size', f.area ? Math.round(f.area).toLocaleString() + ' km²' : ''), row('Languages', (f.lang || []).join(', ')), row('Money', (f.money || []).join(', ')), row('Borders', f.borders != null ? (f.borders ? f.borders + ' countries' : 'No land borders') + (f.land ? ' · no coast' : '') : '')),
+        me ? h('p', { class: 'small muted mt' }, '📏 About ' + fmtKm(haversine(me.lat, me.lon, f.latlng[0], f.latlng[1])) + ' from you (to the middle of the country).') : null),
+        actions: [{ label: '🔊 Say it', onClick: () => Speak.say(c.name + (f.capital ? '. Capital: ' + f.capital : '')) }, { label: 'Zoom to it', cls: 'pri', onClick: cl => { cl(); sel = c; fit(...c.bb, 0.3); } }] });
+    }
+    async function locate() {
+      UI.toast('Finding you…');
+      try { const c = await geoHere(); me = { lat: c.latitude, lon: c.longitude, acc: c.accuracy || 50 }; const [x, y] = WorldData.merc(me.lon, me.lat).map(q => q * D.S); s = Math.max(s, minS() * 12); tx = W / 2 - x * s; ty = H / 2 - y * s; clampView(); draw(); const k = WorldData.hit(D, x, y); UI.toast('You are ' + (k ? 'in ' + k.name : 'here') + ' (±' + fmtKm(me.acc / 1000) + ')', 3500); paintPlaces(); }
+      catch (e) { UI.toast(e.message, 4000); }
+    }
+    async function addPlace(lat, lon) {
+      if (lat == null) { try { const c = await geoHere(); lat = c.latitude; lon = c.longitude; me = { lat, lon, acc: c.accuracy || 50 }; } catch (e) { UI.toast(e.message + ' You can also press and hold on the map.', 4500); return; } }
+      const name = await UI.prompt('Name this place', { placeholder: 'e.g. Home, Grandma’s, Beach' }); if (!name) return;
+      await DB.put('places', { id: uid(), name: name.trim(), lat, lon, created: Date.now() }); await loadPlaces(); draw(); UI.toast('Saved ⭐');
+    }
+    function showPlace(p) {
+      UI.sheet({ title: '📍 ' + p.name, body: h('div', null, h('p', null, Math.abs(p.lat).toFixed(4) + '°' + (p.lat >= 0 ? 'N' : 'S') + ', ' + Math.abs(p.lon).toFixed(4) + '°' + (p.lon >= 0 ? 'E' : 'W')), me ? h('p', null, '📏 ' + fmtKm(haversine(me.lat, me.lon, p.lat, p.lon)) + ' away (straight line)') : null, h('p', { class: 'muted small' }, 'Saved ' + fmtDay(new Date(p.created)))),
+        actions: [{ label: 'Delete', cls: 'bad', onClick: async c => { await DB.del('places', p.id); c(); await loadPlaces(); draw(); } }, { label: 'Go there', cls: 'pri', onClick: c => { c(); const [x, y] = WorldData.merc(p.lon, p.lat).map(q => q * D.S); s = Math.max(s, minS() * 20); tx = W / 2 - x * s; ty = H / 2 - y * s; clampView(); draw(); } }] });
+    }
+    async function loadPlaces() { places = (await DB.all('places')).sort((a, b) => b.created - a.created); paintPlaces(); }
+    function paintPlaces() { placesBox.innerHTML = ''; if (!places.length) return; placesBox.append(h('div', { class: 'sec' }, '⭐ My places'), h('div', { class: 'list' }, places.map(p => h('button', { class: 'li', onclick: () => showPlace(p) }, h('span', { class: 'ic' }, '📍'), h('span', { class: 't' }, h('b', null, p.name), h('small', null, me ? fmtKm(haversine(me.lat, me.lon, p.lat, p.lon)) + ' away' : p.lat.toFixed(3) + ', ' + p.lon.toFixed(3))), h('span', { class: 'chev' }, '›'))))); }
+    search.addEventListener('keydown', e => { if (e.key !== 'Enter') return; const q2 = search.value.trim().toLowerCase(); if (!q2) return; const c = D.countries.find(c => c.name.toLowerCase() === q2) || D.countries.find(c => c.name.toLowerCase().startsWith(q2)) || D.countries.find(c => c.name.toLowerCase().includes(q2) || (c.f.capital || '').toLowerCase() === q2); if (!c) return UI.toast('No country called “' + search.value + '”'); search.blur(); sel = c; fit(...c.bb, 0.3); setTimeout(() => showCountry(c), 300); });
+    const onRs = () => { size(); clampView(); draw(); }; addEventListener('resize', onRs);
+    size(); s = minS(); fit(0, D.S * 0.12, D.S, D.S * 0.82, 0); await loadPlaces();
+    return () => { cancelAnimationFrame(raf); removeEventListener('resize', onRs); clearTimeout(longT); };
+  },
+});
+
+/* ---- 42-weather.js ---- */
+/* ===== Weather: downloads a 7-day forecast when online (Open-Meteo, no account), keeps it for offline ===== */
+addCSS(`
+.wx-now{border-radius:22px;padding:20px;color:#fff;background:linear-gradient(160deg,#4FACFE,#2B6CDE);box-shadow:0 10px 30px rgba(40,100,220,.3)}
+.wx-now.night{background:linear-gradient(160deg,#2C3E7A,#141A3A)}
+.wx-now .t{font-size:72px;font-weight:300;line-height:1;font-family:var(--round)}
+.wx-now .e{font-size:64px;line-height:1}
+.wx-hours{display:flex;gap:6px;overflow-x:auto;padding:4px 0 6px;scrollbar-width:none}
+.wx-hours::-webkit-scrollbar{display:none}
+.wx-hours div{flex:0 0 auto;width:62px;text-align:center;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:8px 2px;font-size:13px}
+.wx-hours b{display:block;font-size:16px}
+.wx-hours span{display:block;font-size:24px;margin:2px 0}
+.wx-day{display:grid;grid-template-columns:64px 34px 40px 1fr 40px;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--line)}
+.wx-day:first-child{border-top:0}
+.wx-bar{height:6px;border-radius:3px;background:var(--surface2);position:relative}
+.wx-bar i{position:absolute;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,#4FACFE,#FFB347)}
+`);
+const WMO = { 0: ['☀️', 'Clear sky'], 1: ['🌤️', 'Mostly clear'], 2: ['⛅', 'Partly cloudy'], 3: ['☁️', 'Cloudy'], 45: ['🌫️', 'Fog'], 48: ['🌫️', 'Icy fog'], 51: ['🌦️', 'Light drizzle'], 53: ['🌦️', 'Drizzle'], 55: ['🌧️', 'Heavy drizzle'], 56: ['🌧️', 'Freezing drizzle'], 57: ['🌧️', 'Freezing drizzle'], 61: ['🌦️', 'Light rain'], 63: ['🌧️', 'Rain'], 65: ['🌧️', 'Heavy rain'], 66: ['🌧️', 'Freezing rain'], 67: ['🌧️', 'Freezing rain'], 71: ['🌨️', 'Light snow'], 73: ['🌨️', 'Snow'], 75: ['❄️', 'Heavy snow'], 77: ['🌨️', 'Snow grains'], 80: ['🌦️', 'Rain showers'], 81: ['🌧️', 'Rain showers'], 82: ['⛈️', 'Heavy showers'], 85: ['🌨️', 'Snow showers'], 86: ['❄️', 'Snow showers'], 95: ['⛈️', 'Thunderstorm'], 96: ['⛈️', 'Thunderstorm + hail'], 99: ['⛈️', 'Thunderstorm + hail'] };
+const wmo = (c, day = 1) => { const w = WMO[c] || ['🌡️', 'Weather']; if (!day && (c === 0 || c === 1)) return ['🌙', c ? 'Mostly clear' : 'Clear night']; return w; };
+const Weather = {
+  places() { return Prefs.get('wxPlaces', []); },
+  cur() { const p = this.places(); return p[Prefs.get('wxIdx', 0)] || p[0] || null; },
+  unit() { return Prefs.get('wxUnit', 'C'); },
+  t(c) { return this.unit() === 'F' ? Math.round(c * 9 / 5 + 32) + '°' : Math.round(c) + '°'; },
+  async fetch(p) {
+    const u = 'https://api.open-meteo.com/v1/forecast?latitude=' + p.lat.toFixed(3) + '&longitude=' + p.lon.toFixed(3) + '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day,precipitation&hourly=temperature_2m,precipitation_probability,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max&timezone=auto&forecast_days=7';
+    const r = await fetch(u, { cache: 'no-store' }); if (!r.ok) throw new Error('Weather service error ' + r.status); const d = await r.json(); d.at = Date.now(); await DB.kset('wx:' + p.id, d); return d;
+  },
+  async peek() { const p = this.cur(); if (!p) return null; const d = await DB.kget('wx:' + p.id, null); if (!d) return null; const hr = this.nowHour(d); return { temp: this.t(hr ? hr.t : d.current.temperature_2m), icon: wmo(hr ? hr.code : d.current.weather_code, hr ? hr.day : d.current.is_day)[0], place: p.name }; },
+  nowHour(d) { const H = d.hourly; if (!H) return null; const now = Date.now(); for (let i = 0; i < H.time.length; i++) { const t = this.when(d, H.time[i]); if (t > now - 3600e3 && t <= now) return { t: H.temperature_2m[i], code: H.weather_code[i], day: H.is_day ? H.is_day[i] : 1 }; } return null; },
+  when(d, iso) { return Date.parse(iso + 'Z') - (d.utc_offset_seconds || 0) * 1000; },
+};
+Apps.reg({
+  id: 'weather', name: 'Weather', icon: '⛅', color: 'linear-gradient(135deg,#74B9FF,#0984E3)', group: 'day', keys: 'forecast rain temperature sun', blurb: 'Forecast, saved for offline',
+  mount(v, ctx) {
+    const body = h('div');
+    v.append(body);
+    ctx.setActions(h('button', { class: 'btn ghost sm', onclick: () => { Prefs.set('wxUnit', Weather.unit() === 'C' ? 'F' : 'C'); draw(); } }, '°C / °F'), h('button', { class: 'ib', 'aria-label': 'Places', onclick: places }, '📍'));
+    async function draw(refresh) {
+      body.innerHTML = ''; const p = Weather.cur();
+      if (!p) { body.append(UI.empty('⛅', 'Pick a place', 'I download a 7-day forecast while you have internet and keep it, so you can still check it offline.'), h('div', { class: 'row', style: { justifyContent: 'center' } }, h('button', { class: 'btn pri', onclick: useMine }, '📍 Use my location'), h('button', { class: 'btn', onclick: findCity }, '🔎 Search a city'))); return; }
+      let d = await DB.kget('wx:' + p.id, null); let err = '';
+      if ((refresh || !d || Date.now() - d.at > 30 * 60e3) && navigator.onLine) { body.append(h('div', { class: 'empty' }, d ? '' : 'Getting the forecast…')); try { d = await Weather.fetch(p); } catch (e) { err = e.message; } body.innerHTML = ''; }
+      const all = Weather.places();
+      if (all.length > 1) body.append(h('div', { class: 'tabs' }, all.map((q, i) => h('button', { 'aria-pressed': String(q.id === p.id), onclick: () => { Prefs.set('wxIdx', i); draw(); } }, q.name))));
+      if (!d) { body.append(UI.empty('📡', 'No forecast saved yet', navigator.onLine ? 'Could not reach the weather service. ' + err : 'Connect to the internet once to download the forecast.'), h('div', { class: 'center' }, h('button', { class: 'btn pri', onclick: () => draw(true) }, 'Try again'))); return; }
+      const age = Date.now() - d.at;
+      if (!navigator.onLine || err) body.append(h('div', { class: 'note-banner' }, '📴 ' + (navigator.onLine ? 'Couldn’t refresh. ' : 'You’re offline. ') + 'Showing the forecast saved ' + fmtAgo(d.at) + '.'));
+      else if (age > 3 * 3600e3) body.append(h('div', { class: 'note-banner' }, 'This forecast is from ' + fmtAgo(d.at) + '. Tap refresh.'));
+      const nh = Weather.nowHour(d), useNow = age < 2 * 3600e3, cu = d.current;
+      const temp = useNow || !nh ? cu.temperature_2m : nh.t, code = useNow || !nh ? cu.weather_code : nh.code, day = useNow || !nh ? cu.is_day : nh.day;
+      const [ico, words] = wmo(code, day);
+      const D = d.daily, todayI = Math.max(0, D.time.indexOf(ymd(new Date())));
+      body.append(h('div', { class: 'wx-now' + (day ? '' : ' night') },
+        h('div', { class: 'row nw' }, h('div', { style: { flex: 1 } }, h('div', { style: { fontWeight: 700, fontSize: '18px' } }, '📍 ' + p.name), h('div', { class: 't' }, Weather.t(temp)), h('div', { style: { fontSize: '18px', fontWeight: 600 } }, words)), h('div', { class: 'e' }, ico)),
+        h('div', { class: 'row mt', style: { opacity: .92, fontSize: '15px', gap: '14px' } }, h('span', null, '↑ ' + Weather.t(D.temperature_2m_max[todayI]) + '  ↓ ' + Weather.t(D.temperature_2m_min[todayI])), useNow ? h('span', null, 'Feels ' + Weather.t(cu.apparent_temperature)) : null, useNow ? h('span', null, '💧 ' + cu.relative_humidity_2m + '%') : null, useNow ? h('span', null, '💨 ' + Math.round(Weather.unit() === 'F' ? cu.wind_speed_10m * 0.621 : cu.wind_speed_10m) + (Weather.unit() === 'F' ? ' mph' : ' km/h')) : null)));
+      const H = d.hourly, now = Date.now(), hrs = h('div', { class: 'wx-hours' });
+      for (let i = 0; i < H.time.length && hrs.childNodes.length < 24; i++) { const t = Weather.when(d, H.time[i]); if (t < now - 3600e3) continue; const dt = new Date(t); hrs.append(h('div', null, h('small', null, hrs.childNodes.length ? dt.toLocaleTimeString(undefined, { hour: 'numeric' }) : 'Now'), h('span', null, wmo(H.weather_code[i], H.is_day ? H.is_day[i] : 1)[0]), h('b', null, Weather.t(H.temperature_2m[i])), H.precipitation_probability && H.precipitation_probability[i] > 10 ? h('small', { style: { color: '#2B8BE0' } }, H.precipitation_probability[i] + '%') : h('small', null, ' '))); }
+      if (hrs.childNodes.length) body.append(h('div', { class: 'sec' }, 'Next hours'), hrs); else body.append(h('div', { class: 'note-banner mt' }, 'The saved hourly forecast has run out. Connect to refresh.'));
+      const lo = Math.min(...D.temperature_2m_min), hi = Math.max(...D.temperature_2m_max), days = h('div', { class: 'list' });
+      D.time.forEach((ds, i) => { const dd = fromYmd(ds); const a = (D.temperature_2m_min[i] - lo) / (hi - lo || 1) * 100, b = (D.temperature_2m_max[i] - lo) / (hi - lo || 1) * 100;
+        days.append(h('div', { class: 'wx-day' }, h('b', null, ds === ymd(new Date()) ? 'Today' : fmtDay(dd, { weekday: 'short' })), h('span', { style: { fontSize: '22px' } }, wmo(D.weather_code[i])[0]), h('span', { class: 'muted' }, Weather.t(D.temperature_2m_min[i])), h('div', { class: 'wx-bar' }, h('i', { style: { left: a + '%', right: (100 - b) + '%' } })), h('b', null, Weather.t(D.temperature_2m_max[i])))); });
+      body.append(h('div', { class: 'sec' }, '7 days'), days);
+      const sr = D.sunrise && D.sunrise[todayI], ss = D.sunset && D.sunset[todayI];
+      body.append(h('div', { class: 'grid3 mt' }, h('div', { class: 'stat' }, h('b', null, sr ? fmtTime(new Date(Weather.when(d, sr))) : '—'), h('small', null, '🌅 Sunrise')), h('div', { class: 'stat' }, h('b', null, ss ? fmtTime(new Date(Weather.when(d, ss))) : '—'), h('small', null, '🌇 Sunset')), h('div', { class: 'stat' }, h('b', null, D.uv_index_max ? Math.round(D.uv_index_max[todayI]) : '—'), h('small', null, '😎 UV max'))),
+        h('div', { class: 'row mt' }, h('button', { class: 'btn', disabled: !navigator.onLine, onclick: () => draw(true) }, '↻ Refresh'), h('span', { class: 'sp small muted' }, 'Updated ' + fmtAgo(d.at))),
+        h('p', { class: 'tiny muted mt' }, 'Weather data by Open-Meteo.com. Only the place’s rough position is sent, and only when you refresh.'));
+    }
+    async function savePlace(p) { const all = Weather.places().filter(q => !(Math.abs(q.lat - p.lat) < 0.02 && Math.abs(q.lon - p.lon) < 0.02)); all.push(p); Prefs.set('wxPlaces', all); Prefs.set('wxIdx', all.length - 1); }
+    async function useMine() {
+      UI.toast('Finding you…');
+      try { const c = await geoHere(); let nm = 'My location'; try { const k = await WorldData.countryAt(c.latitude, c.longitude); if (k) nm = 'Here (' + k.name + ')'; } catch (e) { } await savePlace({ id: uid(), name: nm, lat: c.latitude, lon: c.longitude }); draw(true); }
+      catch (e) { UI.toast(e.message, 4000); }
+    }
+    function findCity() {
+      if (!navigator.onLine) return UI.toast('Searching cities needs internet. “Use my location” works with GPS.', 4000);
+      const inp = h('input', { type: 'search', placeholder: 'City name', autocomplete: 'off' }), res = h('div', { class: 'mt' });
+      const run = debounce(async () => { const q = inp.value.trim(); if (q.length < 2) return; try { const r = await fetch('https://geocoding-api.open-meteo.com/v1/search?count=8&language=en&name=' + encodeURIComponent(q)); const d = await r.json(); res.innerHTML = ''; res.append(h('div', { class: 'list' }, (d.results || []).map(c => h('button', { class: 'li', onclick: async () => { await savePlace({ id: uid(), name: c.name, lat: c.latitude, lon: c.longitude, country: c.country }); s.close(); draw(true); } }, h('span', { class: 't' }, h('b', null, c.name), h('small', null, [c.admin1, c.country].filter(Boolean).join(', '))))))); if (!(d.results || []).length) res.append(h('p', { class: 'muted' }, 'No cities found.')); } catch (e) { res.textContent = 'Search failed.'; } }, 350);
+      inp.addEventListener('input', run);
+      const s = UI.sheet({ title: 'Find a city', body: h('div', null, inp, res) });
+    }
+    function places() {
+      const all = Weather.places();
+      UI.sheet({ title: 'Weather places', body: h('div', null, all.length ? h('div', { class: 'list' }, all.map((p, i) => h('div', { class: 'li' }, h('span', { class: 't' }, h('b', null, p.name), h('small', null, p.lat.toFixed(2) + ', ' + p.lon.toFixed(2))), h('button', { class: 'ib', 'aria-label': 'Remove', html: SVG.trash, onclick: async e => { const nx = Weather.places().filter(q => q.id !== p.id); Prefs.set('wxPlaces', nx); Prefs.set('wxIdx', 0); await DB.kdel('wx:' + p.id); e.currentTarget.closest('.li').remove(); draw(); } })))) : h('p', { class: 'muted' }, 'No places yet.'),
+        h('div', { class: 'row mt' }, h('button', { class: 'btn pri', onclick: useMine }, '📍 My location'), h('button', { class: 'btn', onclick: findCity }, '🔎 Search a city'))) });
+    }
+    const on = () => draw(); addEventListener('online', on); addEventListener('offline', on);
+    draw();
+    return () => { removeEventListener('online', on); removeEventListener('offline', on); };
+  },
+});
+
+/* ---- 99-boot.js ---- */
+/* ===== start ===== */
+Offline.init();
+Shell.init();
+window.__np = { ready: () => true, apps: () => Apps.list.map(a => a.id), errors: [] };
+addEventListener('error', e => window.__np.errors.push(String(e.message || e)));
+addEventListener('unhandledrejection', e => window.__np.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)));
