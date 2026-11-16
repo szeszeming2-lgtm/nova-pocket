@@ -1,4 +1,4 @@
-window.NP_VERSION='bb7516d633';
+window.NP_VERSION='c3b368f620';
 /* ---- 00-core.js ---- */
 'use strict';
 /* ===== Super One core: helpers, storage, dialogs, files, sound ===== */
@@ -612,6 +612,7 @@ const ICON_PATHS = {
   notes: '<rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8h6M9 12h6M9 16h4"/>',
   reminders: '<path d="M4 6l1.5 1.5L8 5M4 12l1.5 1.5L8 11M4 18l1.5 1.5L8 17M11.5 6.5h8.5M11.5 12.5h8.5M11.5 18.5h8.5"/>',
   passwords: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3M12 14.5v2.5"/>',
+  fit: '<circle cx="12" cy="4.2" r="2.1"/><path d="M12 7.5v6.5M5 9.5l7 1.2 7-1.2M8.5 21.5l3.5-7.5 3.5 7.5"/>',
   map: '<path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/>',
   weather: '<path d="M7 19h10a4 4 0 0 0 .5-7.97A5.5 5.5 0 0 0 7 11.5 3.75 3.75 0 0 0 7 19z"/><path d="M15.5 5.5a3.5 3.5 0 0 1 4.5 4M17.5 2.5v.01M21.5 6.5v.01"/>',
   media: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9.5" r="1.8"/><path d="M21 15.5l-5-5-9.5 9.5"/>',
@@ -744,6 +745,7 @@ Shell.fillForYou = async function (el) {
     const comics = (await DB.all('comics').catch(() => [])).filter(c => c.opened && c.kind === 'images' && c.last < c.pages.length - 1).sort((a, b) => b.opened - a.opened)[0]; if (comics) add(54, '💥', 'Keep reading ' + comics.title, 'Page ' + (comics.last + 1) + ' of ' + comics.pages.length, () => this.go('comics'));
     const fresh = Apps.list.filter(a => !opens[a.id]); if (fresh.length) { const a = fresh[hashStr(today) % fresh.length]; add(44, a.icon, 'Try ' + a.name, a.blurb || 'You haven’t opened it yet', () => this.go(a.id)); }
     if (!Prefs.get('links', []).length && Apps.byId.links) add(50, '🔗', 'Add your music & video links', 'Spotify, YouTube, Netflix, your games…', () => this.go('links'));
+    if (typeof Fit !== 'undefined') { const fs = await Fit.st(); if (fs.setup) { const { w, today } = await Fit.next(fs); if (!today) add(68, '🤸', 'Today: ' + w.n, '~' + Fit.minutes(w, fs) + ' min of calisthenics — tap to start', () => this.go('fit', w.id)); } else add(40, '🤸', 'Try Calisthenics', 'Find your level in 30 seconds', () => this.go('fit')); }
     const lv = Prefs.get('learnBest', {}); if (!Object.keys(lv).some(k => k.startsWith('times'))) add(36, '✖️', 'Master a times table', 'Get 10 out of 10 for a star', () => this.go('learn'));
   } catch (e) { console.warn(e); }
   T.sort((a, b) => b.score - a.score);
@@ -4305,6 +4307,471 @@ Apps.reg({
     }
     fillSel(); draw(); paintHist();
     return () => cancelAnimationFrame(raf);
+  },
+});
+
+/* ---- 39-fit-data.js ---- */
+/* ===== Calisthenics data: moves, moving stick-figure demos, level ladders, workouts ===== */
+/* Stick figure: side view, facing right, 100×100 box, floor at y=90.
+   A pose gives the hip, a point the shoulders lean toward, the hands and the feet (ankles).
+   Elbows and knees are found by 2-bone IK, so hands and feet stay planted while the body moves. */
+const Fig = (() => {
+  const G = 90, T = 24, UA = 12, FA = 12, TH = 15, SH = 15, HR = 5.5;
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1]], len = v => Math.hypot(v[0], v[1]) || 0.001;
+  function ik(A, P, l1, l2, s) {
+    const v = sub(P, A), d = len(v), dd = clamp(d, Math.abs(l1 - l2) + 0.05, l1 + l2 - 0.05), base = Math.atan2(v[1], v[0]);
+    const a = Math.acos(clamp((l1 * l1 + dd * dd - l2 * l2) / (2 * l1 * dd), -1, 1)), j = base + s * a;
+    return [[A[0] + l1 * Math.cos(j), A[1] + l1 * Math.sin(j)], [A[0] + dd * Math.cos(base), A[1] + dd * Math.sin(base)]];
+  }
+  const two = x => x.length > 1 ? x : [x[0], x[0]], bend = (b, i, d) => b == null ? d : Array.isArray(b) ? b[i] : b;
+  const lerpP = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  function mix(A, B, t) {
+    const a2 = two(A.a), b2 = two(B.a), f2 = two(A.f), g2 = two(B.f), S = t < 0.5 ? A : B;
+    return { h: lerpP(A.h, B.h, t), s: lerpP(A.s, B.s, t), a: [lerpP(a2[0], b2[0], t), lerpP(a2[1], b2[1], t)], f: [lerpP(f2[0], g2[0], t), lerpP(f2[1], g2[1], t)], eb: S.eb, kb: S.kb, toe: S.toe };
+  }
+  // where every joint is for a pose
+  function solve(p) {
+    const hip = p.h, dv = sub(p.s, hip), dl = len(dv), u = [dv[0] / dl, dv[1] / dl], sh = [hip[0] + u[0] * T, hip[1] + u[1] * T];
+    let head = [sh[0] + u[0] * (HR + 2), sh[1] + u[1] * (HR + 2)]; head[1] = Math.min(head[1], G - HR - 0.5);
+    const arms = two(p.a).map((t, i) => { const [el, ha] = ik(sh, t, UA, FA, bend(p.eb, i, 1)); return [sh, el, ha]; });
+    const legs = two(p.f).map((t, i) => {
+      const [kn, an] = ik(hip, t, TH, SH, bend(p.kb, i, -1)); let toe;
+      if (p.toe) toe = [an[0] + p.toe[0], an[1] + p.toe[1]];
+      else { const dy = G - an[1]; toe = dy < 0.6 ? [an[0] + 5, G] : dy < 5 ? [an[0] + Math.sqrt(25 - dy * dy), G] : [an[0] + 4, an[1] + 2]; }
+      return [hip, kn, an, toe];
+    });
+    return { hip, sh, head, arms, legs };
+  }
+  const pts = a => a.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+  function propSvg(list) {
+    return (list || []).map(([k, ...v]) => k === 'r' ? '<rect x="' + v[0] + '" y="' + v[1] + '" width="' + v[2] + '" height="' + v[3] + '" rx="1.5" fill="var(--fig-prop)"/>'
+      : '<line x1="' + v[0] + '" y1="' + v[1] + '" x2="' + v[2] + '" y2="' + v[3] + '" stroke="var(--fig-prop' + (v[4] > 2.5 ? '-dark' : '') + ')" stroke-width="' + (v[4] || 2) + '" stroke-linecap="round"/>').join('');
+  }
+  const ease = t => t * t * (3 - 2 * t);
+  // make a figure. anim = key in ANIMS. Returns {el, stop}
+  // the part of the 100×100 box the figure and its props really use, so low moves aren't tiny
+  function box(A) {
+    let y0 = G; for (const p of A.k) { const j = solve(p); y0 = Math.min(y0, j.head[1] - HR, ...j.arms.flat().map(q => q[1]), ...j.legs.flat().map(q => q[1])); }
+    for (const [k, ...v] of A.p || []) y0 = Math.min(y0, k === 'r' ? v[1] : Math.min(v[1], v[3]));
+    y0 = clamp(Math.floor(y0 - 6), 0, 58); return '0 ' + y0 + ' 100 ' + (96 - y0);
+  }
+  function make(anim, { still = false, cls = 'fig', tempo, crop = false } = {}) {
+    const A = ANIMS[anim] || ANIMS.stand, K = A.k, D = tempo || A.d || K.map(() => 1);
+    const svg = h('div', { class: cls, html: '<svg viewBox="0 0 100 100" aria-hidden="true"><line x1="2" y1="' + (G + 0.8) + '" x2="98" y2="' + (G + 0.8) + '" stroke="var(--fig-floor)" stroke-width="1.6" stroke-linecap="round"/>' + propSvg(A.p) +
+      '<g fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline class="lf" stroke="var(--fig-far)" stroke-width="3.4"/><polyline class="af" stroke="var(--fig-far)" stroke-width="3.2"/><polyline class="tr" stroke="var(--fig-ink)" stroke-width="4.2"/><polyline class="ln" stroke="var(--fig-ink)" stroke-width="3.6"/><polyline class="an" stroke="var(--fig-ink)" stroke-width="3.4"/></g><circle class="hd" r="' + HR + '" fill="var(--fig-ink)"/></svg>' });
+    if (crop) svg.firstChild.setAttribute('viewBox', A.box || (A.box = box(A)));
+    const q = s => svg.querySelector(s), lf = q('.lf'), af = q('.af'), tr = q('.tr'), ln = q('.ln'), an = q('.an'), hd = q('.hd');
+    const draw = p => { const j = solve(p); lf.setAttribute('points', pts(j.legs[1])); af.setAttribute('points', pts(j.arms[1])); tr.setAttribute('points', pts([j.hip, j.sh])); ln.setAttribute('points', pts(j.legs[0])); an.setAttribute('points', pts(j.arms[0])); hd.setAttribute('cx', j.head[0].toFixed(1)); hd.setAttribute('cy', j.head[1].toFixed(1)); };
+    const total = D.reduce((a, b) => a + b, 0) * 1000; let raf = 0, t0 = performance.now(), on = !still && K.length > 1;
+    const frame = now => {
+      if (!svg.isConnected && now - t0 > 2000) { on = false; return; }
+      let t = (now - t0) % total, i = 0; while (t > D[i] * 1000 && i < K.length - 1) { t -= D[i] * 1000; i++; }
+      draw(mix(K[i], K[(i + 1) % K.length], ease(clamp(t / (D[i] * 1000), 0, 1)))); if (on) raf = requestAnimationFrame(frame);
+    };
+    draw(K[still && A.show != null ? A.show : 0]); if (on) raf = requestAnimationFrame(frame);
+    return { el: svg, stop() { on = false; cancelAnimationFrame(raf); } };
+  }
+  return { make, solve, G };
+})();
+// props: ['l', x1,y1,x2,y2,width] line, ['r', x,y,w,h] box
+const BAR = [['l', 28, 10, 28, 90, 1.6], ['l', 72, 10, 72, 90, 1.6], ['l', 22, 10, 78, 10, 3.2]];
+const STAND = { h: [50, 60], s: [50, 36], a: [[52, 59], [49, 59]], f: [[52, 90], [49, 90]] };
+const PUSH_UP = { h: [49.7, 75.6], s: [71.9, 66.5], a: [[73, 90]], f: [[22, 87]] }, PUSH_DOWN = { h: [51.9, 84.1], s: [75.8, 81.8], a: [[73, 90]], f: [[22, 87]] };
+const SQUAT_LOW = { h: [38, 74], s: [50, 53], a: [[73, 50], [72, 52]], f: [[52, 90], [50, 90]] };
+const HANG = { h: [50, 58], s: [51, 34], a: [[53, 10], [50, 10]], f: [[40, 80], [42, 81]], eb: 1 };
+const ANIMS = {
+  stand: { k: [STAND] },
+  squat: { k: [{ h: [50, 60], s: [51, 36], a: [[75, 38], [74, 40]], f: [[52, 90], [50, 90]] }, SQUAT_LOW], d: [1.1, 1.1] },
+  jumpsquat: { k: [SQUAT_LOW, { h: [50, 50], s: [51, 26], a: [[54, 2], [51, 2]], f: [[52, 80], [50, 80]] }], d: [0.45, 0.65] },
+  lunge: { k: [{ h: [50, 60], s: [50, 36], a: [[52, 59]], f: [[52, 90], [49, 90]] }, { h: [48, 73], s: [48, 49], a: [[51, 72]], f: [[66, 90], [30, 90]] }], d: [1.1, 1.1] },
+  calf: { k: [STAND, { h: [50, 56], s: [50, 32], a: [[52, 55], [49, 55]], f: [[52, 86], [49, 86]] }], d: [0.9, 1.1] },
+  bridge: { k: [{ h: [46, 85], s: [22, 85], a: [[46.2, 88]], f: [[64, 90]] }, { h: [44, 71], s: [22, 85], a: [[46.2, 88]], f: [[64, 90]] }], d: [1.1, 1.1] },
+  wallsit: { p: [['r', 18, 20, 13, 70], ['l', 31, 20, 31, 90, 1.4]], k: [{ h: [37, 72], s: [36, 48], a: [[50, 71]], f: [[54, 90], [52, 90]] }, { h: [37, 72.6], s: [36.3, 48.5], a: [[50, 71.5]], f: [[54, 90], [52, 90]] }], d: [1.6, 1.6] },
+  pushup: { k: [PUSH_UP, PUSH_DOWN], d: [1.1, 1] },
+  kneepush: { k: [{ h: [52, 79], s: [72, 65.8], a: [[72, 90]], f: [[30, 79]], toe: [3, -2] }, { h: [55, 86], s: [78.3, 80.2], a: [[72, 90]], f: [[30, 79]], toe: [3, -2] }], d: [1.1, 1] },
+  wallpush: { p: [['r', 81, 8, 17, 82], ['l', 81, 8, 81, 90, 1.4]], k: [{ h: [50, 61.7], s: [58, 39], a: [[81, 37], [81, 39]], f: [[40, 90]] }, { h: [54.9, 64], s: [66.8, 43.2], a: [[81, 37], [81, 39]], f: [[40, 90]] }], d: [1.1, 1] },
+  inclinepush: { p: [['r', 62, 73, 24, 3], ['l', 64, 76, 64, 90, 1.6], ['l', 84, 76, 84, 90, 1.6]], k: [{ h: [51.2, 66.1], s: [68, 49], a: [[68, 73]], f: [[30.2, 87.5]] }, { h: [56.7, 73.4], s: [77.9, 62.1], a: [[68, 73]], f: [[30.2, 87.5]] }], d: [1.1, 1] },
+  pike: { k: [{ h: [34, 58.5], s: [52, 74], a: [[70, 90]], f: [[30, 88]] }, { h: [42, 62], s: [62, 78], a: [[70, 90]], f: [[30, 88]] }], d: [1.2, 1.1] },
+  benchdip: { p: [['r', 26, 70, 20, 3], ['l', 28, 73, 28, 90, 1.6], ['l', 44, 73, 44, 90, 1.6]], k: [{ h: [48, 70], s: [46, 46], a: [[44, 70]], f: [[68, 90]] }, { h: [49, 82], s: [47, 58], a: [[44, 70]], f: [[68, 90]] }], d: [1.1, 1.1] },
+  dip: { p: [['l', 38, 64, 38, 90, 1.6], ['l', 64, 64, 64, 90, 1.6], ['l', 34, 63.5, 68, 63.5, 3.2]], k: [{ h: [50, 62], s: [51, 38], a: [[52, 62], [50, 62]], f: [[40, 84], [42, 85]] }, { h: [47, 74], s: [53, 51], a: [[52, 62], [50, 62]], f: [[38, 88], [40, 88]] }], d: [1.1, 1.2] },
+  hang: { p: BAR, k: [HANG, Object.assign({}, HANG, { h: [50.4, 58.4], f: [[40.6, 80.4], [42.5, 81.4]] })], d: [1.6, 1.6] },
+  scap: { p: BAR, k: [HANG, { h: [50, 55], s: [51, 31], a: [[53, 10], [50, 10]], f: [[40, 77], [42, 78]], eb: 1 }], d: [0.9, 1] },
+  pullup: { p: BAR, k: [HANG, { h: [48, 39], s: [48, 15], a: [[56, 10], [53, 10]], f: [[38, 61], [40, 62]], eb: 1 }], d: [1.1, 1.3] },
+  hangknee: { p: BAR, k: [Object.assign({}, HANG, { f: [[51, 87], [49, 87]] }), Object.assign({}, HANG, { f: [[60, 62], [58, 63]] })], d: [1, 1.1] },
+  row: { p: [['l', 82, 55, 82, 90, 1.6], ['l', 58, 55, 86, 55, 3.2]], k: [{ h: [53.4, 81.9], s: [77, 77], a: [[70, 55], [68, 55]], f: [[24, 88]], eb: -1 }, { h: [50.3, 73.5], s: [71, 62], a: [[70, 55], [68, 55]], f: [[24, 88]], eb: -1 }], d: [1, 1.2] },
+  plank: { k: [{ h: [42.5, 81.4], s: [66, 77], a: [[78, 89]], f: [[13, 87]] }, { h: [42.5, 82], s: [66, 77.2], a: [[78, 89]], f: [[13, 87]] }], d: [1.6, 1.6] },
+  hollow: { k: [{ h: [50, 88], s: [28, 82], a: [[4, 75]], f: [[79, 80]], toe: [4, -1] }, { h: [50, 88], s: [28, 81], a: [[4, 73.5]], f: [[79, 78.6]], toe: [4, -1] }], d: [1.6, 1.6] },
+  legraise: { k: [{ h: [50, 87], s: [26, 87], a: [[50, 88.6]], f: [[80, 88]], toe: [4, -2] }, { h: [50, 87], s: [26, 87], a: [[50, 88.6]], f: [[52, 57]], toe: [4, -1] }], d: [1.2, 1.6] },
+  superman: { k: [{ h: [48, 87], s: [72, 85], a: [[94, 79]], f: [[20, 82]], toe: [-4, 1] }, { h: [48, 87], s: [72, 84], a: [[94, 76]], f: [[20, 79]], toe: [-4, 1] }], d: [1.3, 1.3] },
+  lsit: { p: [['l', 44, 81, 44, 90, 1.6], ['l', 56, 81, 56, 90, 1.6], ['l', 41, 80.5, 59, 80.5, 3.2]], k: [{ h: [49, 80], s: [50, 56], a: [[51, 80], [49, 80]], f: [[60, 82]], toe: [4, 0] }, { h: [49, 79.5], s: [50, 55.6], a: [[51, 80], [49, 80]], f: [[60, 81]], toe: [4, 0] }], d: [1.5, 1.5] },
+  handstand: { p: [['r', 61, 2, 37, 88], ['l', 61, 2, 61, 90, 1.4]], k: [{ h: [55, 42], s: [54, 66], a: [[54, 90], [52, 90]], f: [[57, 12]], toe: [3, -3] }, { h: [55.4, 42], s: [54.2, 66], a: [[54, 90], [52, 90]], f: [[57.5, 12]], toe: [3, -3] }], d: [1.4, 1.4] },
+  climber: { k: [{ h: [49.7, 75.6], s: [71.9, 66.5], a: [[73, 90]], f: [[52, 84], [22, 87]] }, { h: [49.7, 75.6], s: [71.9, 66.5], a: [[73, 90]], f: [[22, 87], [52, 84]] }], d: [0.38, 0.38] },
+  highknee: { k: [{ h: [50, 59], s: [51, 35], a: [[43, 55], [63, 44]], f: [[56, 73], [51, 89]] }, { h: [50, 59], s: [51, 35], a: [[63, 44], [43, 55]], f: [[51, 89], [56, 73]] }], d: [0.34, 0.34] },
+  armcircle: { k: [0, 45, 90, 135, 180, 225, 270, 315].map(g => { const r = g * Math.PI / 180, x = 50 + 24 * Math.cos(r), y = 36 + 24 * Math.sin(r); return { h: [50, 60], s: [50, 36], a: [[x, y], [x - 1, y]], f: [[52, 90], [49, 90]] }; }), d: [0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3] },
+  burpee: { k: [STAND, { h: [38, 76], s: [57, 64], a: [[62, 88], [60, 88]], f: [[52, 90], [50, 90]] }, PUSH_UP, { h: [38, 76], s: [57, 64], a: [[62, 88], [60, 88]], f: [[52, 90], [50, 90]] }, STAND, { h: [50, 50], s: [51, 26], a: [[54, 2], [51, 2]], f: [[52, 80], [50, 80]] }], d: [0.5, 0.45, 0.5, 0.45, 0.35, 0.45] },
+};
+// which frame to show in still pictures
+Object.assign(ANIMS.lunge, { show: 1 }); Object.assign(ANIMS.bridge, { show: 1 }); Object.assign(ANIMS.legraise, { show: 1 }); Object.assign(ANIMS.burpee, { show: 2 }); Object.assign(ANIMS.squat, { show: 1 }); Object.assign(ANIMS.dip, { show: 1 }); Object.assign(ANIMS.benchdip, { show: 1 }); Object.assign(ANIMS.hangknee, { show: 1 }); Object.assign(ANIMS.highknee, { show: 0 }); Object.assign(ANIMS.armcircle, { show: 2 });
+// moves: id, name, emoji, demo, unit (reps|sec), works, kind, how-to steps, tip, needs a pull-up bar
+const FIT_EX = {};
+[
+  ['wallpush', 'Wall push-up', '🧱', 'wallpush', 'reps', 'Chest, arms', 'push', ['Stand an arm’s length from a wall.', 'Put your hands flat on the wall at shoulder height.', 'Bend your elbows and bring your chest toward the wall.', 'Push back until your arms are straight.'], 'Keep your body straight like a board.'],
+  ['inclinepush', 'Incline push-up', '📐', 'inclinepush', 'reps', 'Chest, arms', 'push', ['Put your hands on a bench, bed edge or sturdy table.', 'Walk your feet back so your body is straight.', 'Lower your chest to the edge.', 'Push back up.'], 'The lower the surface, the harder it gets.'],
+  ['kneepush', 'Knee push-up', '🦵', 'kneepush', 'reps', 'Chest, arms, core', 'push', ['Get in a push-up with your knees on the floor.', 'Hands a little wider than your shoulders.', 'Lower your chest close to the floor.', 'Push back up. Keep your hips in line with your back.'], 'Put a towel under your knees.'],
+  ['pushup', 'Push-up', '💪', 'pushup', 'reps', 'Chest, arms, core', 'push', ['Hands under your shoulders, body straight from head to heels.', 'Lower your chest until it almost touches the floor.', 'Elbows go back at an angle, not straight out to the sides.', 'Push the floor away until your arms are straight.'], 'Squeeze your belly and bottom so your hips don’t sag.'],
+  ['diamond', 'Diamond push-up', '💎', 'pushup', 'reps', 'Back of arms, chest', 'push', ['Touch your thumbs and pointer fingers together to make a diamond under your chest.', 'Keep your body straight.', 'Lower your chest to your hands.', 'Push back up.'], 'Harder than a normal push-up — great for arms.'],
+  ['pike', 'Pike push-up', '🔺', 'pike', 'reps', 'Shoulders', 'push', ['Make an upside-down V: hips high, hands and feet on the floor.', 'Bend your elbows and lower the top of your head toward the floor.', 'Push back up.'], 'This builds up to handstand push-ups.'],
+  ['benchdip', 'Bench dip', '🪑', 'benchdip', 'reps', 'Back of arms, shoulders', 'push', ['Sit on the edge of a sturdy chair or bench, hands next to your hips.', 'Slide your bottom off, legs out in front.', 'Bend your elbows to lower down.', 'Push back up until your arms are straight.'], 'Keep your back close to the bench.'],
+  ['dip', 'Dip', '⬇️', 'dip', 'reps', 'Arms, chest, shoulders', 'push', ['Hold yourself up on parallel bars (or two sturdy chairs) with straight arms.', 'Lean forward a little and bend your elbows.', 'Go down until your shoulders are a bit below your elbows.', 'Push back up.'], 'Go slowly on the way down.'],
+  ['hang', 'Dead hang', '🙌', 'hang', 'sec', 'Grip, shoulders', 'pull', ['Grab the bar with your hands a bit wider than your shoulders.', 'Hang with straight arms, feet off the floor.', 'Breathe and hold on.'], 'Great for grip and shoulders.', 1],
+  ['scap', 'Scapular pull', '🦅', 'scap', 'reps', 'Upper back', 'pull', ['Hang from the bar with straight arms.', 'Pull your shoulders down, away from your ears. Arms stay straight.', 'Your body rises a little. Relax back to the hang.'], 'A small move that really helps your first pull-up.', 1],
+  ['row', 'Australian row', '🦘', 'row', 'reps', 'Back, biceps', 'pull', ['Lie under a sturdy table or low bar and grab the edge.', 'Keep your body straight, heels on the floor.', 'Pull your chest up to the edge.', 'Lower slowly.'], 'No bar? A strong table works — ask an adult to check it won’t tip.'],
+  ['negpull', 'Negative pull-up', '🐢', 'pullup', 'reps', 'Back, biceps', 'pull', ['Jump or step up so your chin is over the bar.', 'Lower yourself as slowly as you can — count to 5.', 'Drop down and repeat.'], 'Going down slowly builds pull-up strength fast.', 1, [0.7, 3.4]],
+  ['chinup', 'Chin-up', '🧗', 'pullup', 'reps', 'Biceps, back', 'pull', ['Grab the bar with palms facing you, shoulder-width apart.', 'Pull until your chin goes over the bar.', 'Lower all the way down with control.'], 'Usually a bit easier than a pull-up.', 1],
+  ['pullup', 'Pull-up', '🏆', 'pullup', 'reps', 'Back, biceps, grip', 'pull', ['Grab the bar with palms facing away, a bit wider than your shoulders.', 'Pull your chest toward the bar until your chin is over it.', 'Lower all the way down to straight arms.'], 'No swinging — squeeze your belly.', 1],
+  ['superman', 'Superman', '🦸', 'superman', 'sec', 'Back', 'pull', ['Lie on your belly with your arms forward.', 'Lift your arms, chest and legs off the floor.', 'Hold like you are flying.'], 'Look at the floor, not up.'],
+  ['wallsit', 'Wall sit', '🧱', 'wallsit', 'sec', 'Legs', 'legs', ['Lean your back on a wall.', 'Slide down until your knees bend like a chair.', 'Hold and breathe.'], 'Keep your knees above your ankles.'],
+  ['squat', 'Squat', '🪑', 'squat', 'reps', 'Legs, bottom', 'legs', ['Feet shoulder-width apart, toes a little out.', 'Push your hips back and bend your knees, like sitting in a chair.', 'Go down until your thighs are flat (or as low as is comfy).', 'Stand back up.'], 'Heels stay down, chest stays up.'],
+  ['lunge', 'Lunge', '🚶', 'lunge', 'reps', 'Legs, bottom', 'legs', ['Stand tall with your hands on your hips.', 'Take a big step forward.', 'Lower your back knee toward the floor.', 'Push back up and switch legs.'], 'Each leg counts as one rep.'],
+  ['jumpsquat', 'Jump squat', '🚀', 'jumpsquat', 'reps', 'Legs, power', 'legs', ['Squat down.', 'Jump up as high as you can with your arms up.', 'Land softly and go straight into the next squat.'], 'Land quietly, like a ninja.'],
+  ['calf', 'Calf raise', '🩰', 'calf', 'reps', 'Calves', 'legs', ['Stand tall (hold a wall for balance).', 'Rise up onto your toes.', 'Lower your heels slowly.'], 'Try one leg at a time to make it harder.'],
+  ['bridge', 'Glute bridge', '🌉', 'bridge', 'reps', 'Bottom, lower back', 'legs', ['Lie on your back, knees bent, feet flat.', 'Push through your heels and lift your hips.', 'Squeeze at the top, then lower.'], 'Don’t push with your neck.'],
+  ['plank', 'Plank', '📏', 'plank', 'sec', 'Core', 'core', ['Forearms on the floor, elbows under your shoulders.', 'Body straight from head to heels.', 'Squeeze your belly and hold.'], 'Don’t let your hips sag or stick up.'],
+  ['legraise', 'Leg raise', '🦿', 'legraise', 'reps', 'Lower belly', 'core', ['Lie on your back, legs straight, hands by your sides.', 'Lift your legs up to point at the ceiling.', 'Lower them slowly without touching the floor.'], 'Keep your lower back pressed down.'],
+  ['hollow', 'Hollow hold', '🍌', 'hollow', 'sec', 'Core', 'core', ['Lie on your back.', 'Press your lower back into the floor.', 'Lift your arms, shoulders and legs a little off the floor.', 'Hold like a banana.'], 'Bend your knees if it’s too hard.'],
+  ['hangknee', 'Hanging knee raise', '🎋', 'hangknee', 'reps', 'Core, grip', 'core', ['Hang from the bar.', 'Pull your knees up toward your chest.', 'Lower them slowly without swinging.'], 'Slow and steady beats fast and swingy.', 1],
+  ['lsit', 'Tuck L-sit', '🪜', 'lsit', 'sec', 'Core, arms', 'core', ['Put your hands on two sturdy handles, thick books or the floor beside your hips.', 'Push down with straight arms to lift your bottom.', 'Pull your knees up to your chest and hold.'], 'Even 5 seconds is a great start.'],
+  ['handstand', 'Wall handstand', '🤸', 'handstand', 'sec', 'Shoulders, balance', 'skill', ['Put your hands on the floor close to a wall.', 'Walk your feet up the wall, chest facing the wall.', 'Hold with straight arms and a tight belly.', 'Walk back down slowly.'], 'Only on a soft floor with space around you. Ask someone to spot you the first time.'],
+  ['climber', 'Mountain climbers', '⛰️', 'climber', 'sec', 'Core, heart', 'cardio', ['Start at the top of a push-up.', 'Drive one knee toward your chest, then switch fast.', 'Keep your hips low.'], 'Like running, but on your hands.'],
+  ['highknee', 'High knees', '🏃', 'highknee', 'sec', 'Heart, legs', 'cardio', ['Run in place.', 'Lift your knees up to hip height.', 'Pump your arms.'], ''],
+  ['armcircle', 'Arm circles', '🔄', 'armcircle', 'sec', 'Shoulders (warm-up)', 'cardio', ['Hold your arms straight.', 'Make big slow circles forward, then backward.'], ''],
+  ['burpee', 'Burpee', '🔥', 'burpee', 'reps', 'Whole body', 'cardio', ['Squat down and put your hands on the floor.', 'Jump your feet back to a push-up position.', 'Jump your feet back in.', 'Jump up with your arms high.'], 'Go at your own speed.'],
+].forEach(([id, n, e, anim, unit, works, kind, how, tip, bar, tempo]) => { FIT_EX[id] = { id, n, e, anim, unit, works, kind, how, tip, bar: !!bar, tempo }; });
+// level ladders: [move, sets, goal reps (or seconds)] — hit the goal on every set to move up
+const FIT_LADDERS = [
+  { id: 'push', n: 'Push', e: '💪', steps: [['wallpush', 3, 15], ['inclinepush', 3, 12], ['kneepush', 3, 12], ['pushup', 3, 10], ['diamond', 3, 10], ['pike', 3, 10]] },
+  { id: 'pull', n: 'Pull', e: '🧗', steps: [['hang', 3, 30], ['scap', 3, 10], ['row', 3, 12], ['negpull', 3, 5], ['chinup', 3, 6], ['pullup', 3, 8]], nobar: [['superman', 3, 20], ['row', 3, 10], ['row', 4, 15]] },
+  { id: 'legs', n: 'Legs', e: '🦵', steps: [['wallsit', 3, 30], ['squat', 3, 15], ['lunge', 3, 16], ['jumpsquat', 3, 15]] },
+  { id: 'core', n: 'Core', e: '🍫', steps: [['plank', 3, 30], ['legraise', 3, 12], ['hollow', 3, 30], ['hangknee', 3, 10], ['lsit', 3, 15]] },
+  { id: 'dips', n: 'Dips', e: '⬇️', steps: [['benchdip', 3, 10], ['dip', 3, 8]] },
+  { id: 'hand', n: 'Handstand', e: '🤸', steps: [['plank', 3, 40], ['pike', 3, 8], ['handstand', 3, 20]] },
+];
+// '@slot' = your level on that ladder, '@slot-1' = one step easier, 'move:target' = fixed
+const FIT_WORKOUTS = [
+  { id: 'full', n: 'Full body', e: '⚡', d: 'Push, pull, legs and core', rounds: 3, warm: true, items: ['@push', '@pull', '@legs', '@core'] },
+  { id: 'upper', n: 'Upper body', e: '💪', d: 'Push, pull and dips', rounds: 3, warm: true, items: ['@push', '@pull', '@dips', '@push-1'] },
+  { id: 'lower', n: 'Legs & core', e: '🦵', d: 'Legs, bottom and belly', rounds: 3, warm: true, items: ['@legs', 'bridge:15', '@core', 'calf:20'] },
+  { id: 'hiit', n: '7-minute sweat', e: '🔥', d: '40 s go, 20 s rest — as many as you can', rounds: 1, hiit: [40, 20], items: ['highknee', 'squat', 'climber', '@push', 'jumpsquat', 'plank', 'burpee'] },
+  { id: 'coreb', n: 'Core blast', e: '🍫', d: 'Belly and back', rounds: 2, items: ['plank:30', 'legraise:12', 'hollow:20', 'superman:20', 'climber:30'] },
+  { id: 'hand', n: 'Handstand practice', e: '🤸', d: 'Shoulders and balance', rounds: 3, warm: true, items: ['@hand', 'pike:8'] },
+  { id: 'warm', n: '5-minute warm-up', e: '🌤️', d: 'Get loose before anything', rounds: 1, rest: 10, items: ['armcircle:30', 'highknee:30', 'squat:10', 'climber:20', 'calf:15'] },
+];
+const FIT_START = { // quick level picks
+  new: { push: 'inclinepush', pull: 'hang', pullNB: 'superman', legs: 'squat', core: 'plank', dips: 'benchdip', hand: 'plank' },
+  some: { push: 'pushup', pull: 'negpull', pullNB: 'row', legs: 'lunge', core: 'legraise', dips: 'benchdip', hand: 'pike' },
+  strong: { push: 'diamond', pull: 'pullup', pullNB: 'row', legs: 'jumpsquat', core: 'hollow', dips: 'dip', hand: 'handstand' },
+};
+
+/* ---- 39-fit.js ---- */
+/* ===== Calisthenics: find your level, follow-along workouts, level ladders, progress ===== */
+addCSS(`
+:root{--fig-ink:var(--ink);--fig-far:rgba(128,132,150,.55);--fig-floor:var(--line);--fig-prop:rgba(128,132,150,.2);--fig-prop-dark:rgba(128,132,150,.85)}
+.fig svg{display:block;width:100%;height:auto}
+.fig-white{--fig-ink:#fff;--fig-far:rgba(255,255,255,.55);--fig-floor:rgba(255,255,255,.45);--fig-prop:rgba(255,255,255,.22);--fig-prop-dark:rgba(255,255,255,.75)}
+.ftoday{background:linear-gradient(135deg,#FF5F6D,#FF9A5A 60%,#FFC371);color:#fff;border-radius:22px;padding:16px;box-shadow:var(--shadow);display:flex;gap:12px;align-items:center}
+.ftoday .fig{width:116px;flex:0 0 auto}
+.ftoday .k{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.9}
+.ftoday h3{margin:2px 0 4px;font-size:24px;font-family:var(--round)}
+.ftoday p{margin:0 0 10px;font-size:14px;opacity:.95}
+.ftoday .btn{background:#fff;color:#E2364B;border:0;font-weight:800}
+.fkinds{flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+.fkinds::-webkit-scrollbar{display:none}
+.fkinds .chip{flex:0 0 auto;white-space:nowrap}
+.fittabs{gap:4px}.fittabs button{padding-left:10px!important;padding-right:10px!important;flex:1 1 auto}
+.mgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (min-width:640px){.fkinds{flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+.fkinds::-webkit-scrollbar{display:none}
+.fkinds .chip{flex:0 0 auto;white-space:nowrap}
+.mgrid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.mcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:4px 6px 10px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:1px;color:var(--ink);min-width:0}
+.mcard .fig{width:100%}
+.mcard b{font-size:13px;line-height:1.2}
+.mcard small{font-size:11px;color:var(--muted);line-height:1.2}
+.ldr{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:12px;margin-bottom:12px}
+.ldr h4{margin:0 0 6px;font-size:17px;display:flex;align-items:center;gap:8px}
+.ldr h4 small{margin-left:auto;font-size:13px;color:var(--muted);font-weight:600}
+.stp{display:flex;align-items:center;gap:10px;padding:4px 8px;border-radius:14px;width:100%;border:0;background:none;text-align:left;color:var(--ink)}
+.stp .fig{width:54px;flex:0 0 auto}
+.stp .t{flex:1;min-width:0}.stp .t b{display:block;font-size:15px}.stp .t small{color:var(--muted);font-size:13px}
+.stp.cur{background:var(--accent-soft)}
+.stp.lock{opacity:.5}
+.stp .st{font-size:18px}
+.fstats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.fstat{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 14px}
+.fstat b{display:block;font-size:28px;font-family:var(--round);line-height:1.1}
+.fstat small{color:var(--muted);font-size:13px}
+.fcal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.fcal span{aspect-ratio:1/1;border-radius:9px;background:var(--surface2);display:grid;place-items:center;font-size:12px;color:var(--muted);font-weight:600}
+.fcal span.h{background:none;aspect-ratio:auto;font-weight:800}
+.fcal span.fon{background:linear-gradient(135deg,#FF5F6D,#FFC371);color:#fff;font-weight:800}
+.fcal span.ftd{box-shadow:inset 0 0 0 2px var(--accent)}
+.fcal span.fut{opacity:.35}
+.fplay{position:fixed;inset:0;z-index:45;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 8px) 16px calc(env(safe-area-inset-bottom) + 14px);overflow-y:auto;--ring-bg:var(--surface2);--ring-fg:var(--accent)}
+.fplay.rest{background:linear-gradient(180deg,#0E7C66,#0B4F6C);color:#fff;--ring-bg:rgba(255,255,255,.22);--ring-fg:#fff}
+.fplay.rest .ib{color:#fff}.fplay.rest .prog{background:rgba(255,255,255,.25)}.fplay.rest .prog i{background:#fff}
+.fplay.done{background:linear-gradient(180deg,#5B3CC4,#E2364B);color:#fff}
+.ftop{display:flex;align-items:center;gap:10px}
+.ftop .prog{flex:1}
+.fname{font-size:27px;font-weight:800;text-align:center;font-family:var(--round);line-height:1.15;margin-top:2px}
+.fsub{text-align:center;opacity:.75;font-weight:600;font-size:15px;min-height:20px}
+.fbig{font-size:84px;font-weight:800;text-align:center;line-height:1;font-variant-numeric:tabular-nums;font-family:var(--round);min-width:120px}
+.fplay .fig{width:100%;max-width:min(380px,92vw);margin:0 auto}
+.fplay .fig svg{max-height:40vh}
+.fplay .fig.mid{max-width:min(320px,80vw)}
+.fplay .fig.mid svg{max-height:30vh}
+.fplay .fig.sm{max-width:min(220px,56vw)}
+.fplay .fig.sm svg{max-height:22vh}
+.fctl{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;margin-top:auto;padding-top:14px}
+.fdone{min-width:190px;min-height:58px;font-size:20px!important}
+.fadj{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:6px}
+.fadj .btn{width:58px;height:58px;border-radius:50%;font-size:28px;padding:0}
+.fring{position:relative;width:min(220px,54vw);margin:6px auto 0}
+.fring svg{display:block;width:100%}
+.fring .rg{transition:stroke-dashoffset 1s linear}
+.fring .fbig{position:absolute;inset:0;display:grid;place-items:center;font-size:62px}
+.fdonebox{text-align:center;margin:auto 0}
+.fdonebox .big{font-size:76px;line-height:1.2;padding-top:6px}
+.fdonebox h2{font-size:32px;margin:8px 0 14px;font-family:var(--round)}
+.fdonebox .fstats{max-width:420px;margin:0 auto}
+.fdonebox .fstat{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.25);color:#fff}
+.fdonebox .fstat small{color:rgba(255,255,255,.85)}
+.fwin{background:rgba(255,255,255,.18);border-radius:14px;padding:10px 12px;margin:10px auto 0;max-width:420px;text-align:left;font-weight:600}
+.fwin .btn{margin-top:8px;background:#fff;color:#5B3CC4;border:0;font-weight:800}
+`);
+const Fit = {
+  async st() { return Object.assign({ setup: false, bar: true, lv: {}, rest: 45, voice: true }, await DB.kget('fitSet', {})); },
+  save(s) { return DB.kset('fitSet', s); },
+  log() { return DB.kget('fitLog', []); },
+  // the active list of steps for a ladder (no bar = skip bar moves) and where you are on it
+  ladder(L, s) {
+    const nb = !s.bar, needsBar = L.nobar || L.steps.some(x => FIT_EX[x[0]].bar);
+    const list = nb ? (L.nobar || L.steps.filter(x => !FIT_EX[x[0]].bar)) : L.steps, key = L.id + (nb && needsBar ? 'NB' : '');
+    return { L, list, key, i: clamp(s.lv[key] || 0, 0, list.length - 1) };
+  },
+  ladderByKey(key, s) { return this.ladder(FIT_LADDERS.find(l => l.id === key.replace(/NB$/, '')), s); },
+  setStart(kind, s) {
+    const P = FIT_START[kind];
+    for (const L of FIT_LADDERS) { const r = this.ladder(L, s), id = P[r.key] || P[L.id], i = r.list.findIndex(x => x[0] === id); s.lv[r.key] = i < 0 ? 0 : i; }
+    s.setup = true;
+  },
+  // turn a workout into steps: exercises with rests between them
+  build(w, s) {
+    const one = it => {
+      if (it[0] === '@') {
+        const m = it.slice(1).match(/^(\w+)(-1)?$/), r = this.ladder(FIT_LADDERS.find(l => l.id === m[1]), s), i = Math.max(0, r.i - (m[2] ? 1 : 0)), [ex, sets, goal] = r.list[i];
+        return { ex, target: goal, goal, sets, slot: m[2] ? null : r.key, next: !m[2] && r.list[i + 1] ? r.list[i + 1][0] : null };
+      }
+      const [ex, t] = it.split(':'), E = FIT_EX[ex]; return { ex, target: +t || (E.unit === 'sec' ? 30 : 10) };
+    };
+    const items = w.items.map(one).filter(x => s.bar || !FIT_EX[x.ex].bar || w.id === 'try'), seq = [];
+    if (w.warm) for (const it of ['armcircle:20', 'highknee:20', 'squat:8']) seq.push(Object.assign(one(it), { warm: true, round: 0 }));
+    for (let r = 1; r <= w.rounds; r++) for (const it of items) seq.push(Object.assign({}, it, { round: r }));
+    for (const x of seq) { x.unit = FIT_EX[x.ex].unit; if (w.hiit && !x.warm) { x.unit = 'sec'; x.target = w.hiit[0]; x.amrap = true; } }
+    const rest = w.hiit ? w.hiit[1] : (w.rest || s.rest), out = [];
+    seq.forEach((x, i) => { out.push(x); const nx = seq[i + 1]; if (nx) out.push({ rest: x.warm ? (nx.warm ? 8 : 20) : nx.round !== x.round && !w.hiit ? Math.max(60, rest) : rest }); });
+    return out;
+  },
+  minutes(w, s) { const st = this.build(w, s); return Math.max(1, Math.round(st.reduce((a, x) => a + (x.rest || (x.unit === 'reps' ? x.target * 3 + 6 : x.target + 5)), 0) / 60)); },
+  async next(s) {
+    const order = ['full', 'upper', 'lower'], log = await this.log(), last = log.find(e => order.includes(e.w));
+    const w = FIT_WORKOUTS.find(x => x.id === (last ? order[(order.indexOf(last.w) + 1) % 3] : 'full'));
+    return { w, today: log.some(e => ymd(new Date(e.at)) === ymd(new Date())) };
+  },
+  streak(log) {
+    const days = new Set(log.map(e => ymd(new Date(e.at)))), d = new Date(); let n = 0;
+    if (!days.has(ymd(d))) d.setDate(d.getDate() - 1);
+    while (days.has(ymd(d))) { n++; d.setDate(d.getDate() - 1); }
+    return n;
+  },
+};
+Apps.reg({
+  id: 'fit', name: 'Calisthenics', icon: '🤸', color: 'linear-gradient(135deg,#FF5F6D,#FFC371)', group: 'day', keys: 'calisthenics workout exercise training fitness push-ups pull-ups gym bodyweight strength sport muscles plank squat', blurb: 'Bodyweight training that levels up',
+  async mount(v, ctx) {
+    let s = await Fit.st(), tab = Prefs.get('fitTab', 'train'), play = null;
+    const body = h('div');
+    const tabs = UI.tabs([['train', '🏋️ Train'], ['levels', '🪜 Levels'], ['moves', '📖 Moves'], ['progress', '📈 Stats']], tab, t => { tab = t; Prefs.set('fitTab', t); show(); }); tabs.classList.add('fittabs');
+    v.append(tabs, body);
+    function show() { body.innerHTML = ''; ({ train, levels, moves, progress })[tab](); }
+    const goalTxt = (ex, sets, goal) => sets + ' × ' + goal + (FIT_EX[ex].unit === 'sec' ? ' s' : '');
+    /* ---------- Train ---------- */
+    async function train() {
+      if (!s.setup) {
+        const f = Fig.make('pushup', { crop: true, cls: 'fig fig-white' });
+        body.append(h('div', { class: 'ftoday' }, f.el, h('div', null, h('div', { class: 'k' }, 'Welcome'), h('h3', null, 'Train with your body'), h('p', null, 'No gym needed. Push-ups, pull-ups, squats and more — and you level up as you get stronger.'), h('button', { class: 'btn', onclick: onboard }, 'Find my level →'))));
+        body.append(h('p', { class: 'tiny muted mt' }, 'Takes 30 seconds. You can change it any time.'));
+        return;
+      }
+      const { w, today } = await Fit.next(s), f = Fig.make(FIT_EX[Fit.build(w, s).find(x => !x.rest && !x.warm).ex].anim, { crop: true, cls: 'fig fig-white' });
+      body.append(h('div', { class: 'ftoday' }, f.el, h('div', { style: { minWidth: 0 } }, h('div', { class: 'k' }, today ? '✓ You trained today' : 'Today’s workout'), h('h3', null, w.e + ' ' + w.n), h('p', null, (today ? 'Nice work! Resting helps muscles grow. Or go again: ' : '') + '~' + Fit.minutes(w, s) + ' min · ' + w.d), h('button', { class: 'btn', onclick: () => start(w) }, today ? 'Go again ▶' : 'Start ▶'))));
+      body.append(h('div', { class: 'sec' }, 'All workouts'), h('div', { class: 'list' }, FIT_WORKOUTS.map(x => h('button', { class: 'li', onclick: () => start(x) }, h('span', { class: 'ic' }, x.e), h('span', { class: 't' }, h('b', null, x.n), h('small', null, '~' + Fit.minutes(x, s) + ' min · ' + x.d)), h('span', { class: 'chev' }, '▶')))));
+      const set = (k, v2) => { s[k] = v2; Fit.save(s); };
+      body.append(h('div', { class: 'sec' }, 'Settings'), h('div', { class: 'card stack' },
+        h('div', null, h('div', { class: 'small muted mb' }, 'Do you have a pull-up bar?'), UI.seg([[true, '✅ Yes'], [false, '🚫 No bar']], s.bar, x => { set('bar', x); })),
+        h('div', null, h('div', { class: 'small muted mb' }, 'Rest between moves'), UI.seg([[30, '30 s'], [45, '45 s'], [60, '60 s'], [90, '90 s']], s.rest, x => set('rest', x))),
+        h('div', null, h('div', { class: 'small muted mb' }, 'Voice coach'), UI.seg([[true, '🔊 On'], [false, '🔇 Off']], s.voice, x => set('voice', x))),
+        h('button', { class: 'btn', onclick: onboard }, '🎯 Find my level again')));
+      body.append(h('p', { class: 'tiny muted mt' }, '⚠️ Warm up first. A burning feeling is OK — sharp pain is not, so stop. Drink water. Train on a safe, clear floor.'));
+    }
+    function onboard() {
+      let bar = s.bar;
+      const pick = kind => { s.bar = bar; Fit.setStart(kind, s); Fit.save(s); sh.close(); Sfx.good(); UI.toast('Levels set! See them in 🪜 Levels'); show(); };
+      const opt = (kind, e, b, sm) => h('button', { class: 'li', onclick: () => pick(kind) }, h('span', { class: 'ic' }, e), h('span', { class: 't' }, h('b', null, b), h('small', null, sm)), h('span', { class: 'chev' }, '›'));
+      const sh = UI.sheet({ title: '🎯 Find my level', body: h('div', { class: 'stack' },
+        h('div', null, h('div', { class: 'small muted mb' }, '1. Do you have a pull-up bar (or something safe to hang from)?'), UI.seg([[true, '✅ Yes'], [false, '🚫 No']], bar, x => { bar = x; })),
+        h('div', { class: 'small muted' }, '2. Which sounds most like you?'),
+        h('div', { class: 'list' }, opt('new', '🌱', 'Just starting', 'Push-ups are hard for me'), opt('some', '💪', 'I can do about 10 push-ups', 'But pull-ups are tough'), opt('strong', '🔥', 'I can do push-ups and pull-ups', 'I want a challenge'))) });
+    }
+    /* ---------- Levels ---------- */
+    function levels() {
+      body.append(h('p', { class: 'small muted' }, 'Each ladder goes from easy to hard. Hit the goal on every set in a workout and you can move up a step.'));
+      if (!s.setup) body.append(h('div', { class: 'center mb' }, h('button', { class: 'btn pri', onclick: onboard }, '🎯 Find my level')));
+      for (const L of FIT_LADDERS) {
+        const r = Fit.ladder(L, s);
+        body.append(h('div', { class: 'ldr' }, h('h4', null, L.e + ' ' + L.n, h('small', null, 'Step ' + (r.i + 1) + ' of ' + r.list.length)),
+          r.list.map(([ex, sets, goal], i) => { const E = FIT_EX[ex], f = Fig.make(E.anim, { still: true });
+            return h('button', { class: 'stp' + (i === r.i ? ' cur' : i > r.i ? ' lock' : ''), onclick: () => howTo(E, { goal: goalTxt(ex, sets, goal), setLevel: i === r.i ? null : () => { s.lv[r.key] = i; Fit.save(s); UI.toast(L.n + ': ' + E.n + ' is your level now'); show(); } }) },
+              f.el, h('span', { class: 't' }, h('b', null, E.n), h('small', null, 'Goal ' + goalTxt(ex, sets, goal) + (i === r.i ? ' · you are here' : ''))), h('span', { class: 'st' }, i < r.i ? '✅' : i === r.i ? '👉' : '🔒')); }),
+          !s.bar && L.id === 'pull' ? h('p', { class: 'tiny muted', style: { margin: '6px 4px 0' } }, 'No bar: these work your back at home. Get a pull-up bar to unlock real pull-ups.') : null));
+      }
+    }
+    /* ---------- Moves ---------- */
+    function moves() {
+      let kind = Prefs.get('fitKind', 'all'); const grid = h('div', { class: 'mgrid mt' });
+      const KINDS = [['all', 'All'], ['push', '💪 Push'], ['pull', '🧗 Pull'], ['legs', '🦵 Legs'], ['core', '🍫 Core'], ['cardio', '❤️ Cardio'], ['skill', '🤸 Skill']];
+      const paint = () => { grid.innerHTML = ''; for (const E of Object.values(FIT_EX)) if (kind === 'all' || E.kind === kind) grid.append(h('button', { class: 'mcard', onclick: () => howTo(E, { tryIt: true }) }, Fig.make(E.anim, { still: true }).el, h('b', null, E.n), h('small', null, E.bar ? 'Needs a bar' : E.works))); };
+      body.append(h('div', { class: 'chips fkinds' }, KINDS.map(([k, l]) => { const b = h('button', { class: 'chip', 'aria-pressed': String(k === kind) }, l); b.onclick = () => { kind = k; Prefs.set('fitKind', k); [...b.parentNode.children].forEach(c => c.setAttribute('aria-pressed', String(c === b))); paint(); }; return b; })), grid);
+      paint();
+    }
+    function howTo(E, { goal, setLevel, tryIt, onClose } = {}) {
+      const f = Fig.make(E.anim, { tempo: E.tempo, crop: true, cls: 'fig' }); f.el.style.maxWidth = '300px'; f.el.style.margin = '0 auto';
+      const acts = [{ label: '🔊 Read', onClick: () => Speak.say(E.n + '. ' + E.how.join(' ') + (E.tip ? ' Tip: ' + E.tip : '')) }];
+      if (setLevel) acts.push({ label: 'Make this my level', cls: 'pri', onClick: c => { c(); setLevel(); } });
+      if (tryIt) acts.push({ label: '▶ Try it', cls: 'pri', onClick: c => { c(); start({ id: 'try', n: E.n, e: E.e, rounds: 1, items: [E.id + ':' + (E.unit === 'sec' ? 20 : 8)] }); } });
+      UI.sheet({ title: E.e + ' ' + E.n, onClose: () => { f.stop(); Speak.stop(); onClose && onClose(); }, actions: acts, body: h('div', null, f.el,
+        h('div', { class: 'row', style: { justifyContent: 'center', gap: '6px' } }, h('span', { class: 'pill' }, '💪 ' + E.works), goal ? h('span', { class: 'pill' }, '🎯 ' + goal) : null, E.bar ? h('span', { class: 'pill' }, 'Needs a pull-up bar') : null),
+        h('ol', { style: { paddingLeft: '22px', lineHeight: 1.5, fontSize: '16px' } }, E.how.map(x => h('li', null, x))),
+        E.tip ? h('p', { class: 'small', style: { background: 'var(--accent-soft)', padding: '10px 12px', borderRadius: '12px' } }, '💡 ' + E.tip) : null) });
+    }
+    /* ---------- Progress ---------- */
+    async function progress() {
+      const log = await Fit.log(), pb = await DB.kget('fitPB', {}), now = new Date(), mon = new Date(now); mon.setHours(0, 0, 0, 0); mon.setDate(mon.getDate() - (mon.getDay() + 6) % 7);
+      const week = log.filter(e => e.at >= +mon).length, reps = log.reduce((a, e) => a + e.sets.reduce((b, x) => b + (x[2] ? 0 : x[1]), 0), 0);
+      const st = (b, sm) => h('div', { class: 'fstat' }, h('b', null, b), h('small', null, sm));
+      body.append(h('div', { class: 'fstats' }, st('🔥 ' + Fit.streak(log), 'day streak'), st(week + ' / 3', 'workouts this week'), st(log.length, 'workouts in all'), st(reps.toLocaleString(), 'reps in all')));
+      const days = new Set(log.map(e => ymd(new Date(e.at)))), start0 = new Date(mon); start0.setDate(start0.getDate() - 28), cal = h('div', { class: 'fcal' });
+      for (const d of ['M', 'T', 'W', 'T', 'F', 'S', 'S']) cal.append(h('span', { class: 'h' }, d));
+      for (let i = 0; i < 35; i++) { const d = new Date(start0); d.setDate(d.getDate() + i); const k = ymd(d); cal.append(h('span', { class: (days.has(k) ? 'fon' : '') + (k === ymd(now) ? ' ftd' : '') + (d > now ? ' fut' : ''), title: fmtDay(d) }, d.getDate())); }
+      body.append(h('div', { class: 'sec' }, 'Last 5 weeks'), cal);
+      const pbs = Object.entries(pb).filter(([k]) => FIT_EX[k]).sort((a, b) => FIT_EX[a[0]].n.localeCompare(FIT_EX[b[0]].n));
+      body.append(h('div', { class: 'sec' }, '🏅 Personal bests (one set)'), pbs.length ? h('div', { class: 'list' }, pbs.map(([k, val]) => h('div', { class: 'li' }, h('span', { class: 'ic' }, FIT_EX[k].e), h('span', { class: 't' }, h('b', null, FIT_EX[k].n)), h('b', null, val + (FIT_EX[k].unit === 'sec' ? ' s' : ' reps'))))) : h('p', { class: 'small muted' }, 'Finish a workout to set your first bests.'));
+      body.append(h('div', { class: 'sec' }, '🗓️ History'), log.length ? h('div', { class: 'list' }, log.slice(0, 60).map(e => { const W = FIT_WORKOUTS.find(x => x.id === e.w), r = e.sets.reduce((a, x) => a + (x[2] ? 0 : x[1]), 0);
+        return h('button', { class: 'li', onclick: () => detail(e) }, h('span', { class: 'ic' }, W ? W.e : '🤸'), h('span', { class: 't' }, h('b', null, e.n), h('small', null, fmtDay(new Date(e.at)) + ' · ' + fmtDur(e.secs) + ' · ' + e.sets.length + ' sets' + (r ? ' · ' + r + ' reps' : ''))), h('span', { class: 'chev' }, '›')); })) : UI.empty('🤸', 'No workouts yet', 'Your workouts will show up here.'));
+    }
+    function detail(e) {
+      const by = {}; for (const [ex, val, sec] of e.sets) (by[ex] = by[ex] || []).push(val + (sec ? 's' : ''));
+      UI.sheet({ title: e.n, body: h('div', null, h('p', { class: 'muted small' }, fmtDay(new Date(e.at), { weekday: 'long', month: 'long', day: 'numeric' }) + ' · ' + fmtDur(e.secs)), h('div', { class: 'list' }, Object.entries(by).map(([ex, vals]) => h('div', { class: 'li' }, h('span', { class: 'ic' }, FIT_EX[ex] ? FIT_EX[ex].e : '•'), h('span', { class: 't' }, h('b', null, FIT_EX[ex] ? FIT_EX[ex].n : ex), h('small', null, vals.join(' · '))))))),
+        actions: [{ label: 'Delete', cls: 'bad', onClick: async c => { if (!await UI.ask('Delete this workout from your history?', { ok: 'Delete', danger: true })) return; await DB.kset('fitLog', (await Fit.log()).filter(x => x.id !== e.id)); c(); show(); } }, { label: 'Close', cls: 'pri' }] });
+    }
+    /* ---------- the follow-along player ---------- */
+    function start(w) {
+      if (!s.setup && w.id !== 'try' && w.id !== 'warm' && w.id !== 'hiit' && w.id !== 'coreb') { onboard(); return; }
+      if (play) play.close(); play = player(w, () => { play = null; show(); });
+    }
+    function player(w, onEnd) {
+      const steps = Fit.build(w, s), ov = h('div', { class: 'fplay', role: 'dialog', 'aria-label': w.n }), nEx = steps.filter(x => !x.rest).length, t0 = Date.now(), done = [];
+      let i = 0, tm = null, fig = null, lock = null, closed = false;
+      const wake = () => { try { if (navigator.wakeLock && !closed) navigator.wakeLock.request('screen').then(l => { lock = l; }).catch(() => { }); } catch (e) { } };
+      const onVis = () => { if (!document.hidden) wake(); }; document.addEventListener('visibilitychange', onVis); wake();
+      const say = t => { if (s.voice) Speak.say(t); }, beep = (f = 880) => { if (Sfx.on()) Sfx.tone(f, 0.13, { type: 'square', vol: 0.06 }); };
+      document.body.append(ov); Sfx.ctx();
+      function clear() { if (tm) { tm.stop(); tm = null; } if (fig) { fig.stop(); fig = null; } ov.innerHTML = ''; ov.className = 'fplay'; ov.scrollTop = 0; }
+      function top() { const k = steps.slice(0, i).filter(x => !x.rest).length; return h('div', { class: 'ftop' }, h('button', { class: 'ib', 'aria-label': 'Stop workout', html: SVG.close, onclick: quit }), h('div', { class: 'prog' }, h('i', { style: { width: (100 * k / nEx) + '%' } })), h('b', { class: 'small' }, Math.min(k + 1, nEx) + ' / ' + nEx)); }
+      function timer(secs, onTick, onDone) {
+        let end = performance.now() + secs * 1000, left = secs, total = secs, paused = false, last = -1;
+        const tick = () => { if (paused) return; left = Math.max(0, (end - performance.now()) / 1000); const c = Math.ceil(left); if (c !== last) { last = c; onTick(c, left, total); } if (left <= 0) { clearInterval(iv); onDone(); } };
+        const iv = setInterval(tick, 100); tick();
+        return { stop: () => clearInterval(iv), pause() { paused = true; }, resume() { paused = false; end = performance.now() + left * 1000; }, add(x) { end += x * 1000; left += x; total += x; last = -1; tick(); }, get paused() { return paused; }, get left() { return left; } };
+      }
+      function ring() {
+        const C = 2 * Math.PI * 52, num = h('div', { class: 'fbig' }), el = h('div', { class: 'fring', html: '<svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="var(--ring-bg)" stroke-width="9"/><circle class="rg" cx="60" cy="60" r="52" fill="none" stroke="var(--ring-fg)" stroke-width="9" stroke-linecap="round" stroke-dasharray="' + C.toFixed(1) + '" transform="rotate(-90 60 60)"/></svg>' });
+        el.append(num); const rg = el.querySelector('.rg');
+        return { el, set(c, left, total) { num.textContent = c >= 60 ? Math.floor(c / 60) + ':' + pad2(c % 60) : String(c); rg.style.strokeDashoffset = (C * (1 - clamp((left - 1) / total, 0, 1))).toFixed(1); }, text(t) { num.textContent = t; } };
+      }
+      const next = () => { if (closed) return; if (i >= steps.length) return finishAll(); if (steps[i].rest) showRest(); else showEx(); };
+      const record = val => { const x = steps[i]; done.push({ ex: x.ex, val: Math.max(0, Math.round(val)), unit: x.amrap ? 'sec' : x.unit, slot: x.slot, goal: x.goal, sets: x.sets, next: x.next, warm: x.warm, amrap: x.amrap }); i++; next(); };
+      function showEx() {
+        const x = steps[i], E = FIT_EX[x.ex]; clear();
+        fig = Fig.make(E.anim, { tempo: E.tempo, crop: true, cls: 'fig' + (x.unit === 'sec' ? ' mid' : '') });
+        ov.append(top(), h('div', { class: 'fsub mt' }, x.warm ? '🌤️ Warm-up' : w.rounds > 1 ? 'Round ' + x.round + ' of ' + w.rounds : ''), fig.el, h('div', { class: 'fname' }, E.e + ' ' + E.n));
+        const how = h('button', { class: 'btn', onclick: () => { const was = tm && !tm.paused; if (was) tm.pause(); howTo(E, { onClose: () => { if (was && tm) tm.resume(); } }); } }, '❓ How');
+        if (x.unit === 'reps') {
+          let n = x.target; const num = h('div', { class: 'fbig' }, String(n)), adj = d => { n = Math.max(0, n + d); num.textContent = n; };
+          ov.append(h('div', { class: 'fsub' }, 'Goal: ' + x.target + ' reps' + (E.id === 'lunge' ? ' (both legs together)' : '') + ', then tap Done'),
+            h('div', { class: 'fadj' }, h('button', { class: 'btn', 'aria-label': 'One less', onclick: () => adj(-1) }, '−'), num, h('button', { class: 'btn', 'aria-label': 'One more', onclick: () => adj(1) }, '＋')),
+            h('div', { class: 'tiny center', style: { opacity: 0.7 } }, 'Did more or fewer? Change the number first.'),
+            h('div', { class: 'fctl' }, how, h('button', { class: 'btn pri fdone', onclick: () => { Sfx.good(); record(n); } }, '✓ Done')));
+          say(E.n + '. ' + x.target + ' reps.');
+        } else {
+          const rg = ring(), lab = h('div', { class: 'fsub' }, 'Get ready…'), pauseB = h('button', { class: 'btn' }, '⏸ Pause');
+          ov.append(lab, rg.el, h('div', { class: 'fctl' }, how, pauseB, h('button', { class: 'btn', onclick: () => record(tm && lab.dataset.go ? x.target - tm.left : 0) }, 'Skip ⏭')));
+          pauseB.onclick = () => { if (!tm) return; if (tm.paused) { tm.resume(); pauseB.textContent = '⏸ Pause'; } else { tm.pause(); pauseB.textContent = '▶ Go on'; } };
+          say(E.n + (x.amrap ? '. As many as you can in ' : '. Hold for ') + x.target + ' seconds.');
+          tm = timer(3, c => { rg.text(c > 0 ? String(c) : 'Go!'); if (c > 0) beep(660); }, () => {
+            lab.dataset.go = '1'; lab.textContent = x.amrap ? 'As many as you can!' : 'Hold it!'; beep(1100);
+            tm = timer(x.target, (c, left, total) => { rg.set(c, left, total); if (c <= 3 && c > 0) beep(); if (x.target >= 20 && c === Math.round(x.target / 2)) say('Halfway'); }, () => { beep(1320); Sfx.good(); record(x.target); });
+          });
+        }
+      }
+      function showRest() {
+        const x = steps[i], nx = steps[i + 1], E = FIT_EX[nx.ex]; clear(); ov.classList.add('rest');
+        fig = Fig.make(E.anim, { tempo: E.tempo, crop: true, cls: 'fig sm fig-white' }); const rg = ring();
+        ov.append(top(), h('div', { class: 'fname mt' }, 'Rest'), rg.el, h('div', { class: 'fsub mt' }, 'Next up'), fig.el, h('div', { class: 'fname', style: { fontSize: '22px' } }, E.e + ' ' + E.n), h('div', { class: 'fsub' }, nx.unit === 'reps' ? nx.target + ' reps' : nx.target + ' seconds'),
+          h('div', { class: 'fctl' }, h('button', { class: 'btn', onclick: () => tm && tm.add(15) }, '+15 s'), h('button', { class: 'btn pri fdone', onclick: () => { i++; next(); } }, 'Skip rest ⏭')));
+        say('Rest. Next: ' + E.n + '.');
+        tm = timer(x.rest, (c, left, total) => { rg.set(c, left, total); if (c <= 3 && c > 0) beep(); }, () => { i++; next(); });
+      }
+      async function save() {
+        const work = done.filter(d => !d.warm); if (!work.length) return null;
+        const secs = Math.round((Date.now() - t0) / 1000), pb = await DB.kget('fitPB', {}), best = [];
+        for (const d of work) if (!d.amrap && d.val > (pb[d.ex] || 0)) { if (pb[d.ex] && !best.includes(d.ex)) best.push(d.ex); pb[d.ex] = d.val; }
+        await DB.kset('fitPB', pb);
+        const ups = []; for (const slot of [...new Set(work.filter(d => d.slot).map(d => d.slot))]) { const sets = work.filter(d => d.slot === slot), need = Math.min(sets[0].sets, w.rounds); if (sets[0].next && sets.length >= need && sets.every(d => d.val >= d.goal)) ups.push(sets[0]); }
+        const log = await Fit.log(); log.unshift({ id: uid(), at: Date.now(), w: w.id, n: w.n, secs, sets: work.map(d => [d.ex, d.val, d.unit === 'sec' ? 1 : 0]) }); await DB.kset('fitLog', log.slice(0, 500));
+        return { secs, sets: work.length, reps: work.reduce((a, d) => a + (d.unit === 'sec' ? 0 : d.val), 0), best, ups };
+      }
+      async function finishAll() {
+        clear(); ov.classList.add('done'); Sfx.win(); say('Workout done! Great job.'); const r = await save() || { secs: 0, sets: 0, reps: 0, best: [], ups: [] };
+        const st = (b, sm) => h('div', { class: 'fstat' }, h('b', null, b), h('small', null, sm));
+        const box = h('div', { class: 'fdonebox' }, h('div', { class: 'big' }, '🎉'), h('h2', null, 'Workout done!'), h('div', { class: 'fstats' }, st(fmtDur(r.secs), 'time'), st(r.sets, 'sets'), st(r.reps, 'reps'), st('🔥 ' + Fit.streak(await Fit.log()), 'day streak')));
+        for (const ex of r.best) box.append(h('div', { class: 'fwin' }, '🏅 New best: ' + FIT_EX[ex].n + ' — ' + Math.max(...done.filter(d => d.ex === ex).map(d => d.val)) + (FIT_EX[ex].unit === 'sec' ? ' s' : ' reps')));
+        for (const u of r.ups) { const nx = FIT_EX[u.next], b = h('button', { class: 'btn' }, 'Move up to ' + nx.n + ' →');
+          b.onclick = () => { s.lv[u.slot] = (s.lv[u.slot] || 0) + 1; Fit.save(s); b.disabled = true; b.textContent = '✓ Leveled up!'; Sfx.chime(); };
+          box.append(h('div', { class: 'fwin' }, '⬆️ You hit the goal for ' + FIT_EX[u.ex].n + ' on every set! Ready for the next step?', h('br'), b)); }
+        ov.append(box, h('div', { class: 'fctl' }, h('button', { class: 'btn fdone', style: { background: '#fff', color: '#5B3CC4', border: 0, fontWeight: 800 }, onclick: close }, 'Done')));
+      }
+      async function quit() {
+        const was = tm && !tm.paused; if (was) tm.pause();
+        if (!await UI.ask(done.some(d => !d.warm) ? 'Stop the workout? What you did so far is saved.' : 'Stop the workout?', { ok: 'Stop', danger: true })) { if (was && tm) tm.resume(); return; }
+        if (await save()) UI.toast('Saved what you did ✓'); close();
+      }
+      function close() { if (closed) return; closed = true; clear(); ov.remove(); Speak.stop(); document.removeEventListener('visibilitychange', onVis); try { lock && lock.release(); } catch (e) { } onEnd && onEnd(); }
+      next();
+      return { close, get i() { return i; }, steps };
+    }
+    window.__fit = { get play() { return play; }, start: id => start(FIT_WORKOUTS.find(x => x.id === id)) };
+    const W = ctx.param && FIT_WORKOUTS.find(x => x.id === ctx.param);
+    show(); if (W) setTimeout(() => start(W), 250);
+    return () => { if (play) play.close(); };
   },
 });
 
