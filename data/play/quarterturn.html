@@ -1,0 +1,1310 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>quarterturn</title><style>html,body{margin:0;background:#0b0d14;color:#eee;font-family:system-ui,sans-serif}</style></head><body><title>Quarter Turn</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="A 3D Rubik's cube you can turn, with a stackmat-style timer, a guide to its 26 pieces and the math behind its 43 quintillion positions.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Martian+Mono:wdth,wght@75..112.5,300..700&display=swap">
+<style>
+/* Layout: the cube sits on a sticky stage at the left; the reading column on the right drives it.
+   Phones: the stage pins to the top and the column scrolls underneath. */
+:root{
+  --bg: oklch(0.965 0.006 255);
+  --surface: oklch(0.99 0.004 255);
+  --stage: oklch(0.912 0.011 255);
+  --stage-hi: oklch(0.978 0.006 255);
+  --ink: oklch(0.22 0.022 262);
+  --ink-2: oklch(0.40 0.02 262);
+  --muted: oklch(0.54 0.016 262);
+  --line: oklch(0.87 0.01 255);
+  --fill: oklch(0.928 0.009 255);
+  --fill-hover: oklch(0.9 0.011 255);
+  --pad-bg: oklch(0.2 0.02 262);
+  --pad-fg: oklch(0.97 0.005 255);
+  --pad-dim: oklch(0.62 0.016 262);
+  --pad-off: oklch(0.32 0.02 262);
+  --go: oklch(0.72 0.19 148);
+  --stop: oklch(0.64 0.21 27);
+  --focus: oklch(0.56 0.17 252);
+
+  /* the six plastic colors, same in both themes */
+  --c-white: #eef0ea; --c-yellow: #ffd21f; --c-green: #12a35a;
+  --c-blue: #1d5fd9; --c-red: #d72638; --c-orange: #ff7b1a;
+
+  --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Martian Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg: oklch(0.172 0.012 262);
+    --surface: oklch(0.215 0.014 262);
+    --stage: oklch(0.2 0.014 262);
+    --stage-hi: oklch(0.275 0.017 262);
+    --ink: oklch(0.95 0.006 255);
+    --ink-2: oklch(0.8 0.012 255);
+    --muted: oklch(0.66 0.014 258);
+    --line: oklch(0.3 0.014 262);
+    --fill: oklch(0.25 0.015 262);
+    --fill-hover: oklch(0.29 0.017 262);
+    --pad-bg: oklch(0.125 0.01 262);
+    --pad-fg: oklch(0.96 0.005 255);
+    --pad-dim: oklch(0.6 0.014 262);
+    --pad-off: oklch(0.28 0.016 262);
+    --focus: oklch(0.74 0.14 250);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg: oklch(0.172 0.012 262);
+  --surface: oklch(0.215 0.014 262);
+  --stage: oklch(0.2 0.014 262);
+  --stage-hi: oklch(0.275 0.017 262);
+  --ink: oklch(0.95 0.006 255);
+  --ink-2: oklch(0.8 0.012 255);
+  --muted: oklch(0.66 0.014 258);
+  --line: oklch(0.3 0.014 262);
+  --fill: oklch(0.25 0.015 262);
+  --fill-hover: oklch(0.29 0.017 262);
+  --pad-bg: oklch(0.125 0.01 262);
+  --pad-fg: oklch(0.96 0.005 255);
+  --pad-dim: oklch(0.6 0.014 262);
+  --pad-off: oklch(0.28 0.016 262);
+  --focus: oklch(0.74 0.14 250);
+  color-scheme: dark;
+}
+
+*,*::before,*::after{ box-sizing: border-box }
+body{
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+body::before{ content:""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg) }
+button{ font: inherit; color: inherit }
+:focus-visible{ outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 6px }
+h1,h2,h3{ margin: 0; text-wrap: balance }
+p{ margin: 0 }
+.ic{ width: 18px; height: 18px; flex: none }
+
+/* ---------- frame ---------- */
+.site{
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
+  column-gap: clamp(28px, 4vw, 72px);
+  max-width: 1520px; margin: 0 auto;
+  padding-left: max(clamp(16px, 2.4vw, 32px), env(safe-area-inset-left, 0px));
+  padding-right: max(clamp(16px, 2.4vw, 32px), env(safe-area-inset-right, 0px));
+}
+.stage-wrap{
+  position: sticky; top: env(safe-area-inset-top, 0px); align-self: start;
+  height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  padding-block: 16px; z-index: 5;
+  transition: opacity .3s var(--ease-out);
+}
+.stage{
+  position: relative; height: 100%; border-radius: 28px; overflow: hidden;
+  background: radial-gradient(110% 85% at 50% 40%, var(--stage-hi) 0%, var(--stage) 64%);
+  isolation: isolate;
+}
+.cube-host{ position: absolute; inset: 0 }
+.cube-host canvas{ display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; outline: none }
+.cube-host canvas.grabbing{ cursor: grabbing }
+.cube-host canvas:focus-visible{ box-shadow: inset 0 0 0 2px var(--focus); border-radius: 28px }
+.nogl{ position: absolute; inset: 0; display: grid; place-items: center; padding: 32px; text-align: center; color: var(--ink-2); max-width: 36ch; margin: auto }
+
+.stage-top{
+  position: absolute; inset: 0 0 auto; display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 12px; padding: 18px 20px; pointer-events: none;
+}
+.brand{
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--font-display); font-stretch: 125%; font-weight: 800; font-size: 15px; letter-spacing: -0.005em;
+}
+.brand-mark{ display: grid; grid-template-columns: repeat(3, 5px); gap: 1.5px }
+.brand-mark i{ width: 5px; height: 5px; border-radius: 1.5px; background: var(--ink) }
+.status{ display: grid; justify-items: end; gap: 6px; text-align: right }
+.chip{
+  display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 12px 0 10px;
+  border-radius: 999px; background: var(--surface); border: 1px solid var(--line);
+  font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.chip .dot{ width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background-color .3s var(--ease-out) }
+.chip[data-state="solved"] .dot{ background: var(--go) }
+.chip-text{ display: inline-block }
+.swap-in{ animation: swapIn .26s var(--ease-out) }
+@keyframes swapIn{ from{ opacity: 0; transform: translateY(4px); filter: blur(2px) } }
+.last{ font-size: 13px; color: var(--ink-2); min-height: 1.4em; max-width: 30ch }
+
+.hint{
+  position: absolute; left: 0; right: 0; bottom: 74px; text-align: center; font-size: 13px; color: var(--muted);
+  padding-inline: 20px; pointer-events: none; transition: opacity .5s var(--ease-out), transform .5s var(--ease-out);
+}
+.hint.gone{ opacity: 0; transform: translateY(4px) }
+
+.toolbar{
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+  display: flex; gap: 2px; padding: 4px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.06), 0 10px 28px -14px oklch(0 0 0 / 0.35);
+  max-width: calc(100% - 24px);
+}
+.tb{
+  display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 15px; border: 0; border-radius: 999px;
+  background: transparent; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: transform .16s var(--ease-out), background-color .16s var(--ease-out), opacity .16s var(--ease-out);
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.tb .ic{ width: 17px; height: 17px }
+.tb.primary{ background: var(--ink); color: var(--bg) }
+.tb:active:not(:disabled){ transform: scale(0.97) }
+.tb:disabled{ opacity: .38; cursor: default }
+@media (hover: hover) and (pointer: fine){
+  .tb:not(.primary):not(:disabled):hover{ background: var(--fill) }
+  .tb.primary:not(:disabled):hover{ background: var(--ink-2) }
+}
+
+/* ---------- reading column ---------- */
+.content{ min-width: 0; padding-block: 28px 96px; transition: opacity .3s var(--ease-out) }
+.nav{ display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: clamp(40px, 7vh, 88px) }
+.nav a{
+  padding: 6px 12px; border-radius: 999px; color: var(--ink-2); text-decoration: none; font-size: 14px; font-weight: 550;
+  transition: background-color .16s var(--ease-out), color .16s var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine){ .nav a:hover{ background: var(--fill); color: var(--ink) } }
+
+.eyebrow{
+  font-size: 12px; font-weight: 650; letter-spacing: .09em; text-transform: uppercase; color: var(--muted);
+}
+.headline{ display: grid; gap: 14px; margin-top: 14px }
+.headline .big{
+  font-family: var(--font-display); font-stretch: 125%; font-weight: 820;
+  font-size: clamp(32px, 3.9vw, 58px); line-height: 1.02; letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.headline .rest{
+  font-family: var(--font-display); font-stretch: 100%; font-weight: 520;
+  font-size: clamp(22px, 2.1vw, 30px); line-height: 1.2; letter-spacing: -0.01em; color: var(--ink-2);
+}
+.lede{ margin-top: 22px; font-size: 17px; color: var(--ink-2); max-width: 54ch }
+.lede strong{ color: var(--ink); font-weight: 650 }
+
+.sec{ padding-top: clamp(64px, 9vh, 104px); scroll-margin-top: 8px }
+.sec-head{ display: grid; gap: 10px; margin-bottom: 26px }
+.sec h2{
+  font-family: var(--font-display); font-stretch: 118%; font-weight: 760;
+  font-size: clamp(26px, 2.5vw, 34px); line-height: 1.08; letter-spacing: -0.018em;
+}
+.sec p.body{ color: var(--ink-2); max-width: 58ch }
+.note{ font-size: 14px; color: var(--muted); max-width: 58ch; margin-top: 16px }
+
+/* move pad */
+.pad{ display: grid; gap: 8px }
+.pad-row{ display: grid; grid-template-columns: minmax(118px, 0.9fr) 1fr 1fr; gap: 8px; align-items: center }
+.pad-face{ display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 15px; min-width: 0 }
+.pad-face small{ display: block; font-weight: 450; font-size: 12px; color: var(--muted); line-height: 1.2 }
+.sw{
+  width: 16px; height: 16px; border-radius: 4px; flex: none; background: var(--fill);
+  box-shadow: inset 0 0 0 1px oklch(0 0 0 / 0.14); transition: background-color .3s var(--ease-out);
+}
+.mv{
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px;
+  border: 1px solid transparent; border-radius: 12px; background: var(--fill); cursor: pointer;
+  font-size: 14px; font-weight: 550; text-align: left; line-height: 1.2;
+  transition: transform .14s var(--ease-out), background-color .14s var(--ease-out), border-color .14s var(--ease-out);
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.mv:active{ transform: scale(0.97) }
+@media (hover: hover) and (pointer: fine){ .mv:hover{ background: var(--fill-hover) } }
+
+/* pieces */
+.pieces{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px }
+.piece{
+  display: grid; gap: 4px; align-content: start; text-align: left; padding: 16px 16px 14px; cursor: pointer;
+  border-radius: 16px; border: 1px solid var(--line); background: var(--surface);
+  transition: transform .16s var(--ease-out), border-color .2s var(--ease-out), background-color .2s var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.piece:active{ transform: scale(0.97) }
+.piece[aria-pressed="true"]{ border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink) }
+@media (hover: hover) and (pointer: fine){ .piece:not([aria-pressed="true"]):hover{ background: var(--fill) } }
+.piece-n{ font-family: var(--font-display); font-stretch: 125%; font-weight: 800; font-size: 40px; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums }
+.piece-name{ font-weight: 650; font-size: 15px; margin-top: 6px }
+.piece-meta{ font-size: 13px; color: var(--muted) }
+.piece-desc{ margin-top: 18px; color: var(--ink-2); max-width: 58ch; min-height: 4.8em }
+
+/* numbers */
+.calc{ list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line) }
+.calc li{ border-bottom: 1px solid var(--line) }
+.calc-row{
+  width: 100%; display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 16px; align-items: baseline;
+  padding: 14px 10px; background: transparent; border: 0; text-align: left; cursor: pointer; border-radius: 10px;
+  transition: background-color .18s var(--ease-out);
+}
+.calc-row.static{ cursor: default }
+.calc-row[aria-pressed="true"]{ background: var(--fill) }
+@media (hover: hover) and (pointer: fine){ .calc-row:not(.static):hover{ background: var(--fill) } }
+.calc-expr{ font-family: var(--font-mono); font-weight: 500; font-size: 17px }
+.calc-expr sup{ font-size: .62em; vertical-align: .55em; line-height: 0 }
+.calc-what{ font-weight: 600; min-width: 0 }
+.calc-what small{ display: block; font-weight: 400; font-size: 14px; color: var(--muted); margin-top: 2px }
+.calc-val{ font-family: var(--font-mono); font-size: 14px; font-variant-numeric: tabular-nums; color: var(--ink-2); text-align: right; white-space: nowrap }
+.calc-total{ display: grid; gap: 6px; padding: 22px 10px 4px; border-bottom: 0 !important }
+.calc-total .label{ font-size: 13px; color: var(--muted); font-weight: 600 }
+.calc-total .sum{
+  font-family: var(--font-display); font-stretch: 125%; font-weight: 800; font-size: clamp(22px, 2.3vw, 31px);
+  letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.scale-note{ margin-top: 14px; color: var(--ink-2); max-width: 58ch; padding-inline: 10px }
+
+.gods{
+  margin-top: 40px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 22px; align-items: center;
+  padding: 22px 24px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line);
+}
+.gods-n{ font-family: var(--font-display); font-stretch: 125%; font-weight: 850; font-size: 76px; line-height: .9; letter-spacing: -0.04em }
+.gods h3{ font-size: 16px; font-weight: 700; margin-bottom: 4px }
+.gods p{ color: var(--ink-2); font-size: 15px }
+
+/* timer */
+.scramble{ border: 1px solid var(--line); border-radius: 18px; background: var(--surface); padding: 14px 14px 16px }
+.scramble-head{ display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 2px 2px 12px }
+.scramble-actions{ display: flex; gap: 6px; flex-wrap: wrap }
+.ghost{
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: transparent; font-size: 13px; font-weight: 600;
+  transition: transform .16s var(--ease-out), background-color .16s var(--ease-out);
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.ghost .ic{ width: 15px; height: 15px }
+.ghost:active{ transform: scale(0.97) }
+@media (hover: hover) and (pointer: fine){ .ghost:hover{ background: var(--fill) } }
+.scramble-list{ list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px }
+.scramble-list li{
+  display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px 6px 6px; border-radius: 10px; background: var(--fill);
+  font-size: 13.5px; font-weight: 550; line-height: 1.2;
+}
+.scramble-list .n{
+  min-width: 22px; height: 22px; display: inline-grid; place-items: center; border-radius: 6px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted); background: var(--surface);
+}
+.scramble-list .sw{ width: 12px; height: 12px; border-radius: 3px }
+.scramble-list .ic{ width: 15px; height: 15px }
+.scramble-list .sub{ display: block; font-size: 11.5px; font-weight: 450; color: var(--muted) }
+.x2{ font-family: var(--font-mono); font-size: 12px; font-weight: 600; width: 15px; text-align: center }
+
+.mat{
+  margin-top: 14px; display: grid; justify-items: center; gap: 12px; padding: 26px 20px 20px; border-radius: 22px;
+  background: var(--pad-bg); color: var(--pad-fg); cursor: pointer; user-select: none; -webkit-user-select: none;
+  touch-action: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; position: relative;
+  transition: transform .16s var(--ease-out);
+}
+.mat:active{ transform: scale(0.99) }
+.lights{ display: flex; gap: 10px; align-items: center }
+.light{ width: 10px; height: 10px; border-radius: 50%; background: var(--pad-off); transition: background-color .12s, box-shadow .12s }
+.mat[data-state="holding"] .light.red{ background: var(--stop); box-shadow: 0 0 14px var(--stop) }
+.mat[data-state="ready"] .light.green{ background: var(--go); box-shadow: 0 0 16px var(--go) }
+.time{
+  font-family: var(--font-mono); font-weight: 500; font-stretch: 100%; font-size: clamp(52px, 6.6vw, 88px);
+  line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; transition: color .12s;
+}
+.mat[data-state="holding"] .time{ color: var(--stop) }
+.mat[data-state="ready"] .time{ color: var(--go) }
+.mat-hint{ font-size: 13px; color: var(--pad-dim); text-align: center }
+
+.stats{ margin: 16px 0 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px }
+.stat{ padding: 12px 14px; border-radius: 14px; background: var(--fill) }
+.stat dt{ font-size: 12px; color: var(--muted); font-weight: 600 }
+.stat dd{ margin: 4px 0 0; font-family: var(--font-mono); font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums }
+.times-head{ display: flex; justify-content: space-between; align-items: center; margin-top: 22px; gap: 10px }
+.times-head h3{ font-size: 15px; font-weight: 700 }
+.times{
+  list-style: none; margin: 10px 0 0; padding: 0; max-height: 264px; overflow: auto;
+  border-top: 1px solid var(--line);
+}
+.times li{ display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line) }
+.times .idx{ font-family: var(--font-mono); font-size: 12px; color: var(--muted) }
+.times .t{ font-family: var(--font-mono); font-size: 15px; font-variant-numeric: tabular-nums }
+.times .t.best{ color: var(--ink); font-weight: 650 }
+.times .tag{ font-family: var(--font-body); font-size: 11px; font-weight: 650; color: var(--muted); margin-left: 8px; letter-spacing: .04em; text-transform: uppercase }
+.del{
+  width: 30px; height: 30px; display: grid; place-items: center; border: 0; background: transparent; border-radius: 8px;
+  color: var(--muted); cursor: pointer; transition: background-color .14s var(--ease-out), color .14s var(--ease-out);
+}
+.del .ic{ width: 15px; height: 15px }
+@media (hover: hover) and (pointer: fine){ .del:hover{ background: var(--fill); color: var(--ink) } }
+.empty{ padding: 14px 4px; color: var(--muted); font-size: 14px; border-bottom: 1px solid var(--line) }
+.danger-armed{ border-color: var(--stop) !important; color: var(--stop) }
+
+/* history */
+.timeline{ list-style: none; margin: 0; padding: 0; display: grid; gap: 0 }
+.timeline li{ display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 18px; padding: 16px 0; border-top: 1px solid var(--line) }
+.timeline .year{ font-family: var(--font-display); font-stretch: 125%; font-weight: 780; font-size: 20px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums }
+.timeline p{ color: var(--ink-2) }
+.timeline p strong{ color: var(--ink); font-weight: 650 }
+
+.foot{ margin-top: 72px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); display: grid; gap: 4px }
+
+/* focus mode while timing */
+body.timing .stage-wrap, body.timing .dimmable{ opacity: .1; pointer-events: none }
+.dimmable{ transition: opacity .3s var(--ease-out) }
+
+/* ---------- phones & small tablets ---------- */
+@media (max-width: 899px){
+  .site{ grid-template-columns: minmax(0, 1fr) }
+  .stage-wrap{ height: 50vh; height: 50svh; min-height: 330px; max-height: 560px; padding-block: 10px; background: var(--bg) }
+  .stage{ border-radius: 22px }
+  .cube-host canvas:focus-visible{ border-radius: 22px }
+  .content{ padding-top: 18px }
+  .sec{ scroll-margin-top: calc(clamp(330px, 50svh, 560px) - 40px) }
+  .nav{ flex-wrap: nowrap; overflow-x: auto; margin-inline: -4px; margin-bottom: 34px; scrollbar-width: none }
+  .nav::-webkit-scrollbar{ display: none }
+  .nav a{ flex: none }
+  .hint{ display: none }
+  .stage-top{ padding: 14px 16px }
+}
+@media (max-width: 560px){
+  .pad-row{ grid-template-columns: 1fr 1fr; }
+  .pad-face{ grid-column: 1 / -1; padding-top: 6px }
+  .pieces{ gap: 8px }
+  .piece{ padding: 12px }
+  .piece-n{ font-size: 32px }
+  .calc-row{ grid-template-columns: 52px minmax(0, 1fr); row-gap: 2px }
+  .calc-val{ grid-column: 2; text-align: left }
+  .stats{ grid-template-columns: repeat(2, minmax(0, 1fr)) }
+  .gods{ grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 18px }
+  .gods-n{ font-size: 60px }
+  .timeline li{ grid-template-columns: minmax(0, 1fr); gap: 4px }
+  .last{ max-width: 20ch }
+}
+@media (max-width: 430px){
+  .tb{ padding: 0 12px; font-size: 13.5px }
+  .tb .ic{ display: none }
+  .tb.primary .ic{ display: block }
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{ transition-duration: .01ms !important; animation-duration: .01ms !important }
+}
+</style>
+
+<div class="site">
+  <div class="stage-wrap">
+    <section class="stage" aria-label="3D cube">
+      <div class="cube-host" id="cube"></div>
+      <div class="stage-top">
+        <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Quarter Turn</div>
+        <div class="status">
+          <div class="chip" id="chip" data-state="solved" role="status" aria-live="polite"><span class="dot"></span><span class="chip-text" id="chip-text">Solved</span></div>
+          <div class="last" id="last"></div>
+        </div>
+      </div>
+      <p class="hint" id="hint">Drag a face to turn it. Drag the space around the cube to look at another side.</p>
+      <div class="toolbar" role="toolbar" aria-label="Cube controls">
+        <button class="tb primary" id="btn-scramble" type="button"></button>
+        <button class="tb" id="btn-undo" type="button" disabled></button>
+        <button class="tb" id="btn-rewind" type="button" disabled></button>
+        <button class="tb" id="btn-reset" type="button" disabled></button>
+      </div>
+    </section>
+  </div>
+
+  <main class="content">
+    <nav class="nav dimmable" aria-label="Sections">
+      <a href="#turn">Turn</a><a href="#pieces">Pieces</a><a href="#numbers">Numbers</a><a href="#timer">Timer</a><a href="#history">History</a>
+    </nav>
+
+    <header class="intro dimmable">
+      <p class="eyebrow">The 3×3 cube</p>
+      <h1 class="headline">
+        <span class="big">43,<wbr>252,<wbr>003,<wbr>274,<wbr>489,<wbr>856,<wbr>000</span>
+        <span class="rest">positions. Exactly one of them is solved.</span>
+      </h1>
+      <p class="lede">This cube turns like a real one. <strong>Drag a face</strong> to turn that layer, or drag the space around it to look at another side. Hold your own cube with yellow on top and green facing you and it will match the screen.</p>
+    </header>
+
+    <section class="sec dimmable" id="turn" aria-labelledby="turn-h">
+      <div class="sec-head">
+        <h2 id="turn-h">Turn by name</h2>
+        <p class="body">Every turn has a plain name. Press one, watch the layer move, then do the same on your cube.</p>
+      </div>
+      <div class="pad" id="pad"></div>
+      <p class="note">Back turns are described as you see them from the front, so you never have to flip the cube around to check.</p>
+    </section>
+
+    <section class="sec dimmable" id="pieces" aria-labelledby="pieces-h">
+      <div class="sec-head">
+        <h2 id="pieces-h">26 pieces, three kinds</h2>
+        <p class="body">Pick a kind to pull those pieces out of the cube.</p>
+      </div>
+      <div class="pieces" role="group" aria-label="Piece kinds">
+        <button class="piece" type="button" data-kind="center" aria-pressed="false"><span class="piece-n">6</span><span class="piece-name">Centers</span><span class="piece-meta">1 color each</span></button>
+        <button class="piece" type="button" data-kind="edge" aria-pressed="false"><span class="piece-n">12</span><span class="piece-name">Edges</span><span class="piece-meta">2 colors each</span></button>
+        <button class="piece" type="button" data-kind="corner" aria-pressed="false"><span class="piece-n">8</span><span class="piece-name">Corners</span><span class="piece-meta">3 colors each</span></button>
+      </div>
+      <p class="piece-desc" id="piece-desc" aria-live="polite"></p>
+    </section>
+
+    <section class="sec dimmable" id="numbers" aria-labelledby="numbers-h">
+      <div class="sec-head">
+        <h2 id="numbers-h">Where the big number comes from</h2>
+        <p class="body">Count every way the pieces could sit, then remove the ones a real cube can never reach. Tap a line to see those pieces.</p>
+      </div>
+      <ul class="calc">
+        <li><button class="calc-row" type="button" data-kind="corner" aria-pressed="false"><span class="calc-expr">8!</span><span class="calc-what">Corner places<small>Eight corners can fill the eight corner spots in any order.</small></span><span class="calc-val">40,320</span></button></li>
+        <li><button class="calc-row" type="button" data-kind="corner" aria-pressed="false"><span class="calc-expr">3<sup>7</sup></span><span class="calc-what">Corner twists<small>Seven corners can twist three ways. The last one's twist is set by the others.</small></span><span class="calc-val">2,187</span></button></li>
+        <li><button class="calc-row" type="button" data-kind="edge" aria-pressed="false"><span class="calc-expr">12!</span><span class="calc-what">Edge places<small>Twelve edges can fill the twelve edge spots in any order.</small></span><span class="calc-val">479,001,600</span></button></li>
+        <li><button class="calc-row" type="button" data-kind="edge" aria-pressed="false"><span class="calc-expr">2<sup>11</sup></span><span class="calc-what">Edge flips<small>Eleven edges can flip either way. The last one's flip is set by the others.</small></span><span class="calc-val">2,048</span></button></li>
+        <li><div class="calc-row static"><span class="calc-expr">÷ 2</span><span class="calc-what">The swap rule<small>No turn swaps just two pieces. Swaps come in pairs, which rules out half of what's left.</small></span><span class="calc-val">½</span></div></li>
+        <li class="calc-total"><span class="label">Positions you can reach by turning</span><span class="sum">43,<wbr>252,<wbr>003,<wbr>274,<wbr>489,<wbr>856,<wbr>000</span></li>
+      </ul>
+      <p class="scale-note">Looking at one position per second, you'd need about 1.4 trillion years to see them all. That's roughly 100 times the age of the universe.</p>
+      <div class="gods">
+        <div class="gods-n" aria-hidden="true">20</div>
+        <div>
+          <h3>Never more than 20 turns away</h3>
+          <p>Every one of those positions can be solved in 20 turns or fewer, counting a half turn as one. Tomas Rokicki, Herbert Kociemba, Morley Davidson and John Dethridge proved it in 2010 with about 35 years of computer time donated by Google.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="timer" aria-labelledby="timer-h">
+      <div class="sec-head dimmable">
+        <h2 id="timer-h">Time a solve</h2>
+        <p class="body">Mix your cube with the scramble below. Hold Space, or press and hold the timer, until the light turns green. Let go to start, then press any key or tap to stop.</p>
+      </div>
+      <div class="scramble dimmable">
+        <div class="scramble-head">
+          <span class="eyebrow">Scramble · 20 turns</span>
+          <div class="scramble-actions">
+            <button class="ghost" id="sc-show" type="button"></button>
+            <button class="ghost" id="sc-new" type="button"></button>
+          </div>
+        </div>
+        <ol class="scramble-list" id="sc-list"></ol>
+      </div>
+      <div class="mat" id="mat" role="button" tabindex="0" data-state="idle" aria-label="Timer. Press and hold until the light is green, then let go to start.">
+        <div class="lights" aria-hidden="true"><span class="light red"></span><span class="light green"></span></div>
+        <div class="time" id="time" aria-live="off">0.00</div>
+        <div class="mat-hint" id="mat-hint">Hold Space, or press and hold here</div>
+      </div>
+      <dl class="stats dimmable">
+        <div class="stat"><dt>Best</dt><dd id="st-best">–</dd></div>
+        <div class="stat"><dt>Average of 5</dt><dd id="st-ao5">–</dd></div>
+        <div class="stat"><dt>Average of 12</dt><dd id="st-ao12">–</dd></div>
+        <div class="stat"><dt>Solves</dt><dd id="st-n">0</dd></div>
+      </dl>
+      <div class="dimmable">
+        <div class="times-head"><h3>This browser's solves</h3><button class="ghost" id="clear" type="button">Clear all</button></div>
+        <ol class="times" id="times"></ol>
+      </div>
+    </section>
+
+    <section class="sec dimmable" id="history" aria-labelledby="history-h">
+      <div class="sec-head">
+        <h2 id="history-h">Half a century of turning</h2>
+      </div>
+      <ol class="timeline">
+        <li><span class="year">1974</span><p><strong>Ernő Rubik</strong>, a design teacher in Budapest, builds a working model to show how separate blocks could turn around a shared core without falling apart.</p></li>
+        <li><span class="year">1977</span><p>It goes on sale in Hungarian toy shops as the <strong>Bűvös kocka</strong>, the Magic Cube.</p></li>
+        <li><span class="year">1980</span><p>Ideal Toy takes it worldwide and renames it the <strong>Rubik's Cube</strong>.</p></li>
+        <li><span class="year">1982</span><p>The first world championship is held in Budapest. <strong>Minh Thai</strong> wins with a solve of 22.95 seconds.</p></li>
+        <li><span class="year">2004</span><p>The <strong>World Cube Association</strong> forms to run official competitions with shared rules, like the 15-second inspection and the stackmat timer.</p></li>
+        <li><span class="year">2010</span><p>A computer search proves that <strong>20 turns</strong> is enough for every position.</p></li>
+        <li><span class="year">Today</span><p>The fastest solvers finish in <strong>under four seconds</strong>.</p></li>
+      </ol>
+      <footer class="foot">
+        <span>Quarter Turn is an independent fan page.</span>
+        <span>Rubik's Cube is a trademark of Spin Master Ltd.</span>
+      </footer>
+    </section>
+  </main>
+</div>
+
+<script src="./vendor/three128/three.min.js"></script>
+<script>
+(() => {
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const reduceMQ = matchMedia("(prefers-reduced-motion: reduce)");
+const reduced = () => reduceMQ.matches;
+const store = {
+  get(k, f){ try { const v = localStorage.getItem(k); return v == null ? f : JSON.parse(v); } catch { return f; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+
+/* ---------- icons ---------- */
+const ICONS = {
+  up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  down: '<path d="m19 12-7 7-7-7"/><path d="M12 5v14"/>',
+  left: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+  right: '<path d="m12 5 7 7-7 7"/><path d="M5 12h14"/>',
+  cw: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+  ccw: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  shuffle: '<path d="M3 7h3.5c2 0 3.2.9 4.3 2.6l2.4 4.8c1.1 1.7 2.3 2.6 4.3 2.6H21"/><path d="M3 17h3.5c1.5 0 2.5-.5 3.4-1.5"/><path d="M14.1 8.5c.9-1 1.9-1.5 3.4-1.5H21"/><path d="m18 4 3 3-3 3"/><path d="m18 14 3 3-3 3"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+  rewind: '<path d="M11 19 2 12l9-7z"/><path d="M22 19l-9-7 9-7z"/>',
+  reset: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  cube: '<path d="M12 2.5 3.5 7v10l8.5 4.5 8.5-4.5V7z"/><path d="M3.5 7 12 11.5 20.5 7"/><path d="M12 11.5v10"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'
+};
+const svg = (name, cls = "ic") =>
+  `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+const iconOrTwice = (name) => name === "twice" ? '<span class="x2" aria-hidden="true">2×</span>' : svg(name);
+
+/* ---------- moves in words ----------
+   axis x = right(+)/left(-), y = top(+)/bottom(-), z = front(+)/back(-).
+   dir = quarter turns about the +axis (right-hand rule). dir -1 on x moves the front stickers up,
+   on y moves them to the left, on z turns the face clockwise as seen from the front. */
+const AXES = ["x", "y", "z"];
+const NAMES = {
+  x: { "1": "Right side", "-1": "Left side", "0": "Middle column" },
+  y: { "1": "Top", "-1": "Bottom", "0": "Middle row" },
+  z: { "1": "Front", "-1": "Back", "0": "Middle slice" }
+};
+function moveInfo(m){
+  const name = NAMES[m.axis][String(m.layer)];
+  if (Math.abs(m.dir) === 2) return { text: name + " twice", icon: "twice" };
+  const neg = m.dir < 0;
+  if (m.axis === "x") return { text: name + (neg ? " up" : " down"), icon: neg ? "up" : "down" };
+  if (m.axis === "y") return { text: name + (neg ? " to the left" : " to the right"), icon: neg ? "left" : "right" };
+  return { text: name + (neg ? " clockwise" : " counter-clockwise") + (m.layer === -1 ? ", seen from the front" : ""), icon: neg ? "cw" : "ccw" };
+}
+const FACE_OF = (m) => ({ x: { "1": "right", "-1": "left" }, y: { "1": "top", "-1": "bottom" }, z: { "1": "front", "-1": "back" } })[m.axis][String(m.layer)];
+const HOLD = { top: "yellow", bottom: "white", right: "orange", left: "red", front: "green", back: "blue" };
+const FACE_DIRS = { right: [1,0,0], left: [-1,0,0], top: [0,1,0], bottom: [0,-1,0], front: [0,0,1], back: [0,0,-1] };
+
+function genScramble(n = 20){
+  const faces = [["y",1],["y",-1],["x",1],["x",-1],["z",1],["z",-1]];
+  const out = [];
+  while (out.length < n){
+    const [axis, layer] = faces[(Math.random() * 6) | 0];
+    const a = out[out.length - 1], b = out[out.length - 2];
+    if (a && a.axis === axis && a.layer === layer) continue;
+    if (a && b && a.axis === axis && b.axis === axis) continue;
+    const r = Math.random();
+    const dir = r < 1/3 ? 2 : (r < 2/3 ? -layer : layer); // clockwise from the face, counter, or half
+    out.push({ axis, layer, dir });
+  }
+  return out;
+}
+
+/* ---------- the 3D cube ---------- */
+function createCube(host, hooks){
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.setClearColor(0x000000, 0);
+  const canvas = renderer.domElement;
+  canvas.tabIndex = 0;
+  canvas.setAttribute("aria-label", "3D cube. Drag a face to turn it. Drag around it or use the arrow keys to look at another side.");
+  host.appendChild(canvas);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 100);
+  const target = new THREE.Vector3(0, -0.22, 0);
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8e949e, 0.62));
+  const key = new THREE.DirectionalLight(0xffffff, 0.62); key.position.set(4, 8, 6); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.24); fill.position.set(-7, 1.5, 4); scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xffffff, 0.38); rim.position.set(-2, 5, -8); scene.add(rim);
+
+  // soft contact shadow
+  const sc = document.createElement("canvas"); sc.width = sc.height = 256;
+  const sx = sc.getContext("2d");
+  const gr = sx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  gr.addColorStop(0, "rgba(0,0,0,0.34)"); gr.addColorStop(0.42, "rgba(0,0,0,0.14)"); gr.addColorStop(1, "rgba(0,0,0,0)");
+  sx.fillStyle = gr; sx.fillRect(0, 0, 256, 256);
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(7, 7), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc), transparent: true, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.y = -2.55; scene.add(shadow);
+
+  const root = new THREE.Group(); scene.add(root);
+  const pivot = new THREE.Group(); root.add(pivot);
+
+  // rounded plastic body
+  function roundedBox(size, r, seg){
+    const g = new THREE.BoxGeometry(size, size, size, seg, seg, seg);
+    const p = g.attributes.position, n = g.attributes.normal, h = size / 2, inner = h - r;
+    const v = new THREE.Vector3(), c = new THREE.Vector3(), d = new THREE.Vector3();
+    const warp = (t) => Math.sign(t) * (1 - Math.pow(1 - Math.abs(t), 2));
+    for (let i = 0; i < p.count; i++){
+      v.fromBufferAttribute(p, i);
+      v.set(warp(v.x / h) * h, warp(v.y / h) * h, warp(v.z / h) * h);
+      c.set(clamp(v.x, -inner, inner), clamp(v.y, -inner, inner), clamp(v.z, -inner, inner));
+      d.subVectors(v, c);
+      if (d.lengthSq() > 1e-12){ d.normalize(); v.copy(c).addScaledVector(d, r); n.setXYZ(i, d.x, d.y, d.z); }
+      p.setXYZ(i, v.x, v.y, v.z);
+    }
+    return g;
+  }
+  function tileShape(s, r){
+    const h = s / 2, sh = new THREE.Shape();
+    sh.moveTo(-h + r, -h); sh.lineTo(h - r, -h); sh.quadraticCurveTo(h, -h, h, -h + r);
+    sh.lineTo(h, h - r); sh.quadraticCurveTo(h, h, h - r, h);
+    sh.lineTo(-h + r, h); sh.quadraticCurveTo(-h, h, -h, h - r);
+    sh.lineTo(-h, -h + r); sh.quadraticCurveTo(-h, -h, -h + r, -h);
+    return sh;
+  }
+  const lin = (hex) => new THREE.Color(hex).convertSRGBToLinear();
+  const COLORS = { white: "#eef0ea", yellow: "#ffd21f", green: "#12a35a", blue: "#1d5fd9", red: "#d72638", orange: "#ff7b1a" };
+  const DIM = lin("#2b2e34");
+  const bodyGeo = roundedBox(0.965, 0.09, 8);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: lin("#141518"), roughness: 0.55, metalness: 0 });
+  const tileGeo = new THREE.ExtrudeGeometry(tileShape(0.8, 0.13), { depth: 0.012, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.014, bevelSegments: 3, curveSegments: 6 });
+  const Z = new THREE.Vector3(0, 0, 1);
+  const DIRS = [
+    [new THREE.Vector3(1,0,0), "orange"], [new THREE.Vector3(-1,0,0), "red"],
+    [new THREE.Vector3(0,1,0), "yellow"], [new THREE.Vector3(0,-1,0), "white"],
+    [new THREE.Vector3(0,0,1), "green"], [new THREE.Vector3(0,0,-1), "blue"]
+  ];
+
+  const cubies = [];
+  for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++){
+    const nz = (x !== 0) + (y !== 0) + (z !== 0);
+    if (!nz) continue;
+    const cubie = new THREE.Group();
+    const inner = new THREE.Group(); cubie.add(inner);
+    inner.add(new THREE.Mesh(bodyGeo, bodyMat));
+    const home = new THREE.Vector3(x, y, z);
+    const tiles = [];
+    for (const [dir, color] of DIRS){
+      if (dir.x * x + dir.y * y + dir.z * z !== 1) continue;
+      const base = lin(COLORS[color]);
+      const mat = new THREE.MeshStandardMaterial({ color: base.clone(), roughness: 0.34, metalness: 0 });
+      const t = new THREE.Mesh(tileGeo, mat);
+      t.quaternion.setFromUnitVectors(Z, dir);
+      t.position.copy(dir).multiplyScalar(0.47);
+      t.userData = { color, normal: dir.clone(), base };
+      inner.add(t); tiles.push(t);
+    }
+    cubie.position.copy(home);
+    cubie.userData = { isCubie: true, home, radial: home.clone().normalize(), kind: nz === 1 ? "center" : nz === 2 ? "edge" : "corner", tiles, inner, dim: 0, dimT: 0, out: 0, outT: 0 };
+    root.add(cubie); cubies.push(cubie);
+  }
+
+  /* view */
+  const PMAX = 1.3, ROT = 0.0085;
+  const HOME_VIEW = { yaw: -0.62, pitch: 0.4 };
+  const view = { yaw: HOME_VIEW.yaw, pitch: HOME_VIEW.pitch, vy: 0, vp: 0, spin: null };
+  let pop = null, dirty = true;
+
+  function resize(){
+    const w = host.clientWidth, h = host.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    const half = w < 520 ? 3.25 : 3.1;
+    const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const dist = Math.max(half / t, half / (t * camera.aspect));
+    camera.position.copy(target).add(new THREE.Vector3(0, 0.2, 1).normalize().multiplyScalar(dist));
+    camera.lookAt(target);
+    camera.updateProjectionMatrix();
+    dirty = true;
+  }
+  new ResizeObserver(resize).observe(host);
+  resize();
+
+  /* turning */
+  const Q = Math.PI / 2;
+  const EASE = {
+    out: (t) => 1 - Math.pow(1 - t, 3),
+    outQuart: (t) => 1 - Math.pow(1 - t, 4),
+    inOut: (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+  };
+  const queue = [];
+  let anim = null;
+  const history = [];
+  let scrambled = false, userTurns = 0;
+  const _m = new THREE.Matrix4(), _v = new THREE.Vector3();
+
+  function snap(c){
+    c.position.set(Math.round(c.position.x), Math.round(c.position.y), Math.round(c.position.z));
+    _m.makeRotationFromQuaternion(c.quaternion);
+    const e = _m.elements;
+    for (const i of [0, 1, 2, 4, 5, 6, 8, 9, 10]) e[i] = Math.round(e[i]);
+    c.quaternion.setFromRotationMatrix(_m);
+  }
+  function grab(axis, layer){
+    root.updateMatrixWorld(true);
+    pivot.rotation.set(0, 0, 0); pivot.updateMatrixWorld(true);
+    const list = cubies.filter((c) => c.parent === root && Math.round(c.position[axis]) === layer);
+    list.forEach((c) => pivot.attach(c));
+    return list;
+  }
+  function drop(list){
+    pivot.updateMatrixWorld(true);
+    list.forEach((c) => { root.attach(c); snap(c); });
+    pivot.rotation.set(0, 0, 0);
+  }
+  function isSolved(){
+    const seen = {};
+    for (const c of cubies) for (const t of c.userData.tiles){
+      _v.copy(t.userData.normal).applyQuaternion(c.quaternion);
+      const k = Math.round(_v.x) + "," + Math.round(_v.y) + "," + Math.round(_v.z);
+      if (seen[k] === undefined) seen[k] = t.userData.color;
+      else if (seen[k] !== t.userData.color) return false;
+    }
+    return true;
+  }
+  function centers(){
+    const out = {};
+    for (const [face, d] of Object.entries(FACE_DIRS)){
+      for (const c of cubies){
+        if (c.userData.kind !== "center" || c.parent !== root) continue;
+        const p = c.position;
+        if (Math.round(p.x) !== d[0] || Math.round(p.y) !== d[1] || Math.round(p.z) !== d[2]) continue;
+        out[face] = c.userData.tiles[0].userData.color;
+      }
+    }
+    return out;
+  }
+  const busy = () => !!anim || queue.length > 0 || drag.mode === "turn";
+
+  function emit(extra = {}){
+    const solved = !anim && !queue.length ? isSolved() : false;
+    hooks.onState({ solved, turns: history.length, busy: busy(), history: history.length, centers: centers(), ...extra });
+  }
+
+  function enqueue(move, source, dur){
+    queue.push({ move, source, dur });
+  }
+  function startNext(now){
+    const job = queue.shift();
+    const list = grab(job.move.axis, job.move.layer);
+    const dur = reduced() ? 40 : (Math.abs(job.move.dir) === 2 ? job.dur * 1.45 : job.dur);
+    anim = { list, axis: job.move.axis, from: 0, to: job.move.dir * Q, t0: now, dur, ease: job.source === "scramble" || job.source === "rewind" ? EASE.inOut : EASE.out, job };
+    hooks.onMove(job.move, job.source, queue.length);
+  }
+  function finishAnim(){
+    pivot.rotation[anim.axis] = anim.to;
+    drop(anim.list);
+    const job = anim.job;
+    anim = null;
+    if (job.source === "user" || job.source === "drag") userTurns += job.move ? 1 : 0;
+    if (!queue.length){
+      const solved = isSolved();
+      if (solved){
+        const wasMixed = scrambled && history.length > 0 && (job.source === "user" || job.source === "drag");
+        const n = userTurns;
+        history.length = 0; userTurns = 0;
+        if (wasMixed){ scrambled = false; celebrate(); hooks.onSolved(n); }
+        else scrambled = false;
+      }
+    }
+    emit();
+  }
+  function hardStop(){
+    queue.length = 0;
+    if (anim){ pivot.rotation[anim.axis] = anim.to; drop(anim.list); anim = null; }
+    if (drag.mode === "turn" && drag.list){ drop(drag.list); }
+    if (drag.mode){ try { canvas.releasePointerCapture(drag.id); } catch {} }
+    drag = { mode: null };
+    canvas.classList.remove("grabbing");
+  }
+  function celebrate(){
+    if (reduced()) return;
+    view.vy = view.vp = 0;
+    view.spin = { from: view.yaw, to: view.yaw + Math.PI * 2, pFrom: view.pitch, t0: performance.now(), dur: 1150 };
+  }
+
+  /* public actions */
+  function turn(move){
+    if (drag.mode === "turn") return;
+    history.push(move);
+    const d = queue.length > 1 ? 105 : 175;
+    enqueue(move, "user", d);
+    hooks.onInteract();
+    emit();
+  }
+  function undo(){
+    if (!history.length || drag.mode === "turn") return;
+    const m = history.pop();
+    enqueue({ axis: m.axis, layer: m.layer, dir: -m.dir }, "undo", queue.length > 1 ? 105 : 175);
+    emit();
+  }
+  function rewind(){
+    if (!history.length || busy()) return;
+    const list = history.slice().reverse().map((m) => ({ axis: m.axis, layer: m.layer, dir: -m.dir }));
+    history.length = 0; userTurns = 0; scrambled = false;
+    const per = clamp(2600 / list.length, 60, 170);
+    list.forEach((m) => enqueue(m, "rewind", per));
+    emit();
+  }
+  function scramble(moves, opts = {}){
+    if (opts.fromSolved) reset({ quiet: true });
+    else if (busy()) return;
+    moves.forEach((m) => { history.push(m); enqueue(m, "scramble", 78); });
+    scrambled = true; userTurns = 0;
+    emit();
+  }
+  function reset(opts = {}){
+    hardStop();
+    cubies.forEach((c) => { c.position.copy(c.userData.home); c.quaternion.identity(); });
+    history.length = 0; scrambled = false; userTurns = 0;
+    if (!opts.quiet && !reduced()) pop = { t0: performance.now(), dur: 320 };
+    dirty = true;
+    emit();
+  }
+  function setHighlight(kind){
+    for (const c of cubies){
+      const on = !kind || c.userData.kind === kind;
+      c.userData.dimT = on ? 0 : 1;
+      c.userData.outT = kind && on ? 0.3 : 0;
+    }
+    dirty = true;
+  }
+  function updateHighlight(dt){
+    const k = reduced() ? 1 : 1 - Math.exp(-dt / 70);
+    let moving = false;
+    for (const c of cubies){
+      const u = c.userData;
+      if (Math.abs(u.dimT - u.dim) < 0.0015 && Math.abs(u.outT - u.out) < 0.0015){
+        if (u.dim !== u.dimT || u.out !== u.outT){ u.dim = u.dimT; u.out = u.outT; } else continue;
+      } else { u.dim += (u.dimT - u.dim) * k; u.out += (u.outT - u.out) * k; }
+      moving = true;
+      for (const t of u.tiles) t.material.color.copy(t.userData.base).lerp(DIM, u.dim * 0.84);
+      u.inner.position.copy(u.radial).multiplyScalar(u.out);
+    }
+    return moving;
+  }
+
+  /* dragging */
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  let drag = { mode: null };
+  const K = 0.85; // radians per cube-unit dragged along the face
+  function pick(e){
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    root.updateMatrixWorld(true);
+    ray.setFromCamera(ndc, camera);
+    const hits = ray.intersectObjects(cubies, true);
+    if (!hits.length) return null;
+    let o = hits[0].object;
+    while (o && !(o.userData && o.userData.isCubie)) o = o.parent;
+    if (!o || o.parent !== root) return null;
+    const p = root.worldToLocal(hits[0].point.clone());
+    let a = "x";
+    for (const k of AXES) if (Math.abs(p[k]) > Math.abs(p[a])) a = k;
+    return { cubie: o, p, nAxis: a, nSign: Math.sign(p[a]) || 1 };
+  }
+  function screenDelta(p, axis){
+    const r = canvas.getBoundingClientRect();
+    const a = root.localToWorld(p.clone()).project(camera);
+    const q = p.clone(); q[axis] += 1;
+    const b = root.localToWorld(q).project(camera);
+    return { x: (b.x - a.x) * r.width / 2, y: -(b.y - a.y) * r.height / 2 };
+  }
+  function beginTurn(dx, dy){
+    if (anim || queue.length){ drag.mode = "orbit"; return; }
+    const { p, nAxis, nSign, cubie } = drag.hit;
+    let best = null;
+    for (const a of AXES){
+      if (a === nAxis) continue;
+      const s = screenDelta(p, a), len = Math.hypot(s.x, s.y);
+      if (len < 1) continue;
+      const score = Math.abs(dx * s.x + dy * s.y) / len;
+      if (!best || score > best.score) best = { a, s, len, score };
+    }
+    if (!best){ drag.mode = "orbit"; return; }
+    const n = new THREE.Vector3(); n[nAxis] = nSign;
+    const d = new THREE.Vector3(); d[best.a] = 1;
+    const r = new THREE.Vector3().crossVectors(n, d);
+    let rAxis = "x";
+    for (const k of AXES) if (Math.abs(r[k]) > 0.5) rAxis = k;
+    const layer = Math.round(cubie.position[rAxis]);
+    drag.list = grab(rAxis, layer);
+    Object.assign(drag, { mode: "turn", rAxis, rSign: Math.sign(r[rAxis]), layer, s: best.s, s2: best.len * best.len, angle: 0, samples: [] });
+    hooks.onInteract();
+  }
+  canvas.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (drag.mode) return;
+    try { canvas.setPointerCapture(e.pointerId); } catch {}
+    const hit = !anim && !queue.length ? pick(e) : null;
+    drag = { mode: hit ? "pending" : "orbit", id: e.pointerId, x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, hit, samples: [] };
+    view.vy = view.vp = 0; view.spin = null;
+    canvas.classList.add("grabbing");
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!drag.mode || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+    if (drag.mode === "pending"){
+      if (Math.hypot(dx, dy) < 6) return;
+      beginTurn(dx, dy);
+    }
+    const now = performance.now();
+    if (drag.mode === "orbit"){
+      const mx = e.clientX - drag.lx, my = e.clientY - drag.ly;
+      view.yaw += mx * ROT;
+      view.pitch = clamp(view.pitch + my * ROT, -PMAX, PMAX);
+      drag.samples.push({ t: now, x: mx, y: my });
+    } else if (drag.mode === "turn"){
+      const u = (dx * drag.s.x + dy * drag.s.y) / drag.s2;
+      drag.angle = drag.rSign * u * K;
+      pivot.rotation[drag.rAxis] = drag.angle;
+      drag.samples.push({ t: now, a: drag.angle });
+    }
+    while (drag.samples.length && now - drag.samples[0].t > 110) drag.samples.shift();
+    drag.lx = e.clientX; drag.ly = e.clientY;
+    dirty = true;
+  });
+  function endDrag(e){
+    if (!drag.mode || (e && e.pointerId !== drag.id)) return;
+    const now = performance.now();
+    const recent = drag.samples.filter((s) => now - s.t < 90);
+    if (drag.mode === "orbit" && recent.length){
+      const span = Math.max(16, now - recent[0].t);
+      const VMAX = 0.007;
+      view.vy = clamp(recent.reduce((a, s) => a + s.x, 0) * ROT / span, -VMAX, VMAX);
+      view.vp = clamp(recent.reduce((a, s) => a + s.y, 0) * ROT / span, -VMAX, VMAX);
+    } else if (drag.mode === "turn"){
+      let vel = 0;
+      if (recent.length >= 2) vel = (recent[recent.length - 1].a - recent[0].a) / Math.max(16, recent[recent.length - 1].t - recent[0].t);
+      // round to the nearest quarter; a quick flick can finish a short drag into one quarter turn
+      const base = drag.angle / Q;
+      let q = clamp(Math.round(base), -2, 2);
+      if (q === 0 && Math.abs(base) > 0.12 && Math.abs(vel) > 0.004 && Math.sign(vel) === Math.sign(base)) q = Math.sign(base);
+      const move = q ? { axis: drag.rAxis, layer: drag.layer, dir: q } : null;
+      if (move) history.push(move);
+      const to = q * Q, dist = Math.abs(to - drag.angle);
+      anim = { list: drag.list, axis: drag.rAxis, from: drag.angle, to, t0: now, dur: reduced() ? 40 : clamp(100 + dist * 120, 100, 260), ease: EASE.out, job: { source: "drag", move } };
+      if (move) hooks.onMove(move, "drag", 0);
+    }
+    drag = { mode: null };
+    canvas.classList.remove("grabbing");
+    dirty = true;
+  }
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("lostpointercapture", (e) => { if (drag.mode && e.pointerId === drag.id) endDrag(e); });
+  canvas.addEventListener("keydown", (e) => {
+    const step = 0.0045;
+    if (e.key === "ArrowLeft"){ view.vy -= step; e.preventDefault(); }
+    else if (e.key === "ArrowRight"){ view.vy += step; e.preventDefault(); }
+    else if (e.key === "ArrowUp"){ view.vp -= step; e.preventDefault(); }
+    else if (e.key === "ArrowDown"){ view.vp += step; e.preventDefault(); }
+  });
+
+  /* loop */
+  let last = performance.now();
+  if (!reduced()){
+    view.yaw = HOME_VIEW.yaw - 1.1;
+    view.spin = { from: view.yaw, to: HOME_VIEW.yaw, t0: last + 120, dur: 1100 };
+    pop = { t0: last + 120, dur: 700, from: 0.9 };
+  }
+  function step(now){
+    const dt = Math.min(64, now - last); last = now;
+    let active = false;
+    if (view.spin){
+      const t = clamp((now - view.spin.t0) / view.spin.dur, 0, 1);
+      view.yaw = view.spin.from + (view.spin.to - view.spin.from) * EASE.outQuart(t);
+      if (t >= 1){ view.yaw = view.spin.to % (Math.PI * 2); view.spin = null; }
+      active = true;
+    } else if (drag.mode !== "orbit" && (Math.abs(view.vy) > 1e-5 || Math.abs(view.vp) > 1e-5)){
+      view.yaw += view.vy * dt;
+      view.pitch = clamp(view.pitch + view.vp * dt, -PMAX, PMAX);
+      const f = Math.exp(-dt / 150);
+      view.vy *= f; view.vp *= f;
+      active = true;
+    }
+    if (!anim && queue.length && drag.mode !== "turn") startNext(now);
+    if (anim){
+      const t = clamp((now - anim.t0) / anim.dur, 0, 1);
+      pivot.rotation[anim.axis] = anim.from + (anim.to - anim.from) * anim.ease(t);
+      if (t >= 1){ finishAnim(); if (queue.length) startNext(now); }
+      active = true;
+    }
+    if (updateHighlight(dt)) active = true;
+    if (pop){
+      const t = clamp((now - pop.t0) / pop.dur, 0, 1), from = pop.from || 0.94;
+      root.scale.setScalar(from + (1 - from) * EASE.outQuart(t));
+      if (t >= 1){ root.scale.setScalar(1); pop = null; }
+      active = true;
+    }
+    if (active || dirty){
+      root.rotation.set(view.pitch, view.yaw, 0, "XYZ");
+      renderer.render(scene, camera);
+      dirty = false;
+    }
+  }
+  function frame(now){ step(now); requestAnimationFrame(frame); }
+  requestAnimationFrame(frame);
+  emit();
+
+  return { turn, undo, rewind, scramble, reset, setHighlight, isBusy: busy, _debug: { isSolved, cubies, view, history, step } };
+}
+
+/* ---------- page wiring ---------- */
+const chip = $("#chip"), chipText = $("#chip-text"), lastEl = $("#last"), hint = $("#hint");
+const btn = { scramble: $("#btn-scramble"), undo: $("#btn-undo"), rewind: $("#btn-rewind"), reset: $("#btn-reset") };
+btn.scramble.innerHTML = svg("shuffle") + "<span>Scramble</span>";
+btn.undo.innerHTML = svg("undo") + "<span>Undo</span>";
+btn.rewind.innerHTML = svg("rewind") + "<span>Rewind</span>";
+btn.reset.innerHTML = svg("reset") + "<span>Reset</span>";
+btn.rewind.title = "Play every turn back to solved";
+
+function setText(el, text){
+  if (el.textContent === text) return;
+  el.textContent = text;
+  el.classList.remove("swap-in"); void el.offsetWidth; el.classList.add("swap-in");
+}
+let solvedMsgUntil = 0;
+const hooks = {
+  onState(s){
+    const now = performance.now();
+    if (s.solved){
+      chip.dataset.state = "solved";
+      if (now > solvedMsgUntil) setText(chipText, "Solved");
+    } else if (!s.busy || s.turns){
+      chip.dataset.state = "mixed";
+      solvedMsgUntil = 0;
+      setText(chipText, s.turns ? `Mixed · ${s.turns} ${s.turns === 1 ? "turn" : "turns"}` : "Mixed");
+    }
+    btn.undo.disabled = !s.history;
+    btn.rewind.disabled = !s.history || s.busy;
+    btn.reset.disabled = s.solved && !s.history && !s.busy;
+    if (s.centers) for (const [face, color] of Object.entries(s.centers)){
+      $$(`.sw[data-face="${face}"]`).forEach((el) => el.style.background = `var(--c-${color})`);
+    }
+  },
+  onMove(m, source, left){
+    if (source === "scramble") lastEl.textContent = left ? "Scrambling…" : "Scrambled";
+    else if (source === "rewind") lastEl.textContent = left ? "Rewinding…" : "Back to solved";
+    else lastEl.textContent = (source === "undo" ? "Undo: " : "") + moveInfo(m).text;
+  },
+  onSolved(n){
+    solvedMsgUntil = performance.now() + 4000;
+    chip.dataset.state = "solved";
+    setText(chipText, n ? `Solved in ${n} ${n === 1 ? "turn" : "turns"}` : "Solved");
+    setTimeout(() => { if (chip.dataset.state === "solved") setText(chipText, "Solved"); }, 4100);
+  },
+  onInteract(){ hint.classList.add("gone"); }
+};
+
+const stub = { turn(){}, undo(){}, rewind(){}, scramble(){}, reset(){}, setHighlight(){}, isBusy: () => false };
+let cube = stub;
+try {
+  if (!window.THREE) throw new Error("three.js did not load");
+  cube = createCube($("#cube"), hooks);
+} catch (err){
+  console.warn(err);
+  $("#cube").innerHTML = '<p class="nogl">This browser could not start 3D graphics, so the cube can’t be drawn here. The turn names, the timer and everything else still work.</p>';
+  $(".toolbar").hidden = true; hint.hidden = true;
+}
+
+btn.scramble.addEventListener("click", () => { hooks.onInteract(); cube.scramble(genScramble(20)); });
+btn.undo.addEventListener("click", () => cube.undo());
+btn.rewind.addEventListener("click", () => cube.rewind());
+btn.reset.addEventListener("click", () => { cube.reset(); lastEl.textContent = ""; });
+
+/* move pad */
+const PAD = [
+  { face: "top", axis: "y", layer: 1, btns: [[-1, "to the left"], [1, "to the right"]] },
+  { face: "bottom", axis: "y", layer: -1, btns: [[-1, "to the left"], [1, "to the right"]] },
+  { face: "left", axis: "x", layer: -1, btns: [[-1, "up"], [1, "down"]] },
+  { face: "right", axis: "x", layer: 1, btns: [[-1, "up"], [1, "down"]] },
+  { face: "front", axis: "z", layer: 1, btns: [[-1, "clockwise"], [1, "counter-clockwise"]] },
+  { face: "back", axis: "z", layer: -1, btns: [[-1, "clockwise"], [1, "counter-clockwise"]], note: "seen from the front" }
+];
+const padEl = $("#pad");
+padEl.innerHTML = PAD.map((row) => {
+  const name = NAMES[row.axis][String(row.layer)];
+  const buttons = row.btns.map(([dir, label]) => {
+    const info = moveInfo({ axis: row.axis, layer: row.layer, dir });
+    return `<button class="mv" type="button" data-axis="${row.axis}" data-layer="${row.layer}" data-dir="${dir}" aria-label="${info.text}">${svg(info.icon)}<span>${label}</span></button>`;
+  }).join("");
+  return `<div class="pad-row"><div class="pad-face"><span class="sw" data-face="${row.face}" style="background:var(--c-${HOLD[row.face]})"></span><span>${name}${row.note ? `<small>${row.note}</small>` : ""}</span></div>${buttons}</div>`;
+}).join("");
+padEl.addEventListener("click", (e) => {
+  const b = e.target.closest(".mv");
+  if (!b) return;
+  cube.turn({ axis: b.dataset.axis, layer: +b.dataset.layer, dir: +b.dataset.dir });
+});
+
+/* pieces + numbers drive the highlight */
+const DESC = {
+  none: "Under the colors, the cube is 26 small pieces clipped around a core. Each kind moves in its own way, and every solving method is built on that.",
+  center: "Six centers, one in the middle of each face. They're fixed to the core and never change places with each other, so a center tells you the face's color: wherever the yellow center is, that face is yellow when solved.",
+  edge: "Twelve edges, each with two colors. An edge can sit in any of the twelve edge spots, the right way round or flipped.",
+  corner: "Eight corners, each with three colors. A corner can sit in any of the eight corner spots and twist three ways."
+};
+let hlKind = null;
+function highlight(kind){
+  hlKind = kind;
+  cube.setHighlight(kind);
+  $$("[data-kind]").forEach((el) => el.setAttribute("aria-pressed", String(!!kind && el.dataset.kind === kind)));
+  setText($("#piece-desc"), DESC[kind || "none"]);
+}
+$("#piece-desc").textContent = DESC.none;
+$$("[data-kind]").forEach((el) => el.addEventListener("click", () => {
+  const k = el.dataset.kind;
+  highlight(hlKind === k && el.getAttribute("aria-pressed") === "true" ? null : k);
+}));
+const hlZones = new Map();
+const hlObserver = new IntersectionObserver((entries) => {
+  entries.forEach((en) => hlZones.set(en.target, en.isIntersecting));
+  if (hlKind && ![...hlZones.values()].some(Boolean)) highlight(null);
+}, { threshold: 0.05 });
+hlObserver.observe($("#pieces")); hlObserver.observe($("#numbers"));
+
+/* nav: scroll without touching the URL */
+$$(".nav a").forEach((a) => a.addEventListener("click", (e) => {
+  const el = document.querySelector(a.getAttribute("href"));
+  if (!el) return;
+  e.preventDefault();
+  el.scrollIntoView({ behavior: reduced() ? "auto" : "smooth", block: "start" });
+}));
+
+/* ---------- scramble + timer ---------- */
+const scList = $("#sc-list");
+let currentScramble = genScramble(20);
+function renderScramble(){
+  scList.innerHTML = currentScramble.map((m, i) => {
+    const info = moveInfo(m), face = FACE_OF(m);
+    const [main, sub] = info.text.split(", ");
+    return `<li><span class="n">${i + 1}</span><span class="sw" style="background:var(--c-${HOLD[face]})" aria-hidden="true"></span>${iconOrTwice(info.icon)}<span>${main}${sub ? `<small class="sub">${sub}</small>` : ""}</span></li>`;
+  }).join("");
+  scList.classList.remove("swap-in"); void scList.offsetWidth; scList.classList.add("swap-in");
+}
+renderScramble();
+$("#sc-new").innerHTML = svg("shuffle") + "<span>New scramble</span>";
+$("#sc-show").innerHTML = svg("cube") + "<span>Show on 3D cube</span>";
+$("#sc-new").addEventListener("click", () => { currentScramble = genScramble(20); renderScramble(); });
+$("#sc-show").addEventListener("click", () => {
+  hooks.onInteract();
+  cube.scramble(currentScramble.map((m) => ({ ...m })), { fromSolved: true });
+});
+
+const mat = $("#mat"), timeEl = $("#time"), matHint = $("#mat-hint");
+if (matchMedia("(hover: none)").matches) matHint.textContent = "Press and hold here";
+const TKEY = "quarter-turn.solves.v1";
+let solves = store.get(TKEY, []);
+if (!Array.isArray(solves)) solves = [];
+const T = { state: "idle", t0: 0, hold: null, raf: 0, swallowUp: false };
+const READY_MS = 550;
+
+function fmt(ms){
+  if (ms == null) return "–";
+  const cs = Math.floor(ms / 10);
+  const m = Math.floor(cs / 6000), s = Math.floor((cs % 6000) / 100), c = cs % 100;
+  return (m ? m + ":" + String(s).padStart(2, "0") : String(s)) + "." + String(c).padStart(2, "0");
+}
+function avg(n){
+  if (solves.length < n) return null;
+  const xs = solves.slice(-n).map((s) => s.ms).sort((a, b) => a - b).slice(1, n - 1);
+  return xs.reduce((a, b) => a + b, 0) / xs.length;
+}
+function renderTimes(){
+  const best = solves.length ? Math.min(...solves.map((s) => s.ms)) : null;
+  $("#st-best").textContent = fmt(best);
+  $("#st-ao5").textContent = fmt(avg(5));
+  $("#st-ao12").textContent = fmt(avg(12));
+  $("#st-n").textContent = String(solves.length);
+  const list = $("#times");
+  if (!solves.length){
+    list.innerHTML = '<li class="empty">No solves yet. Your times are kept in this browser only.</li>';
+    return;
+  }
+  list.innerHTML = solves.map((s, i) => ({ s, i })).reverse().map(({ s, i }) =>
+    `<li><span class="idx">#${i + 1}</span><span class="t${s.ms === best ? " best" : ""}">${fmt(s.ms)}${s.ms === best && solves.length > 1 ? '<span class="tag">Best</span>' : ""}</span><button class="del" type="button" data-i="${i}" aria-label="Delete solve ${i + 1}">${svg("x")}</button></li>`
+  ).join("");
+}
+$("#times").addEventListener("click", (e) => {
+  const b = e.target.closest(".del");
+  if (!b) return;
+  solves.splice(+b.dataset.i, 1);
+  store.set(TKEY, solves);
+  renderTimes();
+});
+const clearBtn = $("#clear");
+let clearArmed = 0;
+clearBtn.addEventListener("click", () => {
+  if (!solves.length) return;
+  if (Date.now() < clearArmed){
+    solves = []; store.set(TKEY, solves); renderTimes();
+    clearArmed = 0; clearBtn.textContent = "Clear all"; clearBtn.classList.remove("danger-armed");
+    return;
+  }
+  clearArmed = Date.now() + 3000;
+  clearBtn.textContent = "Press again to clear";
+  clearBtn.classList.add("danger-armed");
+  setTimeout(() => { if (Date.now() >= clearArmed){ clearBtn.textContent = "Clear all"; clearBtn.classList.remove("danger-armed"); } }, 3100);
+});
+renderTimes();
+
+function setMat(state){
+  T.state = state;
+  mat.dataset.state = state;
+  document.body.classList.toggle("timing", state === "holding" || state === "ready" || state === "running");
+}
+function beginHold(){
+  if (T.state === "holding" || T.state === "ready" || T.state === "running") return;
+  setMat("holding");
+  clearTimeout(T.hold);
+  T.hold = setTimeout(() => { if (T.state === "holding"){ setMat("ready"); timeEl.textContent = "0.00"; } }, READY_MS);
+}
+function endHold(){
+  clearTimeout(T.hold);
+  if (T.state === "ready"){
+    setMat("running");
+    T.t0 = performance.now();
+    matHint.textContent = "Press any key or tap to stop";
+    const tick = () => { if (T.state !== "running") return; timeEl.textContent = fmt(performance.now() - T.t0); T.raf = requestAnimationFrame(tick); };
+    tick();
+  } else if (T.state === "holding"){
+    setMat("idle");
+  }
+}
+function stopTimer(){
+  if (T.state !== "running") return;
+  const ms = performance.now() - T.t0;
+  cancelAnimationFrame(T.raf);
+  setMat("idle");
+  timeEl.textContent = fmt(ms);
+  matHint.textContent = matchMedia("(hover: none)").matches ? "Press and hold here" : "Hold Space, or press and hold here";
+  solves.push({ ms: Math.round(ms), at: Date.now(), scramble: currentScramble.map((m) => moveInfo(m).text) });
+  store.set(TKEY, solves);
+  renderTimes();
+  currentScramble = genScramble(20);
+  renderScramble();
+}
+let timerInView = false;
+new IntersectionObserver((en) => { timerInView = en[0].isIntersecting; }, { threshold: 0.2 }).observe($("#timer"));
+const typing = (t) => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+
+document.addEventListener("keydown", (e) => {
+  if (typing(e.target)) return;
+  if (T.state === "running"){
+    e.preventDefault(); T.swallowUp = e.code === "Space"; stopTimer(); return;
+  }
+  if (e.code === "Space" && (timerInView || e.target === mat)){
+    e.preventDefault();
+    if (!e.repeat) beginHold();
+    return;
+  }
+  if (e.key === "Escape" && (T.state === "holding" || T.state === "ready")){ clearTimeout(T.hold); setMat("idle"); return; }
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "z"){ e.preventDefault(); cube.undo(); }
+});
+document.addEventListener("keyup", (e) => {
+  if (e.code !== "Space") return;
+  if (T.swallowUp){ T.swallowUp = false; e.preventDefault(); return; }
+  if (T.state === "holding" || T.state === "ready"){ e.preventDefault(); endHold(); }
+});
+mat.addEventListener("pointerdown", (e) => {
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  e.preventDefault();
+  if (T.state === "running"){ stopTimer(); return; }
+  try { mat.setPointerCapture(e.pointerId); } catch {}
+  beginHold();
+});
+mat.addEventListener("pointerup", () => { if (T.state === "holding" || T.state === "ready") endHold(); });
+mat.addEventListener("pointercancel", () => { if (T.state === "holding" || T.state === "ready"){ clearTimeout(T.hold); setMat("idle"); } });
+document.addEventListener("pointerdown", (e) => { if (T.state === "running" && !mat.contains(e.target)){ e.preventDefault(); stopTimer(); } }, true);
+
+window.__qt = { cube, genScramble, moveInfo };
+})();
+</script>
+</body></html>

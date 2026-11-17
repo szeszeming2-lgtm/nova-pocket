@@ -1,4 +1,4 @@
-window.NP_VERSION='89d4f7b3f8';
+window.NP_VERSION='e5297691f0';
 /* ---- 00-core.js ---- */
 'use strict';
 /* ===== Super One core: helpers, storage, dialogs, files, sound ===== */
@@ -334,7 +334,8 @@ const Shell = {
     const theme = Prefs.get('theme', 'system'), size = Prefs.get('size', 'normal');
     const nameIn = h('input', { type: 'text', value: Prefs.get('name', ''), placeholder: 'Your first name (optional)', onchange: () => { Prefs.set('name', nameIn.value.trim().slice(0, 30)); this.paintHello(); } });
     body.append(
-      h('div', { class: 'sec', style: { marginTop: '4px' } }, 'Look'),
+      h('div', { class: 'sec', style: { marginTop: '4px' } }, 'Me'), await Profile.card(),
+      h('div', { class: 'sec' }, 'Look'),
       h('label', { class: 'f' }, h('span', null, 'Name on the home screen'), nameIn),
       h('label', { class: 'f' }, h('span', null, 'Theme'), UI.seg([['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']], theme, v => { Prefs.set('theme', v); applyLook(); })),
       h('label', { class: 'f' }, h('span', null, 'Text size'), UI.seg([['normal', 'Normal'], ['big', 'Bigger']], size, v => { Prefs.set('size', v); applyLook(); })),
@@ -541,72 +542,126 @@ const Backup = {
 };
 
 /* ---- 02-home.js ---- */
-/* ===== Home screen: wallpaper, big clock, widgets, favorites dock, app icons ===== */
+/* ===== Home screen: blue & red hero theme, cloudy clock + week, app "stories", swipe widgets, video-style For you, standout icons ===== */
 addCSS(`
 #wall{position:fixed;inset:0;z-index:-1;background:var(--bg);background-size:cover;background-position:center;opacity:0;transition:opacity .25s}
 body.on-home #wall{opacity:1}
 body.on-home{background:transparent}
 body.on-home .top{background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;border-color:transparent;color:#fff}
-body.on-home .top.scrolled{background:rgba(10,8,30,.35);-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4)}
+body.on-home .top.scrolled{background:rgba(6,14,52,.45);-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4)}
 body.on-home .top .ib{color:#fff}
 body.on-home .top .pill{background:rgba(255,255,255,.18);color:#fff}
 body.on-home .top .pill.good .dot{color:#5CF29A}
-.brand{display:flex;align-items:center;gap:8px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;font-family:var(--round);font-weight:900;font-size:19px;letter-spacing:.02em;font-style:italic}
-.brand i{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#FF3D7F,#7C3AED 50%,#1E40FF);font-style:normal;font-size:12px;font-weight:900;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+@media (max-width:480px){body.on-home .top .pill{font-size:0;gap:0;padding:6px 7px}body.on-home .top .pill .dot{font-size:13px}}
+body.on-home .top{gap:4px}
+.brand{display:flex;align-items:center;gap:8px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;font-family:var(--round);font-weight:900;font-size:19px;letter-spacing:.01em;font-style:italic}
+.brand img{width:32px;height:32px;border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,.35);flex:0 0 auto}
+.brand span{background:linear-gradient(90deg,#FFFFFF 0%,#BFD6FF 55%,#FF9AA8 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.avb{width:34px;height:34px;border-radius:50%;padding:2px;border:0;flex:0 0 auto;background:conic-gradient(from 210deg,#2F6BFF,#00C2FF,#FF2E4D,#FF9F1C,#2F6BFF)}
+.avb span,.avbig span{display:grid;place-items:center;width:100%;height:100%;border-radius:50%;background:linear-gradient(135deg,#2F6BFF,#FF2E4D) center/cover;color:#fff;font-weight:900;font-size:14px;border:2px solid #0B1747}
 main#view.enter{animation:appIn .3s cubic-bezier(.2,.8,.2,1)}
 @keyframes appIn{from{opacity:0;transform:translateY(10px) scale(.995)}}
-.hero{color:#fff;text-align:center;padding:6px 0 4px;text-shadow:0 2px 14px rgba(0,0,0,.25)}
-.hero .clk{font-size:clamp(64px,22vw,96px);font-weight:200;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums;font-family:var(--round)}
-.hero .dt{font-size:18px;font-weight:600;opacity:.95;margin-top:4px}
-.hero .gr{font-size:15px;opacity:.85;margin-top:2px}
-.glass{background:rgba(255,255,255,.14);-webkit-backdrop-filter:blur(22px) saturate(1.5);backdrop-filter:blur(22px) saturate(1.5);border:1px solid rgba(255,255,255,.22);border-radius:22px;color:#fff;box-shadow:0 8px 30px rgba(0,0,0,.12)}
-:root[data-theme="dark"] .glass{background:rgba(20,18,40,.32)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .glass{background:rgba(20,18,40,.32)}}
-.widgets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}
-@media (min-width:700px){.widgets{grid-template-columns:repeat(4,minmax(0,1fr))}}
-.wd{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:14px;min-height:150px;min-width:0;border:1px solid rgba(255,255,255,.22);font:inherit;color:#fff}
+.glass{background:rgba(255,255,255,.13);-webkit-backdrop-filter:blur(22px) saturate(1.5);backdrop-filter:blur(22px) saturate(1.5);border:1px solid rgba(255,255,255,.22);border-radius:22px;color:#fff;box-shadow:0 8px 30px rgba(0,0,0,.14)}
+/* cloudy clock + days */
+.hero{position:relative;color:#fff;text-align:center;padding:8px 0 4px}
+.sky{position:absolute;inset:-10px calc(-1 * var(--gut)) 0;pointer-events:none;overflow:hidden;z-index:0}
+.sky i{position:absolute;left:0;width:110px;height:34px;border-radius:40px;background:rgba(255,255,255,.16);filter:blur(5px);animation:drift 46s linear infinite}
+.sky i::before,.sky i::after{content:"";position:absolute;background:inherit;border-radius:50%}
+.sky i::before{width:52px;height:52px;left:16px;top:-24px}.sky i::after{width:40px;height:40px;left:56px;top:-16px}
+@keyframes drift{from{transform:translateX(-140px) scale(var(--s,1))}to{transform:translateX(115vw) scale(var(--s,1))}}
+.hero > *:not(.sky){position:relative;z-index:1}
+.clk{display:inline-block;font-size:clamp(80px,27vw,124px);font-weight:900;line-height:1;letter-spacing:-.015em;font-family:var(--round);font-variant-numeric:tabular-nums;padding:0 6px;
+  background:radial-gradient(30% 45% at 15% 30%,#FFFFFF 0%,rgba(255,255,255,.92) 45%,rgba(255,255,255,0) 72%),radial-gradient(28% 40% at 45% 22%,#FFFFFF 0%,rgba(255,255,255,.9) 50%,rgba(255,255,255,0) 75%),radial-gradient(32% 48% at 78% 35%,#FFFFFF 0%,rgba(255,255,255,.9) 45%,rgba(255,255,255,0) 72%),radial-gradient(40% 50% at 30% 85%,#DCEBFF 0%,rgba(220,235,255,0) 70%),radial-gradient(40% 50% at 85% 85%,#FFE1E6 0%,rgba(255,225,230,0) 70%),linear-gradient(180deg,#FFFFFF 0%,#D8E8FF 55%,#A9CBFF 100%);
+  background-size:260% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-stroke:1.2px rgba(255,255,255,.55);
+  filter:drop-shadow(0 0 16px rgba(150,195,255,.65)) drop-shadow(0 8px 16px rgba(4,10,60,.5));animation:cloudy 26s linear infinite}
+@keyframes cloudy{to{background-position:260% 0}}
+.dayname{font-size:30px;font-weight:900;font-family:var(--round);line-height:1.1;margin-top:2px;background:linear-gradient(90deg,#A8C8FF,#FFFFFF 45%,#FF9AA8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero .dt{font-size:15px;font-weight:650;opacity:.92;margin-top:2px}
+.hero .gr{font-size:14px;opacity:.85;margin-top:2px}
+.week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:12px 0 0}
+.week button{border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.1);color:#fff;border-radius:16px;padding:6px 0 6px;display:flex;flex-direction:column;align-items:center;gap:1px;font:inherit;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.week small{font-size:10.5px;font-weight:800;opacity:.75;text-transform:uppercase;letter-spacing:.04em}
+.week b{font-size:17px;font-family:var(--round)}
+.week .on{background:linear-gradient(160deg,#2F6BFF,#FF2E4D);border-color:transparent;box-shadow:0 6px 16px rgba(255,46,77,.35)}
+.week .on small{opacity:1}
+.week i{width:5px;height:5px;border-radius:50%;background:#FFD166;opacity:0}
+.week i.ev{opacity:1}
+/* app stories */
+.stories{display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;margin:14px calc(-1 * var(--gut)) 0;padding:2px var(--gut) 2px}
+.stories::-webkit-scrollbar,.widgets::-webkit-scrollbar,.ychips::-webkit-scrollbar,.fyrow::-webkit-scrollbar{display:none}
+.hst{position:relative;flex:0 0 auto;width:70px;display:flex;flex-direction:column;align-items:center;gap:5px;border:0;background:none;color:#fff;font:inherit;padding:0}
+.hst .ring{width:68px;height:68px;border-radius:50%;padding:3px;background:conic-gradient(from 210deg,#2F6BFF,#00C2FF,#FF2E4D,#FF9F1C,#2F6BFF)}
+.hst.seen .ring{background:rgba(255,255,255,.4)}
+.hst .in{position:relative;width:100%;height:100%;border-radius:50%;border:3px solid #0B1747;display:grid;place-items:center;overflow:hidden;background-size:cover;background-position:center}
+.hst .in svg{width:28px;height:28px;color:#fff;filter:drop-shadow(0 1px 2px rgba(0,0,0,.3))}
+.hst .in b{font-size:24px;font-family:var(--round)}
+.hst small{font-size:11.5px;font-weight:650;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 1px 4px rgba(0,0,0,.45)}
+.hst .add{position:absolute;right:0;top:46px;width:22px;height:22px;border-radius:50%;background:#2F6BFF;border:2px solid #0B1747;color:#fff;font-weight:900;font-size:14px;line-height:18px;text-align:center}
+/* widgets: swipe left/right */
+.widgets{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;margin:16px calc(-1 * var(--gut)) 0;padding:2px var(--gut) 4px;scroll-padding:0 var(--gut)}
+.wd{flex:0 0 74%;max-width:300px;scroll-snap-align:start;display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:14px;min-height:150px;min-width:0;border:1px solid rgba(255,255,255,.22);font:inherit;color:#fff}
 .wd:active{transform:scale(.98)}
-.wd.wide{grid-column:span 2;min-height:0}
-.wd.hmw{position:relative;padding-right:76px}
-.wd.hmw::after{content:"🏠";position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:44px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.25))}
+.wd.wide{min-height:150px}
 .wd .k{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;opacity:.8;display:flex;align-items:center;gap:6px}
 .wd .big{font-size:40px;font-weight:300;line-height:1.05;margin-top:6px;font-family:var(--round)}
-.wd .t1{font-size:16px;font-weight:700;margin-top:6px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.wd .t1{font-size:17px;font-weight:700;margin-top:6px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
 .wd .t2{font-size:13px;opacity:.85;margin-top:auto;padding-top:6px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .wd ul{list-style:none;padding:0;margin:8px 0 0;font-size:14px;width:100%}
 .wd li{display:flex;gap:8px;align-items:center;padding:3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wd li::before{content:"";width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.8);flex:0 0 auto}
 .wd .verse{font-size:15px;font-style:italic;line-height:1.4;margin-top:6px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
-.hsearch{position:relative;margin-top:14px}
-.hsearch input{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:16px;padding-left:42px;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+.wd.hmw{position:relative;padding-right:76px}
+.wd.hmw::after{content:"🏠";position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:44px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.25))}
+.wdots{display:flex;justify-content:center;gap:6px;margin-top:8px}
+.wdots i{width:6px;height:6px;border-radius:3px;background:rgba(255,255,255,.4);transition:width .2s,background .2s}
+.wdots i.on{width:18px;background:#fff}
+/* search + category chips */
+.hsearch{position:relative;margin-top:18px}
+.hsearch input{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:999px;padding-left:44px;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
 .hsearch input::placeholder{color:rgba(255,255,255,.75)}
-.hsearch svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:rgba(255,255,255,.85)}
-.dock{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px 10px 10px;margin-top:14px}
-.home-sec{color:#fff;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin:24px 6px 10px;opacity:.85;text-shadow:0 1px 6px rgba(0,0,0,.3)}
-.appgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px 8px;padding:16px 8px}
+.hsearch svg{position:absolute;left:16px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:rgba(255,255,255,.85)}
+.ychips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:12px calc(-1 * var(--gut)) 0;padding:0 var(--gut)}
+.ychips button{flex:0 0 auto;border:0;border-radius:10px;padding:8px 14px;font-weight:750;font-size:14px;background:rgba(255,255,255,.16);color:#fff;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);white-space:nowrap}
+.ychips button[aria-pressed="true"]{background:#fff;color:#0B1747}
+/* For you: video-style cards */
+.home-sec{color:#fff;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin:24px 2px 10px;opacity:.9;text-shadow:0 1px 6px rgba(0,0,0,.3);display:flex;align-items:center;gap:6px}
+.fyrow{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:none;margin:0 calc(-1 * var(--gut));padding:2px var(--gut) 6px}
+.fyc{flex:0 0 252px;scroll-snap-align:start;border:0;background:none;padding:0;color:#fff;text-align:left;font:inherit;display:flex;flex-direction:column;gap:9px}
+.fyc:active{transform:scale(.98)}
+.fyc .th{position:relative;aspect-ratio:16/9;border-radius:16px;overflow:hidden;display:grid;place-items:center;box-shadow:0 10px 24px rgba(0,0,0,.32)}
+.fyc .th::after{content:"";position:absolute;inset:0;background:linear-gradient(160deg,rgba(255,255,255,.28),rgba(255,255,255,0) 40%,rgba(0,0,0,.18))}
+.fyc .th .e{font-size:56px;line-height:1;filter:drop-shadow(0 6px 12px rgba(0,0,0,.35));z-index:1}
+.fyc .th svg{position:absolute;right:-16px;bottom:-22px;width:124px;height:124px;color:rgba(255,255,255,.2);transform:rotate(-12deg)}
+.fyc .th .tag{position:absolute;right:8px;bottom:8px;z-index:2;background:rgba(0,0,0,.72);color:#fff;font-size:11.5px;font-weight:800;padding:2px 7px;border-radius:6px}
+.fyc .th .tag.hot{left:8px;top:8px;right:auto;bottom:auto;background:#FF2E4D}
+.fyc .meta{display:flex;gap:10px;align-items:flex-start}
+.fyc .av{flex:0 0 auto;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.fyc .av svg{width:18px;height:18px;color:#fff}
+.fyc b{display:block;font-size:14.5px;line-height:1.25}
+.fyc small{display:block;font-size:12.5px;opacity:.8;line-height:1.3;margin-top:2px}
+/* app grid: icons that stand out */
+.appgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px 8px;padding:18px 8px}
 @media (min-width:600px){.appgrid{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media (min-width:860px){.appgrid{grid-template-columns:repeat(8,minmax(0,1fr))}}
-.app{display:flex;flex-direction:column;align-items:center;gap:6px;border:0;background:none;padding:0;min-width:0;color:#fff}
-.app .ico{position:relative;width:60px;height:60px;border-radius:16px;display:grid;place-items:center;box-shadow:0 4px 12px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.35)}
-.app .ico::after{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,0) 50%);pointer-events:none}
-.app .ico svg{width:31px;height:31px;color:#fff;filter:drop-shadow(0 1px 1px rgba(0,0,0,.15))}
+.app{display:flex;flex-direction:column;align-items:center;gap:7px;border:0;background:none;padding:0;min-width:0;color:#fff}
+.app .ico{position:relative;width:62px;height:62px;border-radius:18px;display:grid;place-items:center;overflow:hidden;box-shadow:0 7px 16px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.5),inset 0 -3px 0 rgba(0,0,0,.14)}
+.app .ico::after{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(160deg,rgba(255,255,255,.4),rgba(255,255,255,0) 46%);pointer-events:none}
+.ico svg.bgg{position:absolute;width:58px;height:58px;right:-15px;bottom:-15px;color:rgba(255,255,255,.24);transform:rotate(-14deg)}
+.ico svg.fg{position:relative;width:32px;height:32px;color:#fff;filter:drop-shadow(0 2px 2px rgba(0,0,0,.28))}
 .app:active .ico{transform:scale(.9)}
-.app > span:last-child{font-size:12px;font-weight:600;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 4px rgba(0,0,0,.45)}
-@media (max-width:360px){.app .ico{width:52px;height:52px;border-radius:14px}.app .ico svg{width:26px;height:26px}}
-/* for you */
-.fyrow{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 6px;margin:0 -2px}
-.fyrow::-webkit-scrollbar{display:none}
-.fyc{flex:0 0 auto;width:196px;min-height:112px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:14px;border:1px solid rgba(255,255,255,.22);font:inherit;color:#fff}
-.fyc:active{transform:scale(.97)}
-.fyc .e{font-size:28px;line-height:1}
-.fyc b{font-size:15px;line-height:1.25}
-.fyc small{font-size:12.5px;opacity:.85;line-height:1.3}
+.app > span:last-child{font-size:12px;font-weight:650;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+@media (max-width:360px){.app .ico{width:54px;height:54px;border-radius:16px}.ico svg.fg{width:27px;height:27px}}
 .home-note{color:rgba(255,255,255,.85);text-align:center;font-size:12px;margin:22px 0 0;text-shadow:0 1px 4px rgba(0,0,0,.4)}
-.home-banner{display:flex;gap:10px;align-items:center;padding:12px 14px;margin-top:12px;font-size:14px;text-align:left;width:100%;font:inherit;color:#fff}
+.home-banner{display:flex;gap:10px;align-items:center;padding:12px 14px;margin-top:14px;font-size:14px;text-align:left;width:100%;font:inherit;color:#fff}
 .li .ic svg{width:22px;height:22px;color:#fff}
 .wallpick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .wallpick button{aspect-ratio:9/14;border-radius:14px;border:3px solid transparent;background-size:cover!important;background-position:center!important;color:#fff;font-weight:700;font-size:12px;display:flex;align-items:flex-end;justify-content:center;padding:6px;text-shadow:0 1px 3px rgba(0,0,0,.6)}
 .wallpick button[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--bg) inset}
+/* profile */
+.avbig{width:104px;height:104px;border-radius:50%;padding:4px;margin:0 auto;background:conic-gradient(from 210deg,#2F6BFF,#00C2FF,#FF2E4D,#FF9F1C,#2F6BFF)}
+.avbig span{font-size:40px;border-width:4px;border-color:var(--bg)}
+.pstats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;text-align:center;margin:14px 0}
+.pstats b{display:block;font-size:20px;font-family:var(--round)}.pstats small{color:var(--muted);font-size:12px}
 `);
 const ICON_PATHS = {
   calendar: '<rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M7.5 13.5h.01M12 13.5h.01M16.5 13.5h.01M7.5 17h.01M12 17h.01"/>',
@@ -638,9 +693,18 @@ const ICON_PATHS = {
   bible: '<path d="M5 4.5a2 2 0 0 1 2-2h12v16H7a2 2 0 0 0-2 2z"/><path d="M5 20.5a2 2 0 0 0 2 1h12v-3M12 6v8M9.25 8.75h5.5"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/>',
+  comics: '<path d="M4 4.5h16v11H12l-5 4.5v-4.5H4z"/><path d="M8.5 8.5l1.5 2.5 1.8-3.5 1.7 3.5 1.5-2.5"/>',
+  links: '<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.2 1.2"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.2-1.2"/>',
+  wiki: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.9 5.6 3.9 9s-1.3 6.4-3.9 9c-2.6-2.6-3.9-5.6-3.9-9S9.4 5.6 12 3z"/>',
+  wheel: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/><circle cx="12" cy="12" r="2.2"/>',
+  profile: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/>',
 };
-const appIcon = a => { const p = ICON_PATHS[a.id]; return p ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>' : '<span style="font-size:30px">' + a.icon + '</span>'; };
+const svgIcon = (p, cls) => '<svg class="' + cls + '" viewBox="0 0 24 24" fill="' + (cls === 'fg' ? 'rgba(255,255,255,.22)' : 'none') + '" stroke="currentColor" stroke-width="' + (cls === 'fg' ? 2 : 1.6) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
+const appIcon = a => { const p = ICON_PATHS[a.id]; return p ? svgIcon(p, 'fg') : '<span style="font-size:30px">' + a.icon + '</span>'; };
+const appIconFull = a => { const p = ICON_PATHS[a.id]; return p ? svgIcon(p, 'bgg') + svgIcon(p, 'fg') : '<span style="font-size:30px">' + a.icon + '</span>'; };
 const WALLS = {
+  hero: ['Hero', 'radial-gradient(90% 55% at 105% -5%,#FF2E4D 0%,transparent 58%),radial-gradient(90% 60% at -10% 25%,#2F6BFF 0%,transparent 62%),radial-gradient(110% 60% at 50% 112%,#E11D48 0%,transparent 58%),radial-gradient(80% 45% at 60% 55%,#1E3FAE 0%,transparent 70%),linear-gradient(180deg,#0B1B5C 0%,#071242 60%,#050B2E 100%)'],
+  sky: ['Sky', 'radial-gradient(70% 40% at 20% 10%,#FFFFFF 0%,transparent 60%),radial-gradient(90% 50% at 90% 0%,#FF6B81 0%,transparent 55%),linear-gradient(180deg,#5AB3FF 0%,#2563EB 55%,#1E2F8F 100%)'],
   aurora: ['Aurora', 'radial-gradient(120% 70% at 0% 0%,#7C3AED 0%,transparent 60%),radial-gradient(90% 60% at 100% 15%,#EC4899 0%,transparent 55%),radial-gradient(120% 80% at 50% 100%,#0EA5E9 0%,transparent 60%),#1E1B4B'],
   sunset: ['Sunset', 'radial-gradient(90% 50% at 50% 0%,#FFD29D 0%,transparent 60%),linear-gradient(175deg,#FF7E5F 0%,#E8508A 45%,#5B2A86 80%,#24124A 100%)'],
   ocean: ['Ocean', 'radial-gradient(100% 60% at 80% 0%,#38BDF8 0%,transparent 55%),linear-gradient(170deg,#0E7490 0%,#1E3A8A 60%,#0B1437 100%)'],
@@ -654,49 +718,108 @@ const Home = {
   wallUrl: null,
   async applyWall() {
     let el = $('#wall'); if (!el) { el = h('div', { id: 'wall', 'aria-hidden': 'true' }); document.body.prepend(el); }
-    const w = Prefs.get('wall', 'aurora');
+    const w = Prefs.get('wall', 'hero');
     if (w === 'photo') { const b = await DB.kget('wallPhoto', null); if (b) { if (this.wallUrl) URL.revokeObjectURL(this.wallUrl); this.wallUrl = URL.createObjectURL(b); el.style.background = 'linear-gradient(180deg,rgba(0,0,0,.35),rgba(0,0,0,.15) 40%,rgba(0,0,0,.45)),url("' + this.wallUrl + '") center/cover'; return; } }
-    el.style.background = (WALLS[w] || WALLS.aurora)[1];
+    el.style.background = (WALLS[w] || WALLS.hero)[1];
   },
-  favs() { return Prefs.get('favs', ['calendar', 'notes', 'music', 'games']).filter(id => Apps.byId[id]).slice(0, 4); },
+  favs() { return Prefs.get('favs', ['calendar', 'notes', 'music', 'games', 'fit', 'chess']).filter(id => Apps.byId[id]).slice(0, 8); },
   widgetsOn() { const w = Prefs.get('widgets', { weather: true, next: true, todo: true, verse: true, news: true }); if (w.home === undefined) w.home = true; return w; },
 };
+/* ---------- profile ("me") ---------- */
+const Profile = {
+  url: null,
+  async avatar() { const b = await DB.kget('avatar', null); if (this.url) URL.revokeObjectURL(this.url); this.url = b ? URL.createObjectURL(b) : null; return this.url; },
+  face(url, cls) { const name = Prefs.get('name', ''); return h('span', { style: url ? { backgroundImage: 'url("' + url + '")' } : null }, url ? '' : (name ? name[0].toUpperCase() : '🙂')); },
+  async pickPhoto() {
+    const [f] = await pickFiles('image/*', { multiple: false }); if (!f) return false;
+    const img = await new Promise((res, rej) => { const i = new Image(), u = URL.createObjectURL(f); i.onload = () => { res(i); URL.revokeObjectURL(u); }; i.onerror = rej; i.src = u; });
+    const S = 320, c = h('canvas', { width: S, height: S }), g = c.getContext('2d'), m = Math.min(img.width, img.height);
+    g.drawImage(img, (img.width - m) / 2, (img.height - m) / 2, m, m, 0, 0, S, S);
+    const b = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88)); await DB.kset('avatar', b); return true;
+  },
+  async stats() {
+    const n = async s => DB.count(s).catch(() => 0), fit = typeof Fit !== 'undefined' ? await Fit.log() : [];
+    return [[await n('notes'), 'notes'], [fit.length, 'workouts'], [typeof Fit !== 'undefined' ? Fit.streak(fit) : 0, 'day streak'], [Object.keys(Prefs.get('appOpens', {})).length, 'apps used']];
+  },
+  async open() {
+    const url = await this.avatar(), name = h('input', { type: 'text', value: Prefs.get('name', ''), placeholder: 'Your name', maxlength: 30 }), bio = h('textarea', { placeholder: 'A little about you (optional)', maxlength: 140, style: { minHeight: '64px' } }); bio.value = Prefs.get('bio', '');
+    const av = h('div', { class: 'avbig' }, this.face(url)), st = await this.stats();
+    const s = UI.sheet({ title: 'My profile', onClose: () => { Prefs.set('name', name.value.trim().slice(0, 30)); Prefs.set('bio', bio.value.trim().slice(0, 140)); if (!Shell.cur) Shell.route(); }, body: h('div', null,
+      av, h('div', { class: 'center mt' }, h('button', { class: 'btn sm', onclick: async () => { if (await this.pickPhoto()) { const u = await this.avatar(); av.innerHTML = ''; av.append(this.face(u)); UI.toast('Photo saved'); } } }, '📷 ' + (url ? 'Change photo' : 'Add a photo'))),
+      h('div', { class: 'pstats' }, st.map(([v, l]) => h('div', null, h('b', null, v), h('small', null, l)))),
+      h('div', { class: 'stack' }, h('label', { class: 'f' }, h('span', null, 'Name'), name), h('label', { class: 'f' }, h('span', null, 'Bio'), bio)),
+      h('div', { class: 'row mt' }, h('button', { class: 'btn pri', onclick: () => { s.close(); editHome(); } }, '🏠 Edit home screen'), h('button', { class: 'btn', onclick: () => { s.close(); Shell.settings(); } }, '⚙️ Settings'))), actions: [{ label: 'Done', cls: 'pri' }] });
+  },
+  async card() {
+    const url = await this.avatar(), name = Prefs.get('name', '');
+    return h('div', { class: 'card row nw', style: { alignItems: 'center', gap: '12px' } }, h('div', { class: 'avb', style: { width: '56px', height: '56px' } }, this.face(url)),
+      h('div', { style: { flex: 1, minWidth: 0 } }, h('b', null, name || 'Add your name'), h('div', { class: 'small muted' }, Prefs.get('bio', '') || 'Your profile, photo and home screen')),
+      h('div', { class: 'stack', style: { gap: '6px' } }, h('button', { class: 'btn sm', onclick: e => { e.target.closest('.scrim') && e.target.closest('.scrim').remove(); this.open(); } }, 'Edit profile'), h('button', { class: 'btn sm', onclick: e => { e.target.closest('.scrim') && e.target.closest('.scrim').remove(); editHome(); } }, 'Edit home screen')));
+  },
+};
 Shell.tile = function (a, cls = 'app') {
-  const ico = h('span', { class: 'ico', style: { background: a.color }, html: appIcon(a) });
+  const ico = h('span', { class: 'ico', style: { background: a.color }, html: appIconFull(a) });
   if (a.badge) Promise.resolve(a.badge()).then(n => { if (n > 0) ico.append(h('span', { class: 'badge' }, n > 99 ? '99+' : String(n))); }).catch(() => { });
   return h('button', { class: cls, onclick: () => this.go(a.id), 'aria-label': a.name }, ico, h('span', null, a.name));
 };
 Shell.paintHello = function () {
   const el = $('#hello'); if (!el) return; const d = new Date(), hr = d.getHours(), name = Prefs.get('name', '');
   el.querySelector('.clk').textContent = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(/\s?[AP]M$/i, '');
-  el.querySelector('.dt').textContent = fmtDay(d, { weekday: 'long', month: 'long', day: 'numeric' });
+  el.querySelector('.dayname').textContent = fmtDay(d, { weekday: 'long' });
+  el.querySelector('.dt').textContent = fmtDay(d, { month: 'long', day: 'numeric', year: 'numeric' });
   el.querySelector('.gr').textContent = (hr < 5 ? 'Good night' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening') + (name ? ', ' + name : '') + ' ✨';
+  const wk = el.querySelector('.week'); if (wk && wk.dataset.day !== ymd(d)) this.paintWeek(wk);
 };
-Shell.renderHome = function () {
+Shell.paintWeek = async function (wk) {
+  const d = new Date(), start = new Date(d); start.setDate(d.getDate() - d.getDay()); wk.dataset.day = ymd(d); wk.innerHTML = '';
+  const evs = typeof Cal !== 'undefined' ? await DB.all('events').catch(() => []) : [];
+  for (let i = 0; i < 7; i++) {
+    const x = new Date(start); x.setDate(start.getDate() + i); const ds = ymd(x), has = evs.some(e => Cal.occurs(e, ds));
+    wk.append(h('button', { class: ds === ymd(d) ? 'on' : '', 'aria-label': fmtDay(x, { weekday: 'long', month: 'long', day: 'numeric' }) + (has ? ', has events' : ''), onclick: () => this.go('calendar', ds) }, h('small', null, fmtDay(x, { weekday: 'short' }).slice(0, 3)), h('b', null, x.getDate()), h('i', { class: has ? 'ev' : '' })));
+  }
+};
+Shell.renderHome = async function () {
   Home.applyWall();
-  this.top.append(h('div', { class: 'brand' }, h('i', null, 'S1'), 'Super One'), Offline.pill(),
+  const tok = this.homeTok = (this.homeTok || 0) + 1, avUrl = await Profile.avatar();
+  if (tok !== this.homeTok || this.cur) return;
+  const avb = h('button', { class: 'avb', 'aria-label': 'My profile', onclick: () => Profile.open() }, Profile.face(avUrl));
+  this.top.append(h('div', { class: 'brand' }, h('img', { src: 'mark-96.png', alt: '' }), h('span', null, 'Super One')), Offline.pill(),
     h('button', { class: 'ib', 'aria-label': 'Edit home screen', html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICON_PATHS.edit + '</svg>', onclick: () => editHome() }),
-    h('button', { class: 'ib', 'aria-label': 'Settings', html: SVG.gear, onclick: () => this.settings() }));
+    h('button', { class: 'ib', 'aria-label': 'Settings', html: SVG.gear, onclick: () => this.settings() }), avb);
   const v = this.view;
-  v.append(h('div', { class: 'hero', id: 'hello' }, h('div', { class: 'clk' }), h('div', { class: 'dt' }), h('div', { class: 'gr' })));
+  const sky = h('div', { class: 'sky', 'aria-hidden': 'true' }, [[18, 46, 0, 1], [62, 60, -18, 0.7], [8, 38, -30, 0.85], [40, 54, -9, 1.2]].map(([top, dur, delay, s]) => h('i', { style: { top: top + '%', animationDuration: dur + 's', animationDelay: delay + 's', '--s': s } })));
+  v.append(h('div', { class: 'hero', id: 'hello' }, sky, h('div', { class: 'clk' }), h('div', { class: 'dayname' }), h('div', { class: 'dt' }), h('div', { class: 'gr' }), h('div', { class: 'week' })));
   this.paintHello();
+  // stories: you, your favorites, then apps you used lately
+  const opens = Prefs.get('appOpens', {}), favs = Home.favs(), recent = Object.entries(opens).filter(([id]) => Apps.byId[id] && !favs.includes(id)).sort((a, b) => b[1].last - a[1].last).slice(0, 8).map(([id]) => id);
+  const story = (a, seen) => h('button', { class: 'hst' + (seen ? ' seen' : ''), onclick: () => this.go(a.id), 'aria-label': a.name }, h('span', { class: 'ring' }, h('span', { class: 'in', style: { background: a.color }, html: appIcon(a) })), h('small', null, a.name));
+  const me = h('button', { class: 'hst', 'aria-label': 'My profile', onclick: () => Profile.open() }, h('span', { class: 'ring' }, h('span', { class: 'in', style: avUrl ? { backgroundImage: 'url("' + avUrl + '")' } : { background: 'linear-gradient(135deg,#2F6BFF,#FF2E4D)' } }, avUrl ? '' : h('b', null, (Prefs.get('name', '') || '🙂')[0].toUpperCase()))), avUrl ? null : h('span', { class: 'add' }, '+'), h('small', null, Prefs.get('name', '') || 'You'));
+  v.append(h('div', { class: 'stories', role: 'list', 'aria-label': 'Favorite and recent apps' }, me, favs.map(id => story(Apps.byId[id])), recent.map(id => story(Apps.byId[id], true))));
   const q = h('input', { type: 'search', placeholder: 'Search apps, notes, words, Bible…', 'aria-label': 'Search', autocomplete: 'off' });
-  const results = h('div', { class: 'mt' }), widgets = h('div', { class: 'widgets' }), rest = h('div');
-  const fy = h('div');
-  v.append(widgets, fy, h('div', { class: 'hsearch' }, h('span', { html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">' + ICON_PATHS.search + '</svg>' }), q), results, rest);
-  this.fillWidgets(widgets); this.fillForYou(fy);
+  const results = h('div', { class: 'mt' }), widgets = h('div', { class: 'widgets', 'aria-label': 'Widgets — swipe left or right' }), dots = h('div', { class: 'wdots', 'aria-hidden': 'true' }), rest = h('div'), fy = h('div'), grid = h('div');
+  v.append(widgets, dots, fy, h('div', { class: 'hsearch' }, h('span', { html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">' + ICON_PATHS.search + '</svg>' }), q), results, rest);
+  this.fillWidgets(widgets).then(() => {
+    const n = widgets.children.length; dots.innerHTML = ''; for (let i = 0; i < n; i++) dots.append(h('i', { class: i ? '' : 'on' }));
+    widgets.addEventListener('scroll', () => { const w = widgets.children[0]; if (!w) return; const i = Math.round(widgets.scrollLeft / (w.offsetWidth + 12)); [...dots.children].forEach((d, j) => d.classList.toggle('on', j === Math.min(i, n - 1))); }, { passive: true });
+  });
+  this.fillForYou(fy);
+  if (!Prefs.get('name', '') && !avUrl && !Prefs.get('hideWelcome')) rest.append(h('div', { class: 'home-banner glass' }, h('span', { style: { fontSize: '26px' } }, '👋'), h('button', { style: { flex: 1, border: 0, background: 'none', color: '#fff', textAlign: 'left', font: 'inherit', padding: 0 }, onclick: () => Profile.open() }, h('b', null, 'Make it yours. '), 'Add your name and a profile photo.'), h('button', { class: 'ib', style: { color: '#fff' }, 'aria-label': 'Hide', html: SVG.close, onclick: e => { Prefs.set('hideWelcome', true); e.currentTarget.parentNode.remove(); } })));
   if (!Offline.standalone() && /iPhone|iPad|iPod/.test(navigator.userAgent) && !Prefs.get('hideInstall'))
     rest.append(h('div', { class: 'home-banner glass' }, h('span', { style: { fontSize: '26px' } }, '📲'), h('span', { style: { flex: 1 } }, h('b', null, 'Put me on your Home Screen. '), 'Tap Share, then “Add to Home Screen”.'),
       h('button', { class: 'ib', style: { color: '#fff' }, 'aria-label': 'Hide', html: SVG.close, onclick: e => { Prefs.set('hideInstall', true); e.currentTarget.parentNode.remove(); } })));
   Backup.nudge(rest);
-  const favs = Home.favs(); if (favs.length) rest.append(h('div', { class: 'dock glass', role: 'toolbar', 'aria-label': 'Favorites' }, favs.map(id => this.tile(Apps.byId[id]))));
-  for (const [g, label] of Apps.GROUPS) {
-    const apps = Apps.list.filter(a => a.group === g); if (!apps.length) continue;
-    rest.append(h('div', { class: 'home-sec' }, label), h('div', { class: 'appgrid glass' }, apps.map(a => this.tile(a))));
-  }
-  rest.append(h('p', { class: 'home-note' }, Apps.list.length + ' apps · everything you make stays on this device'));
+  // YouTube-style category chips over the app grid
+  let chip = Prefs.get('homeChip', 'all'); if (chip !== 'all' && !Apps.GROUPS.some(g => g[0] === chip)) chip = 'all';
+  const chips = h('div', { class: 'ychips', role: 'tablist' });
+  const paintGrid = () => {
+    chips.innerHTML = ''; for (const [k, l] of [['all', 'All'], ...Apps.GROUPS]) chips.append(h('button', { role: 'tab', 'aria-pressed': String(k === chip), onclick: () => { chip = k; Prefs.set('homeChip', k); paintGrid(); } }, l));
+    grid.innerHTML = '';
+    for (const [g, label] of Apps.GROUPS) { if (chip !== 'all' && chip !== g) continue; const apps = Apps.list.filter(a => a.group === g); if (!apps.length) continue; grid.append(h('div', { class: 'home-sec' }, label), h('div', { class: 'appgrid glass' }, apps.map(a => this.tile(a)))); }
+  };
+  rest.append(chips, grid, h('p', { class: 'home-note' }, Apps.list.length + ' apps · everything you make stays on this device'));
+  paintGrid();
   const doSearch = debounce(async () => {
-    const s = q.value.trim().toLowerCase(); results.innerHTML = ''; widgets.hidden = rest.hidden = fy.hidden = !!s; if (!s) return;
+    const s = q.value.trim().toLowerCase(); results.innerHTML = ''; widgets.hidden = dots.hidden = rest.hidden = fy.hidden = !!s; if (!s) return;
     const list = h('div', { class: 'list' }), row = (ic, bg, b, sm, go) => h('button', { class: 'li', onclick: go }, h('span', { class: 'ic', style: bg ? { background: bg } : null, html: ic }), h('span', { class: 't' }, h('b', null, b), h('small', null, sm)), h('span', { class: 'chev' }, '›'));
     for (const a of Apps.list) if ((a.name + ' ' + (a.keys || '')).toLowerCase().includes(s)) list.append(row(appIcon(a), a.color, a.name, a.blurb || '', () => this.go(a.id)));
     if (/^(take me |go |get )?(my )?(home|house)/.test(s) && typeof GoHome !== 'undefined') list.prepend(row('🏠', 'linear-gradient(135deg,#56CCF2,#2F80ED)', 'Take me home', GoHome.isSet() ? 'Directions to your house' : 'Set your home first', () => GoHome.go()));
@@ -729,67 +852,84 @@ Shell.fillWidgets = async function (el) {
     el.append(card('', '☑️ To do', 'reminders', h('div', { class: 't1' }, open.length ? (nDue ? nDue + ' due today' : open.length + ' to do') : 'All done 🎉'), open.length ? h('ul', null, open.slice(0, 3).map(r => h('li', null, r.text))) : h('div', { class: 't2' }, 'Add one in Reminders'))); }
   if (on.verse) el.append(card('', '✝️ Verse of the day', 'bible', verse ? h('div', { class: 'verse' }, '“' + verse.text + '”') : h('div', { class: 't1' }, 'Open the Bible'), h('div', { class: 't2' }, verse ? verse.ref : 'Saved for offline')));
   if (on.news) el.append(card('wide', '📰 Top story', 'news', h('div', { class: 't1' }, news ? news.title : 'Get today’s news'), h('div', { class: 't2' }, news ? news.src + ' · ' + fmtAgo(news.at) : 'Updates when you have Wi-Fi')));
-  if (Player.cur) el.append(h('button', { class: 'wd glass wide', onclick: () => this.go('music') }, h('span', { class: 'k' }, '🎵 Now playing'), h('div', { class: 't1' }, Player.cur.title), h('div', { class: 't2' }, Player.audio.paused ? 'Paused' : 'Playing')));
+  if (typeof Player !== 'undefined' && Player.cur) el.append(h('button', { class: 'wd glass wide', onclick: () => this.go('music') }, h('span', { class: 'k' }, '🎵 Now playing'), h('div', { class: 't1' }, Player.cur.title), h('div', { class: 't2' }, Player.audio.paused ? 'Paused' : 'Playing')));
 };
 Shell.fillForYou = async function (el) {
-  const T = [], add = (score, e, b, sm, go) => T.push({ score: score + (hashStr(ymd(new Date()) + b) % 7), e, b, sm, go }), today = ymd(new Date());
+  const T = [], today = ymd(new Date()), add = (score, e, b, sm, go, app, tag) => T.push({ score: score + (hashStr(today + b) % 7), e, b, sm, go, app, tag });
   const opens = Prefs.get('appOpens', {});
   try {
     const cards = await DB.all('cards'); const due = cards.filter(c => Cards.due(c) && c.seen).length;
-    if (due) add(90, '📚', 'Review ' + due + ' flashcard' + (due > 1 ? 's' : ''), 'They’re ready — keep your streak!', () => this.go('cards')); else if (!cards.length) add(32, '🗂️', 'Make your first flashcards', 'Learn anything, a few cards a day', () => this.go('cards'));
-    if (typeof CUBE_CASES !== 'undefined') { const done = Prefs.get('cubeDone', {}); for (const k of ['pll', 'oll', 'f2l']) { const c = CUBE_CASES[k].find(x => !done[x.id]); if (c) { const left = CUBE_CASES[k].filter(x => !done[x.id]).length; add(k === 'pll' ? 72 : k === 'oll' ? 70 : 66, '🧊', 'Learn ' + (k === 'oll' ? 'OLL ' + c.n : k === 'pll' ? c.n + ' perm' : c.name) + ' today', left + ' ' + k.toUpperCase() + ' cases left to learn', () => { Prefs.set('cubeTab', 'all'); Prefs.set('cube119', k); this.go('cfop'); }); break; } } }
-    const sud = Prefs.get('sudoku', null); if (!sud || sud.won) add(58, '🔢', 'Daily Sudoku', 'A fresh puzzle to warm up your brain', () => this.go('games', 'sudoku')); else add(62, '🔢', 'Finish your Sudoku', 'You’re ' + Math.round(100 * sud.cur.filter(Boolean).length / 81) + '% done', () => this.go('games', 'sudoku'));
-    const wod = Prefs.get('wod', null); if (wod && wod.d === today) add(60, '✨', 'Word: ' + wod.word, wod.def.slice(0, 60), () => this.go('dict', wod.word)); else if (typeof Dict !== 'undefined') Dict.wordOfDay().then(w => w && Prefs.set('wod', { d: today, word: w.word, def: w.senses[0][1] })).catch(() => { });
-    const best = Prefs.get('gameBest', {}); const bg = [['snake', '🐍 Snake'], ['meteor', '☄️ Meteor Dash'], ['hopper', '🦘 Sky Hopper'], ['bricks', '🧱 Brick Smash'], ['words', '🔤 Word Scramble']].filter(([k]) => best[k]); if (bg.length) { const [k, n] = bg[hashStr(today) % bg.length]; add(52, '🏆', 'Beat your best in ' + n.slice(2).trim(), 'Your record: ' + best[k], () => this.go('games', k)); }
-    if (!Prefs.get('wxPlaces', []).length) add(55, '⛅', 'Set up Weather', 'Pick your town for forecasts', () => this.go('weather'));
-    const last = await DB.kget('lastBackup', 0), n = (await DB.count('notes')) + (await DB.count('cards')) + (await DB.count('media')); if (n > 5 && Date.now() - last > 14 * 86400e3) add(64, '💾', 'Back up your stuff', last ? 'Last backup ' + fmtAgo(last) : 'Never backed up yet', () => this.settings());
-    const bl = Prefs.get('bibleLast', null); if (bl && Apps.byId.bible) add(46, '✝️', 'Keep reading the Bible', 'Pick up where you stopped', () => this.go('bible'));
-    const comics = (await DB.all('comics').catch(() => [])).filter(c => c.opened && c.kind === 'images' && c.last < c.pages.length - 1).sort((a, b) => b.opened - a.opened)[0]; if (comics) add(54, '💥', 'Keep reading ' + comics.title, 'Page ' + (comics.last + 1) + ' of ' + comics.pages.length, () => this.go('comics'));
-    const fresh = Apps.list.filter(a => !opens[a.id]); if (fresh.length) { const a = fresh[hashStr(today) % fresh.length]; add(44, a.icon, 'Try ' + a.name, a.blurb || 'You haven’t opened it yet', () => this.go(a.id)); }
-    if (!Prefs.get('links', []).length && Apps.byId.links) add(50, '🔗', 'Add your music & video links', 'Spotify, YouTube, Netflix, your games…', () => this.go('links'));
-    if (typeof Fit !== 'undefined') { const fs = await Fit.st(); if (fs.setup) { const { w, today } = await Fit.next(fs); if (!today) add(68, '🤸', 'Today: ' + w.n, '~' + Fit.minutes(w, fs) + ' min of calisthenics — tap to start', () => this.go('fit', w.id)); } else add(40, '🤸', 'Try Calisthenics', 'Find your level in 30 seconds', () => this.go('fit')); }
-    const lv = Prefs.get('learnBest', {}); if (!Object.keys(lv).some(k => k.startsWith('times'))) add(36, '✖️', 'Master a times table', 'Get 10 out of 10 for a star', () => this.go('learn'));
+    if (due) add(90, '📚', 'Review ' + due + ' flashcard' + (due > 1 ? 's' : ''), 'They’re ready — keep your streak!', () => this.go('cards'), 'cards', 'DUE'); else if (!cards.length) add(32, '🗂️', 'Make your first flashcards', 'Paste your notes and get cards', () => this.go('cards'), 'cards', 'NEW');
+    if (typeof CUBE_CASES !== 'undefined') { const done = Prefs.get('cubeDone', {}); for (const k of ['pll', 'oll', 'f2l']) { const c = CUBE_CASES[k].find(x => !done[x.id]); if (c) { const left = CUBE_CASES[k].filter(x => !done[x.id]).length; add(k === 'pll' ? 72 : k === 'oll' ? 70 : 66, '🧊', 'Learn ' + (k === 'oll' ? 'OLL ' + c.n : k === 'pll' ? c.n + ' perm' : c.name) + ' today', left + ' ' + k.toUpperCase() + ' cases left to learn', () => { Prefs.set('cubeTab', 'all'); Prefs.set('cube119', k); this.go('cfop'); }, 'cfop', left + ' left'); break; } } }
+    const sud = Prefs.get('sudoku', null); if (!sud || sud.won) add(58, '🔢', 'Daily Sudoku', 'A fresh puzzle to warm up your brain', () => this.go('games', 'sudoku'), 'games', 'DAILY'); else add(62, '🔢', 'Finish your Sudoku', 'You’re ' + Math.round(100 * sud.cur.filter(Boolean).length / 81) + '% done', () => this.go('games', 'sudoku'), 'games', 'RESUME');
+    const wod = Prefs.get('wod', null); if (wod && wod.d === today) add(60, '✨', 'Word: ' + wod.word, wod.def.slice(0, 60), () => this.go('dict', wod.word), 'dict', 'WORD'); else if (typeof Dict !== 'undefined') Dict.wordOfDay().then(w => w && Prefs.set('wod', { d: today, word: w.word, def: w.senses[0][1] })).catch(() => { });
+    const best = Prefs.get('gameBest', {}); const bg = [['snake', '🐍 Snake'], ['meteor', '☄️ Meteor Dash'], ['hopper', '🦘 Sky Hopper'], ['bricks', '🧱 Brick Smash'], ['words', '🔤 Word Scramble']].filter(([k]) => best[k]); if (bg.length) { const [k, n] = bg[hashStr(today) % bg.length]; add(52, '🏆', 'Beat your best in ' + n.slice(2).trim(), 'Your record: ' + best[k], () => this.go('games', k), 'games', 'RECORD'); }
+    if (!Prefs.get('wxPlaces', []).length) add(55, '⛅', 'Set up Weather', 'Pick your town for forecasts', () => this.go('weather'), 'weather');
+    const last = await DB.kget('lastBackup', 0), n = (await DB.count('notes')) + (await DB.count('cards')) + (await DB.count('media')); if (n > 5 && Date.now() - last > 14 * 86400e3) add(64, '💾', 'Back up your stuff', last ? 'Last backup ' + fmtAgo(last) : 'Never backed up yet', () => this.settings(), 'files');
+    const bl = Prefs.get('bibleLast', null); if (bl && Apps.byId.bible) add(46, '✝️', 'Keep reading the Bible', 'Pick up where you stopped', () => this.go('bible'), 'bible');
+    const comics = (await DB.all('comics').catch(() => [])).filter(c => c.opened && c.kind === 'images' && c.last < c.pages.length - 1).sort((a, b) => b.opened - a.opened)[0]; if (comics) add(54, '💥', 'Keep reading ' + comics.title, 'Page ' + (comics.last + 1) + ' of ' + comics.pages.length, () => this.go('comics'), 'comics');
+    const fresh = Apps.list.filter(a => !opens[a.id]); if (fresh.length) { const a = fresh[hashStr(today) % fresh.length]; add(44, a.icon, 'Try ' + a.name, a.blurb || 'You haven’t opened it yet', () => this.go(a.id), a.id, 'NEW'); }
+    if (!Prefs.get('links', []).length && Apps.byId.links) add(50, '🔗', 'Add your music & video links', 'Spotify, YouTube, Netflix, your games…', () => this.go('links'), 'links');
+    if (typeof Fit !== 'undefined') { const fs = await Fit.st(); if (fs.setup) { const { w, today: done } = await Fit.next(fs); if (!done) add(68, '🤸', 'Today: ' + w.n, '~' + Fit.minutes(w, fs) + ' min of calisthenics — tap to start', () => this.go('fit', w.id), 'fit', '~' + Fit.minutes(w, fs) + ' min'); } else add(40, '🤸', 'Try Calisthenics', 'Take the level test and pick your goals', () => this.go('fit'), 'fit', 'NEW'); }
+    const lv = Prefs.get('learnBest', {}); if (!Object.keys(lv).some(k => k.startsWith('times'))) add(36, '✖️', 'Master a times table', 'Get 10 out of 10 for a star', () => this.go('learn'), 'learn');
   } catch (e) { console.warn(e); }
   T.sort((a, b) => b.score - a.score);
-  if (T.length) el.append(h('div', { class: 'home-sec', style: { marginTop: '18px' } }, '✨ For you'), h('div', { class: 'fyrow' }, T.slice(0, 6).map(t => h('button', { class: 'fyc glass', onclick: t.go }, h('span', { class: 'e' }, t.e), h('b', null, t.b), h('small', null, t.sm)))));
-  const recent = Object.entries(opens).filter(([id]) => Apps.byId[id]).sort((a, b) => b[1].last - a[1].last).slice(0, 4);
-  if (recent.length >= 2) el.append(h('div', { class: 'home-sec' }, '🕘 Jump back in'), h('div', { class: 'dock glass', style: { marginTop: 0 } }, recent.map(([id]) => this.tile(Apps.byId[id]))));
+  if (!T.length) return;
+  el.append(h('div', { class: 'home-sec' }, '✨ For you'), h('div', { class: 'fyrow' }, T.slice(0, 7).map((t, i) => { const a = Apps.byId[t.app];
+    return h('button', { class: 'fyc', onclick: t.go }, h('div', { class: 'th', style: { background: a ? a.color : 'linear-gradient(135deg,#2F6BFF,#FF2E4D)' }, html: a && ICON_PATHS[a.id] ? svgIcon(ICON_PATHS[a.id], 'bgg') : '' }, h('span', { class: 'e' }, t.e), t.tag ? h('span', { class: 'tag' + (i === 0 ? ' hot' : '') }, t.tag) : null),
+      h('div', { class: 'meta' }, h('span', { class: 'av', style: { background: a ? a.color : '#2F6BFF' }, html: a ? appIcon(a) : '' }), h('span', null, h('b', null, t.b), h('small', null, (a ? a.name + ' · ' : '') + t.sm)))); })));
 };
 function editHome() {
-  let wall = Prefs.get('wall', 'aurora'), favs = Home.favs(), on = Home.widgetsOn();
+  let wall = Prefs.get('wall', 'hero'), favs = Home.favs(), on = Home.widgetsOn();
   const wp = h('div', { class: 'wallpick' });
   const drawWalls = () => { wp.innerHTML = ''; for (const k in WALLS) wp.append(h('button', { style: { background: WALLS[k][1] }, 'aria-pressed': String(wall === k), onclick: () => { wall = k; Prefs.set('wall', k); Home.applyWall(); drawWalls(); } }, WALLS[k][0]));
     wp.append(h('button', { style: { background: 'var(--surface2)', color: 'var(--ink)', textShadow: 'none' }, 'aria-pressed': String(wall === 'photo'), onclick: async () => { const [f] = await pickFiles('image/*', { multiple: false }); if (!f) return; await DB.kset('wallPhoto', f); wall = 'photo'; Prefs.set('wall', 'photo'); Home.applyWall(); drawWalls(); } }, '🖼️ My photo')); };
   drawWalls();
   const favBox = h('div', { class: 'chips' });
-  const drawFavs = () => { favBox.innerHTML = ''; for (const a of Apps.list) favBox.append(h('button', { class: 'chip', 'aria-pressed': String(favs.includes(a.id)), onclick: () => { if (favs.includes(a.id)) favs = favs.filter(x => x !== a.id); else if (favs.length < 4) favs.push(a.id); else UI.toast('Pick up to 4 — tap one to remove it first'); Prefs.set('favs', favs); drawFavs(); } }, a.icon + ' ' + a.name)); };
+  const drawFavs = () => { favBox.innerHTML = ''; for (const a of Apps.list) favBox.append(h('button', { class: 'chip', 'aria-pressed': String(favs.includes(a.id)), onclick: () => { if (favs.includes(a.id)) favs = favs.filter(x => x !== a.id); else if (favs.length < 8) favs.push(a.id); else UI.toast('Pick up to 8 — tap one to remove it first'); Prefs.set('favs', favs); drawFavs(); } }, a.icon + ' ' + a.name)); };
   drawFavs();
   const W = [['home', '🏠 Take me home'], ['weather', '⛅ Weather'], ['next', '📅 Next up'], ['todo', '☑️ To do'], ['verse', '✝️ Verse of the day'], ['news', '📰 Top story']];
   const wBox = h('div', { class: 'chips' }, W.map(([k, l]) => { const b = h('button', { class: 'chip', 'aria-pressed': String(!!on[k]) }, l); b.onclick = () => { on[k] = !on[k]; Prefs.set('widgets', on); b.setAttribute('aria-pressed', String(!!on[k])); }; return b; }));
-  UI.sheet({ title: 'Edit home screen', onClose: () => { if (!Shell.cur) Shell.route(); }, body: h('div', null, h('div', { class: 'sec', style: { marginTop: 0 } }, 'Wallpaper'), wp, h('div', { class: 'sec' }, 'Favorites dock (up to 4)'), favBox, h('div', { class: 'sec' }, 'Widgets'), wBox) });
+  UI.sheet({ title: 'Edit home screen', onClose: () => { if (!Shell.cur) Shell.route(); }, body: h('div', null, h('div', { class: 'sec', style: { marginTop: 0 } }, 'Wallpaper'), wp, h('div', { class: 'sec' }, 'Your story circles (favorites, up to 8)'), favBox, h('div', { class: 'sec' }, 'Widgets (swipe left and right on the home screen)'), wBox) });
 }
 document.addEventListener('home-changed', () => { if (!Shell.cur) Shell.route(); });
 
 /* ---- 10-calendar.js ---- */
 /* ===== Calendar ===== */
 addCSS(`
-.cal-head{display:flex;align-items:center;gap:6px;margin:4px 0 10px}
-.cal-head h2{flex:1;font-size:24px;font-weight:800}
-.cal-wd{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));text-align:center;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px}
-.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;touch-action:pan-y}
-.cal-d{position:relative;aspect-ratio:1/1.05;border:0;background:var(--surface);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:6px 0 0;font-weight:650;font-size:16px;min-width:0}
-.cal-d.out{background:transparent;color:var(--muted);opacity:.55}
-.cal-d.today .n{background:#FF3B30;color:#fff}
-.cal-d .n{width:30px;height:30px;border-radius:15px;display:grid;place-items:center}
-.cal-d.sel{box-shadow:inset 0 0 0 2px var(--accent)}
-.cal-d .dots{display:flex;gap:3px;margin-top:3px;height:6px}
-.cal-d .dots i{width:6px;height:6px;border-radius:3px;display:block}
+.paper{position:relative;background:var(--surface);border-radius:18px;box-shadow:0 10px 28px rgba(0,0,0,.14),0 1px 0 var(--line);overflow:hidden;margin:14px 0 4px}
+.paper .rings{position:absolute;top:-9px;left:0;right:0;display:flex;justify-content:space-around;padding:0 22px;z-index:2;pointer-events:none}
+.paper .rings i{width:10px;height:22px;border-radius:6px;background:linear-gradient(90deg,#8A8F9C,#E8EAF0 45%,#7A7F8C);box-shadow:0 2px 3px rgba(0,0,0,.3)}
+.cal-head{display:flex;align-items:center;gap:6px;padding:20px 14px 14px;background:linear-gradient(160deg,#E5383B,#B5121B);color:#fff}
+.cal-head .ttl{flex:1;min-width:0}
+.cal-head h2{font-size:30px;font-weight:900;margin:0;line-height:1;font-family:var(--round);letter-spacing:.01em}
+.cal-head .yr{font-size:15px;font-weight:700;opacity:.85}
+.cal-head .art{font-size:40px;margin-right:2px;filter:drop-shadow(0 3px 6px rgba(0,0,0,.25))}
+.cal-head .ib{background:rgba(255,255,255,.2);color:#fff}
+.cal-wd{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));text-align:center;font-size:12px;font-weight:800;color:var(--muted);padding:8px 0 6px;border-bottom:2px solid var(--line);letter-spacing:.05em}
+.cal-wd div:first-child,.cal-wd div:last-child{color:#E5383B}
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));touch-action:pan-y}
+.cal-d{position:relative;min-height:62px;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:none;border-radius:0;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;padding:4px 3px 3px;font-weight:700;font-size:15px;min-width:0;text-align:left;color:var(--ink)}
+.cal-d:nth-child(7n){border-right:0}
+.cal-d:nth-child(7n+1) .n,.cal-d:nth-child(7n) .n{color:#E5383B}
+.cal-d.out{background:var(--surface2);opacity:.55}
+.cal-d .n{width:26px;height:26px;border-radius:13px;display:grid;place-items:center;font-family:var(--round)}
+.cal-d.today .n{background:#E5383B;color:#fff!important;box-shadow:0 0 0 3px rgba(229,56,59,.25)}
+.cal-d.sel{background:var(--accent-soft)}
+.cal-d .evl{display:block;font-size:9.5px;line-height:1.25;font-weight:700;color:#fff;border-radius:4px;padding:1px 3px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-d .more{font-size:9.5px;color:var(--muted);font-weight:700;margin-top:1px}
+@media (min-width:640px){.cal-d{min-height:86px}.cal-d .evl{font-size:11px}}
 .ev{display:flex;gap:12px;align-items:stretch;padding:12px 14px;border-top:1px solid var(--line);background:none;border-left:0;border-right:0;border-bottom:0;width:100%;text-align:left}
 .ev:first-child{border-top:0}
 .ev .bar{width:5px;border-radius:3px;flex:0 0 auto}
 .ev .tm{width:64px;flex:0 0 auto;font-size:14px;color:var(--muted);font-weight:600}
 .ev b{display:block}
 .ev small{color:var(--muted)}
+.hol{display:flex;align-items:center;gap:12px;padding:10px 14px;border-top:1px solid var(--line)}
+.hol:first-child{border-top:0}
+.hol .d{width:46px;text-align:center;flex:0 0 auto;border-radius:10px;background:var(--surface2);padding:4px 0;font-weight:800;line-height:1.1}
+.hol .d small{display:block;font-size:10px;color:#E5383B;text-transform:uppercase}
+.hol .t{flex:1;min-width:0}.hol .t b{display:block}.hol .t small{color:var(--muted)}
 `);
 const CAL_COLORS = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#0A84FF', '#AF52DE', '#FF2D92', '#8E8E93'];
 const Cal = {
@@ -822,6 +962,27 @@ const Cal = {
     return ICS.make([{ id: ev.id, title: ev.title, start, end, allDay: ev.allDay || !ev.time, notes: ev.notes, rrule: rr, alarmMin: ev.allDay || !ev.time ? null : 10 }]);
   },
 };
+// holidays: fixed days + rules like "3rd Monday of February"
+const Holidays = {
+  easter(y) { const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), hh = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - hh - k) % 7, m = Math.floor((a + 11 * hh + 22 * l) / 451), mo = Math.floor((hh + l - 7 * m + 114) / 31), da = ((hh + l - 7 * m + 114) % 31) + 1; return new Date(y, mo - 1, da); },
+  nth(y, mo, wd, n) { if (n > 0) { const d = new Date(y, mo, 1); d.setDate(1 + (wd - d.getDay() + 7) % 7 + (n - 1) * 7); return d; } const d = new Date(y, mo + 1, 0); d.setDate(d.getDate() - (d.getDay() - wd + 7) % 7); return d; },
+  region() { const r = Prefs.get('holRegion', null); if (r) return r; const m = (navigator.language || '').match(/-(\w\w)$/); return m && ['CA', 'US', 'GB'].includes(m[1].toUpperCase()) ? m[1].toUpperCase() : 'CA'; },
+  list(y, R) {
+    const D = (mo, d) => new Date(y, mo, d), E = this.easter(y), add = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; }, nth = (mo, wd, n) => this.nth(y, mo, wd, n);
+    const all = [[D(0, 1), '🎆', 'New Year’s Day', 1], [D(1, 14), '💘', 'Valentine’s Day', 1], [D(2, 17), '🍀', 'St. Patrick’s Day', 1], [add(E, -2), '✝️', 'Good Friday', 0], [E, '🐣', 'Easter Sunday', 0], [D(3, 22), '🌍', 'Earth Day', 1], [D(9, 31), '🎃', 'Halloween', 1], [D(11, 24), '🎄', 'Christmas Eve', 1], [D(11, 25), '🎁', 'Christmas Day', 1], [D(11, 31), '🥳', 'New Year’s Eve', 1]];
+    if (R === 'CA') all.push([nth(1, 1, 3), '👨‍👩‍👧', 'Family Day', 0], [add(nth(4, 1, -1), new Date(y, 4, 25) > nth(4, 1, -1) ? 0 : -7), '👑', 'Victoria Day', 0], [nth(4, 0, 2), '💐', 'Mother’s Day', 0], [nth(5, 0, 3), '👔', 'Father’s Day', 0], [D(6, 1), '🍁', 'Canada Day', 1], [nth(7, 1, 1), '🏖️', 'Civic Holiday', 0], [nth(8, 1, 1), '🛠️', 'Labour Day', 0], [nth(9, 1, 2), '🦃', 'Thanksgiving', 0], [D(10, 11), '🌺', 'Remembrance Day', 1], [D(11, 26), '🎀', 'Boxing Day', 1]);
+    if (R === 'US') all.push([nth(0, 1, 3), '✊', 'Martin Luther King Jr. Day', 0], [nth(1, 1, 3), '🇺🇸', 'Presidents’ Day', 0], [nth(4, 0, 2), '💐', 'Mother’s Day', 0], [nth(4, 1, -1), '🎖️', 'Memorial Day', 0], [nth(5, 0, 3), '👔', 'Father’s Day', 0], [D(6, 4), '🎆', 'Independence Day', 1], [nth(8, 1, 1), '🛠️', 'Labor Day', 0], [D(10, 11), '🎖️', 'Veterans Day', 1], [nth(10, 4, 4), '🦃', 'Thanksgiving', 0]);
+    if (R === 'GB') all.push([add(E, -21), '💐', 'Mothering Sunday', 0], [add(E, 1), '🐰', 'Easter Monday', 0], [nth(4, 1, 1), '🌼', 'Early May Bank Holiday', 0], [nth(4, 1, -1), '🌷', 'Spring Bank Holiday', 0], [nth(5, 0, 3), '👔', 'Father’s Day', 0], [nth(7, 1, -1), '☀️', 'Summer Bank Holiday', 0], [D(10, 5), '🎇', 'Bonfire Night', 1], [D(11, 26), '🎀', 'Boxing Day', 1]);
+    return all.map(([d, e, n, fixed]) => ({ ds: ymd(d), d, e, n, fixed })).sort((a, b) => a.d - b.d);
+  },
+  upcoming(R, k = 6) { const y = new Date().getFullYear(), t = ymd(new Date()); return [...this.list(y, R), ...this.list(y + 1, R)].filter(x => x.ds >= t).slice(0, k); },
+};
+const CAL_IDEAS = [ // emoji, title, repeat, time ('' = all day), first day: 'w0'..'w6' next weekday / 'next' = today / number = in N days, color
+  ['🎂', 'Birthday: ', 'yearly', '', 'pick', '#FF2D92'], ['🤸', 'Calisthenics workout', 'weekly', '16:30', 'w1', '#FF9500'], ['📚', 'Homework time', 'daily', '17:00', 'next', '#0A84FF'],
+  ['🧊', 'Cube practice (15 min)', 'daily', '18:30', 'next', '#AF52DE'], ['📖', 'Bible reading', 'daily', '20:00', 'next', '#8E8E93'], ['🧹', 'Clean my room', 'weekly', '10:00', 'w6', '#34C759'],
+  ['📞', 'Call grandparents', 'weekly', '15:00', 'w0', '#FFCC00'], ['🎮', 'Game night', 'weekly', '19:00', 'w5', '#AF52DE'], ['😴', 'Bedtime — screens off', 'daily', '21:00', 'next', '#0A84FF'],
+  ['🦷', 'Dentist check-up', 'none', '10:00', 14, '#34C759'], ['📝', 'Test / quiz', 'none', '09:00', 3, '#FF3B30'], ['🎉', 'Party or sleepover', 'none', '18:00', 'w6', '#FF2D92'],
+];
 Apps.reg({
   id: 'calendar', name: 'Calendar', icon: '📅', color: 'linear-gradient(135deg,#FF6B6B,#E0303A)', group: 'day', keys: 'events dates schedule birthday', blurb: 'Your days and events',
   async badge() { const evs = await DB.all('events'); const t = ymd(new Date()); return evs.filter(e => Cal.occurs(e, t)).length; },
@@ -829,7 +990,9 @@ Apps.reg({
     let events = [], reminders = [], sel = ymd(new Date()), month = new Date(); month.setDate(1);
     const head = h('div', { class: 'cal-head' }), wd = h('div', { class: 'cal-wd' }), grid = h('div', { class: 'cal-grid' }), dayBox = h('div');
     for (const d of ['S', 'M', 'T', 'W', 'T', 'F', 'S']) wd.append(h('div', null, d));
-    v.append(head, wd, grid, dayBox, h('button', { class: 'fab', 'aria-label': 'Add event', html: SVG.plus, onclick: () => edit({ date: sel }) }));
+    const ideas = h('div');
+    v.append(h('div', { class: 'paper' }, h('div', { class: 'rings', 'aria-hidden': 'true' }, Array.from({ length: 7 }, () => h('i'))), head, wd, grid), dayBox, ideas, h('button', { class: 'fab', 'aria-label': 'Add event', html: SVG.plus, onclick: () => edit({ date: sel }) }));
+    if (ctx.param && /^\d{4}-\d\d-\d\d$/.test(ctx.param)) { sel = ctx.param; const d0 = fromYmd(sel); month = new Date(d0.getFullYear(), d0.getMonth(), 1); }
     ctx.setActions(h('button', { class: 'btn ghost sm', onclick: () => { const t = new Date(); sel = ymd(t); month = new Date(t.getFullYear(), t.getMonth(), 1); draw(); } }, 'Today'));
     const shift = n => { month = new Date(month.getFullYear(), month.getMonth() + n, 1); draw(); };
     let sx = null; grid.addEventListener('touchstart', e => { sx = e.touches[0].clientX; }, { passive: true });
@@ -837,16 +1000,29 @@ Apps.reg({
     async function load() { events = await DB.all('events'); reminders = await DB.all('reminders'); draw(); }
     function draw() {
       head.innerHTML = '';
-      head.append(h('h2', null, month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })),
-        h('button', { class: 'ib solid', 'aria-label': 'Previous month', onclick: () => shift(-1) }, '‹'), h('button', { class: 'ib solid', 'aria-label': 'Next month', onclick: () => shift(1) }, '›'));
+      const ART = ['⛄', '💘', '🍀', '🌷', '🌸', '☀️', '🏖️', '🍉', '🍎', '🎃', '🍂', '🎄'];
+      head.append(h('span', { class: 'art', 'aria-hidden': 'true' }, ART[month.getMonth()]), h('div', { class: 'ttl' }, h('h2', null, month.toLocaleDateString(undefined, { month: 'long' })), h('div', { class: 'yr' }, month.getFullYear())),
+        h('button', { class: 'ib', 'aria-label': 'Previous month', onclick: () => shift(-1) }, '‹'), h('button', { class: 'ib', 'aria-label': 'Next month', onclick: () => shift(1) }, '›'));
       grid.innerHTML = ''; const start = new Date(month); start.setDate(1 - month.getDay()); const today = ymd(new Date());
       for (let i = 0; i < 42; i++) {
         const d = new Date(start); d.setDate(start.getDate() + i); const ds = ymd(d);
         const evs = events.filter(e => Cal.occurs(e, ds)), rem = reminders.filter(r => !r.done && r.due && r.due.slice(0, 10) === ds);
-        const dots = h('span', { class: 'dots' }, evs.slice(0, 3).map(e => h('i', { style: { background: e.color || CAL_COLORS[4] } })), rem.length && evs.length < 3 ? h('i', { style: { background: 'var(--muted)' } }) : null);
-        grid.append(h('button', { class: 'cal-d' + (d.getMonth() !== month.getMonth() ? ' out' : '') + (ds === today ? ' today' : '') + (ds === sel ? ' sel' : ''), 'aria-label': fmtDay(d, { weekday: 'long', month: 'long', day: 'numeric' }) + (evs.length ? ', ' + evs.length + ' events' : ''), onclick: () => { sel = ds; if (d.getMonth() !== month.getMonth()) month = new Date(d.getFullYear(), d.getMonth(), 1); draw(); } }, h('span', { class: 'n' }, d.getDate()), dots));
+        const items = [...evs.sort(Cal.sortDay).map(e => [e.title, e.color || CAL_COLORS[4]]), ...rem.map(r => ['☑️ ' + r.text, '#8E8E93'])];
+        grid.append(h('button', { class: 'cal-d' + (d.getMonth() !== month.getMonth() ? ' out' : '') + (ds === today ? ' today' : '') + (ds === sel ? ' sel' : ''), 'aria-label': fmtDay(d, { weekday: 'long', month: 'long', day: 'numeric' }) + (evs.length ? ', ' + evs.length + ' events' : ''), onclick: () => { sel = ds; if (d.getMonth() !== month.getMonth()) month = new Date(d.getFullYear(), d.getMonth(), 1); draw(); } },
+          h('span', { class: 'n' }, d.getDate()), items.slice(0, 2).map(([t, c]) => h('span', { class: 'evl', style: { background: c } }, t)), items.length > 2 ? h('span', { class: 'more' }, '+' + (items.length - 2)) : null));
       }
-      drawDay();
+      drawDay(); drawIdeas();
+    }
+    function nextDay(rule) { const d = new Date(); d.setHours(0, 0, 0, 0); if (rule === 'next' || rule === 'pick') return d; if (typeof rule === 'string' && rule[0] === 'w') { const wd = +rule[1]; d.setDate(d.getDate() + ((wd - d.getDay() + 7) % 7 || 7)); return d; } d.setDate(d.getDate() + rule); return d; }
+    function drawIdeas() {
+      ideas.innerHTML = ''; const R = Holidays.region(), hol = Holidays.upcoming(R);
+      ideas.append(h('div', { class: 'sec row nw', style: { alignItems: 'center' } }, h('span', { style: { flex: 1 } }, '🎉 Coming holidays'), UI.seg([['CA', '🇨🇦'], ['US', '🇺🇸'], ['GB', '🇬🇧']], R, x => { Prefs.set('holRegion', x); drawIdeas(); })),
+        h('div', { class: 'list' }, hol.map(x => { const have = events.some(e => e.title === x.n && Cal.occurs(e, x.ds));
+          return h('div', { class: 'hol' }, h('span', { class: 'd' }, h('small', null, fmtDay(x.d, { month: 'short' })), x.d.getDate()), h('span', { class: 't' }, h('b', null, x.e + ' ' + x.n), h('small', null, fmtDay(x.d, { weekday: 'long' }) + ' · in ' + Math.round((x.d - new Date().setHours(0, 0, 0, 0)) / 864e5) + ' days')),
+            h('button', { class: 'btn sm' + (have ? '' : ' pri'), disabled: have, onclick: async () => { await DB.put('events', { id: uid(), title: x.n, date: x.ds, allDay: true, time: '', end: '', color: '#E5383B', repeat: x.fixed ? 'yearly' : 'none', notes: x.e + ' Holiday', updated: Date.now() }); UI.toast(x.e + ' Added ' + x.n); load(); } }, have ? '✓' : '＋ Add')); })),
+        h('div', { class: 'sec' }, '💡 Ideas to add to your calendar'),
+        h('div', { class: 'chips' }, CAL_IDEAS.map(([e, t, rep, tm, rule, col]) => h('button', { class: 'chip', onclick: () => edit({ title: t, date: ymd(nextDay(rule)), allDay: !tm, time: tm || '09:00', end: tm ? pad2((+tm.slice(0, 2) + 1) % 24) + tm.slice(2) : '', repeat: rep, color: col }) }, e + ' ' + t.replace(/: $/, '')))),
+        h('p', { class: 'tiny muted mt' }, 'Tap an idea to fill in a new event — change anything, then Save.'));
     }
     function drawDay() {
       dayBox.innerHTML = ''; const d = fromYmd(sel);
@@ -898,7 +1074,45 @@ addCSS(`
 .note-ed input.ttl{font-size:24px;font-weight:800;border:0;background:transparent;padding:6px 0;min-height:0;font-family:var(--round)}
 .note-ed textarea{border:0;background:transparent;padding:4px 0;font-size:17px;min-height:60vh;resize:none;line-height:1.55}
 .note-ed input.ttl:focus,.note-ed textarea:focus{border:0}
+.code-ed{position:relative;font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#0F1220;border-radius:14px;overflow:hidden;color:#E6E9F2;min-height:58vh;margin-top:6px}
+.code-ed .gut{position:absolute;left:0;top:0;bottom:0;width:40px;padding:12px 6px 0 0;text-align:right;color:#5B6380;background:#0B0E19;user-select:none;overflow:hidden;white-space:pre;font:inherit}
+.code-ed pre,.code-ed textarea{margin:0;padding:12px 12px 40px 50px!important;font:inherit!important;line-height:1.55!important;white-space:pre;overflow:auto;tab-size:2;-moz-tab-size:2;letter-spacing:0;word-wrap:normal;min-height:58vh}
+.code-ed pre{position:absolute;inset:0;pointer-events:none;color:#E6E9F2}
+.code-ed textarea{position:relative;display:block;color:transparent!important;caret-color:#fff;background:transparent!important;border:0!important;resize:none;width:100%;-webkit-text-fill-color:transparent}
+.code-ed textarea::selection{background:rgba(120,160,255,.35);-webkit-text-fill-color:transparent}
+.tk-k{color:#FF7AB2}.tk-s{color:#A6E3A1}.tk-c{color:#6C7896;font-style:italic}.tk-n{color:#FAB387}.tk-f{color:#89B4FA}.tk-t{color:#F38BA8}.tk-a{color:#F9E2AF}
+.codebar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.runout{background:#0B0E19;color:#CDD6F4;border-radius:12px;padding:10px 12px;font:13px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;margin-top:8px;max-height:40vh;overflow:auto}
+.runout .err{color:#F38BA8}
+.runframe{width:100%;height:46vh;border:0;border-radius:12px;background:#fff;margin-top:8px}
+.slashhint{font-size:12px;color:var(--muted);margin-top:4px}
+.guide h4{margin:16px 0 6px;font-size:17px}.guide pre{background:var(--surface2);border-radius:10px;padding:10px;font:13px/1.5 ui-monospace,Menlo,monospace;overflow:auto;white-space:pre}
+.guide table{width:100%;border-collapse:collapse;font-size:14px}.guide td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:top}.guide td:first-child{font-family:ui-monospace,Menlo,monospace;font-weight:700;white-space:nowrap;color:var(--accent)}
 `);
+/* ---------- code mode: a tiny highlighter (no libraries) ---------- */
+const CodeHL = {
+  KW: {
+    js: 'break case catch class const continue default delete do else export extends false finally for function if import in instanceof let new null return super switch this throw true try typeof undefined var void while yield async await of',
+    python: 'and as assert break class continue def del elif else except False finally for from global if import in is lambda None nonlocal not or pass raise return True try while with yield print range len',
+  },
+  esc: t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+  paint(code, lang) {
+    const e = this.esc, kw = new Set((this.KW[lang] || '').split(' ').filter(Boolean));
+    if (lang === 'html') return code.replace(/(<!--[\s\S]*?-->)|(<\/?)([a-zA-Z][\w-]*)([^>]*)(>)|([^<]+)|(<)/g, (m, c, o, tag, attrs, cl, txt, lt) => c ? '<span class="tk-c">' + e(c) + '</span>' : tag ? e(o) + '<span class="tk-t">' + tag + '</span>' + e(attrs).replace(/([\w-]+)=/g, '<span class="tk-a">$1</span>=') + e(cl) : e(txt || lt || ''));
+    if (lang === 'css') return code.replace(/(\/\*[\s\S]*?\*\/)|("[^"\n]*"|'[^'\n]*')|([\w-]+)(\s*:)|(#[0-9a-fA-F]{3,8}\b|\b\d+(?:\.\d+)?(?:px|em|rem|%|s|vh|vw)?\b)|([^/"'#\w]+|[\s\S])/g, (m, c, st, prop, col, num, rest) => c ? '<span class="tk-c">' + e(c) + '</span>' : st ? '<span class="tk-s">' + e(st) + '</span>' : prop ? '<span class="tk-f">' + e(prop) + '</span>' + col : num ? '<span class="tk-n">' + e(num) + '</span>' : e(rest || m));
+    const re = lang === 'python'
+      ? /(#[^\n]*)|("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')|(\b\d+(?:\.\d+)?\b)|([A-Za-z_]\w*)(\s*\()?|([^#"'\w]+|[\s\S])/g
+      : /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(`(?:\\.|[^`\\])*`|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')|(\b\d+(?:\.\d+)?\b)|([A-Za-z_$][\w$]*)(\s*\()?|([^/`"'\w$]+|[\s\S])/g;
+    return code.replace(re, (m, c, st, num, id, call, rest) => c ? '<span class="tk-c">' + e(c) + '</span>' : st ? '<span class="tk-s">' + e(st) + '</span>' : num ? '<span class="tk-n">' + num + '</span>' : id ? (kw.has(id) ? '<span class="tk-k">' + id + '</span>' : call ? '<span class="tk-f">' + id + '</span>' : id) + (call || '') : e(rest || m));
+  },
+};
+const NOTE_GUIDES = {
+  js: ['JavaScript', 'let name = "Sam";\nlet age = 12;\nconsole.log("Hi " + name);\n\nif (age >= 12) {\n  console.log("Big kid!");\n} else {\n  console.log("Still growing");\n}\n\nfor (let i = 1; i <= 5; i++) {\n  console.log(i + " x 3 = " + i * 3);\n}\n\nfunction square(n) {\n  return n * n;\n}\nconsole.log(square(7));\n\nconst games = ["chess", "snake", "sudoku"];\ngames.forEach(g => console.log("I like " + g));'],
+  html: ['HTML', '<!doctype html>\n<h1>My page</h1>\n<p>Hello! This is <b>my</b> website.</p>\n<button onclick="say()">Click me</button>\n<p id="out"></p>\n<style>\n  body { font-family: sans-serif; background: #E8F0FF; }\n  h1 { color: #E5383B; }\n  button { font-size: 20px; padding: 8px 16px; }\n</style>\n<script>\n  function say() {\n    document.getElementById("out").textContent = "You clicked! 🎉";\n  }\n</script>'],
+  python: ['Python', 'name = "Sam"\nage = 12\nprint("Hi " + name)\n\nif age >= 12:\n    print("Big kid!")\nelse:\n    print("Still growing")\n\nfor i in range(1, 6):\n    print(i, "x 3 =", i * 3)\n\ndef square(n):\n    return n * n\n\nprint(square(7))\ngames = ["chess", "snake", "sudoku"]\nfor g in games:\n    print("I like", g)'],
+};
+const NOTE_CMDS = [['/help', 'Show this guide'], ['/code js', 'Switch to code mode (js, html, css or python)'], ['/text', 'Back to normal writing'], ['/todo', 'Add a checklist line ☐'], ['/date', 'Add today’s date'], ['/time', 'Add the time'],
+  ['/line', 'Add a divider line'], ['/table', 'Add a little table'], ['/cards', 'Turn this note into flashcards'], ['/pin', 'Pin this note to the top'], ['/count', 'Count words and letters'], ['/guide js', 'Start a lesson note: js, html or python']];
 const NOTE_TINTS = { none: '', yellow: '#FFF6C7', green: '#DDF6E3', blue: '#DCEBFF', pink: '#FFE0EC', purple: '#ECE3FF' };
 const NOTE_TINTS_DARK = { none: '', yellow: '#3A3416', green: '#16301F', blue: '#16263F', pink: '#3B1726', purple: '#2A1F45' };
 const noteTint = c => { if (!c || c === 'none') return ''; const dark = document.documentElement.getAttribute('data-theme') === 'dark' || (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches); return (dark ? NOTE_TINTS_DARK : NOTE_TINTS)[c]; };
@@ -921,7 +1135,7 @@ Apps.reg({
         for (const [label, arr] of [['📌 Pinned', pinned], [pinned.length ? 'Notes' : '', rest]]) {
           if (!arr.length) continue; if (label) box.append(h('div', { class: 'sec' }, label));
           box.append(h('div', { class: 'notes-grid' }, arr.map(n => h('button', { class: 'nt', style: { background: noteTint(n.color) || null }, onclick: () => editView(n) },
-            h('b', null, n.title || firstLine(n.body) || 'Untitled'), h('p', null, (n.title ? n.body : restLines(n.body)) || ''), h('small', null, fmtAgo(n.updated || n.created))))));
+            h('b', null, (n.mode === 'code' ? '💻 ' : '') + (n.title || firstLine(n.body) || 'Untitled')), h('p', { style: n.mode === 'code' ? { fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '12px' } : null }, (n.title ? n.body : restLines(n.body)) || ''), h('small', null, fmtAgo(n.updated || n.created))))));
         }
       };
       search.addEventListener('input', () => { q = search.value; draw(); });
@@ -932,10 +1146,65 @@ Apps.reg({
       const note = n ? { ...n } : { id: uid(), title: '', body: '', color: 'none', pinned: false, created: Date.now(), updated: Date.now() };
       v.innerHTML = ''; ctx.setTitle(n ? '' : 'New note');
       const title = h('input', { class: 'ttl', type: 'text', placeholder: 'Title', value: note.title, 'aria-label': 'Title' });
-      const body = h('textarea', { placeholder: 'Start writing…', 'aria-label': 'Note' }); body.value = note.body;
+      const code = note.mode === 'code', lang = note.lang || 'js';
+      const body = h('textarea', { placeholder: code ? '// write some code…' : 'Start writing… (type /help for guides)', 'aria-label': 'Note', spellcheck: code ? 'false' : 'true', autocapitalize: code ? 'off' : 'sentences', autocomplete: 'off' }); body.value = note.body;
       const info = h('div', { class: 'tiny muted' });
-      const wrap = h('div', { class: 'note-ed', style: { background: noteTint(note.color) || null, borderRadius: '16px', padding: noteTint(note.color) ? '4px 14px' : '0' } }, title, body);
-      v.append(wrap, info);
+      let wrap, pre, gut, out;
+      if (code) {
+        pre = h('pre', { 'aria-hidden': 'true' }); gut = h('div', { class: 'gut', 'aria-hidden': 'true' }); out = h('div');
+        const ed = h('div', { class: 'code-ed' }, gut, pre, body);
+        const sync = () => { pre.scrollTop = body.scrollTop; pre.scrollLeft = body.scrollLeft; gut.scrollTop = body.scrollTop; };
+        const paintCode = () => { pre.innerHTML = CodeHL.paint(body.value, lang) + '\n '; gut.textContent = Array.from({ length: body.value.split('\n').length }, (_, i) => i + 1).join('\n'); sync(); };
+        body.addEventListener('input', paintCode); body.addEventListener('scroll', sync);
+        body.addEventListener('keydown', e => {
+          if (e.key === 'Tab') { e.preventDefault(); body.setRangeText('  ', body.selectionStart, body.selectionEnd, 'end'); body.dispatchEvent(new Event('input')); }
+          else if (e.key === 'Enter' && !slash(e)) { const a = body.selectionStart, ls = body.value.lastIndexOf('\n', a - 1) + 1, cur = body.value.slice(ls, a), ind = (cur.match(/^\s*/) || [''])[0] + (/[{(\[:]\s*$/.test(cur) ? '  ' : ''); e.preventDefault(); body.setRangeText('\n' + ind, a, body.selectionEnd, 'end'); body.dispatchEvent(new Event('input')); }
+        });
+        const run = () => {
+          out.innerHTML = '';
+          if (lang === 'python') { out.append(h('div', { class: 'runout' }, '🐍 Python can’t run inside Super One (it needs a Python program). Copy it into a Python app or website to run it. JavaScript and HTML run right here!')); return; }
+          if (lang === 'html' || lang === 'css') { out.append(h('iframe', { class: 'runframe', sandbox: 'allow-scripts allow-modals', srcdoc: lang === 'css' ? '<style>' + body.value + '</style><h1>Heading</h1><p>Some text with a <a href="#">link</a>.</p><button>Button</button>' : body.value, title: 'Preview' })); return; }
+          const box = h('div', { class: 'runout' }, 'Running…'), fr = h('iframe', { sandbox: 'allow-scripts', style: { display: 'none' } }), id = uid(), q = JSON.stringify(id);
+          const onMsg = ev => { if (!ev.data || ev.data.id !== id) return; if (ev.data.start) box.textContent = ''; else if (ev.data.done) { removeEventListener('message', onMsg); fr.remove(); if (!box.textContent) box.textContent = '(nothing printed — use console.log(...) to show things)'; } else box.append(h('div', { class: ev.data.err ? 'err' : '' }, ev.data.line)); };
+          addEventListener('message', onMsg); out.append(box);
+          fr.srcdoc = '<script>const P=(l,e)=>parent.postMessage({id:' + q + ',line:l,err:e},"*");const S=v=>typeof v==="string"?v:(()=>{try{return JSON.stringify(v)}catch(e){return String(v)}})();console.log=(...a)=>P(a.map(S).join(" "));console.error=(...a)=>P(a.map(S).join(" "),1);window.alert=m=>P("💬 "+m);parent.postMessage({id:' + q + ',start:1},"*");try{\n' + body.value.replace(/<\/script/gi, '<\\/script') + '\n}catch(e){P("❌ "+e.name+": "+e.message,1)}parent.postMessage({id:' + q + ',done:1},"*")</' + 'script>';
+          document.body.append(fr); setTimeout(() => { if (fr.isConnected) { fr.remove(); removeEventListener('message', onMsg); box.append(h('div', { class: 'err' }, '⏱️ Stopped after 3 seconds (an endless loop?)')); } }, 3000);
+        };
+        const langSel = h('select', { 'aria-label': 'Language', style: { width: 'auto' }, onchange: () => { note.lang = langSel.value; note.title = title.value; note.body = body.value; save.flush(); editView(note); } }, [['js', 'JavaScript'], ['html', 'HTML'], ['css', 'CSS'], ['python', 'Python']].map(([k, l]) => h('option', { value: k, selected: k === lang }, l)));
+        wrap = h('div', { class: 'note-ed' }, title, h('div', { class: 'codebar' }, h('span', { class: 'pill' }, '💻 Code'), langSel, h('span', { class: 'sp' }), h('button', { class: 'btn pri sm runb', onclick: () => { save.flush(); run(); } }, lang === 'html' || lang === 'css' ? '👁️ Preview' : '▶ Run')), ed, out);
+        setTimeout(paintCode, 0);
+      } else wrap = h('div', { class: 'note-ed', style: { background: noteTint(note.color) || null, borderRadius: '16px', padding: noteTint(note.color) ? '4px 14px' : '0' } }, title, body);
+      v.append(wrap, h('div', { class: 'slashhint' }, '⌨️ Type /help and press Enter for guides and shortcuts'), info);
+      // slash commands: type /something on its own line and press Enter
+      function slash(e) {
+        const a = body.selectionStart, ls = body.value.lastIndexOf('\n', a - 1) + 1, le0 = body.value.indexOf('\n', a), le = le0 < 0 ? body.value.length : le0, line = body.value.slice(ls, le).trim(), m = line.match(/^\/(\w+)(?:\s+(\w+))?$/);
+        if (!m || !NOTE_CMDS.some(c => c[0].split(' ')[0] === '/' + m[1].toLowerCase())) return false;
+        e.preventDefault(); const cmd = m[1].toLowerCase(), arg = (m[2] || '').toLowerCase();
+        body.setRangeText('', ls, le, 'start'); const put = t => body.setRangeText(t, body.selectionStart, body.selectionStart, 'end');
+        if (cmd === 'help') helpSheet();
+        else if (cmd === 'todo') put('☐ ');
+        else if (cmd === 'date') put(fmtDay(new Date(), { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }));
+        else if (cmd === 'time') put(fmtTime(new Date()));
+        else if (cmd === 'line') put('────────────────\n');
+        else if (cmd === 'table') put('| Thing | Notes |\n|-------|-------|\n|       |       |\n');
+        else if (cmd === 'count') { const t = body.value; UI.toast((t.match(/\S+/g) || []).length + ' words · ' + t.replace(/\s/g, '').length + ' letters', 3500); }
+        else if (cmd === 'pin') { note.pinned = true; pinBtn.textContent = '📌'; UI.toast('Pinned to top'); }
+        else if (cmd === 'cards') { note.title = title.value; note.body = body.value; save.flush(); setTimeout(() => Shell.go('cards', 'make:' + note.id), 300); }
+        else if (cmd === 'code' || cmd === 'text') { note.mode = cmd; if (cmd === 'code') note.lang = ['js', 'html', 'css', 'python', 'py'].includes(arg) ? (arg === 'py' ? 'python' : arg) : note.lang || 'js'; note.title = title.value; note.body = body.value; save.flush(); setTimeout(() => editView(note), 30); }
+        else if (cmd === 'guide') startGuide(arg === 'py' ? 'python' : NOTE_GUIDES[arg] ? arg : 'js');
+        body.dispatchEvent(new Event('input')); return true;
+      }
+      if (!code) body.addEventListener('keydown', e => { if (e.key === 'Enter') slash(e); });
+      function startGuide(k) { const [n, src] = NOTE_GUIDES[k], g = { id: uid(), title: 'Learn ' + n, body: src, mode: 'code', lang: k, color: 'none', pinned: false, created: Date.now(), updated: Date.now() }; save.flush(); DB.put('notes', g).then(() => { editView(g); UI.toast('A ' + n + ' lesson — change it and press ' + (k === 'html' ? 'Preview' : 'Run') + '!'); }); }
+      function helpSheet() {
+        const s = UI.sheet({ title: '📘 Notes guide', body: h('div', { class: 'guide' },
+          h('p', { class: 'muted' }, 'Type any of these on its own line, then press Enter:'),
+          h('table', null, NOTE_CMDS.map(([c, d]) => h('tr', null, h('td', null, c), h('td', null, d)))),
+          h('h4', null, '✍️ Writing tips'), h('ul', null, h('li', null, 'Tap ☐ at the start of a line to tick it ☑.'), h('li', null, 'Use ⋯ to pick a color, share, or delete.'), h('li', null, 'Notes save by themselves as you type.')),
+          h('h4', null, '💻 Coding'), h('p', null, 'Type /code js (or html, css, python) to turn a note into a code editor with colors and line numbers. JavaScript and HTML run right here with ▶ Run — even offline.'),
+          h('div', { class: 'row' }, Object.entries(NOTE_GUIDES).map(([k, [n]]) => h('button', { class: 'btn sm', onclick: () => { s.close(); startGuide(k); } }, '🎓 ' + n + ' lesson'))),
+          h('h4', null, '⚡ JavaScript in 30 seconds'), h('pre', null, 'console.log("Hi!")      // print\nlet x = 5               // a box for a value\nif (x > 3) { ... }      // choose\nfor (let i=0;i<3;i++)   // repeat\nfunction add(a,b){return a+b}')) });
+      }
       let dirty = false;
       const paintInfo = () => { const w = (note.body.trim().match(/\S+/g) || []).length; info.textContent = w + ' words · ' + (dirty ? 'saving…' : 'saved ' + fmtAgo(note.updated)); };
       const save = debounce(async () => { note.title = title.value; note.body = body.value; note.updated = Date.now(); if (note.title.trim() || note.body.trim()) await DB.put('notes', note); dirty = false; paintInfo(); }, 400);
@@ -946,6 +1215,9 @@ Apps.reg({
       ctx.setActions(pinBtn, h('button', { class: 'ib', 'aria-label': 'More', html: SVG.more, onclick: () => UI.menu('Note', [
         { icon: '🎨', label: 'Color', run: () => { const s = UI.sheet({ title: 'Note color', body: h('div', { class: 'chips' }, Object.keys(NOTE_TINTS).map(c => h('button', { class: 'chip', style: { background: noteTint(c) || null }, 'aria-pressed': String(note.color === c), onclick: () => { note.color = c; wrap.style.background = noteTint(c) || ''; wrap.style.padding = noteTint(c) ? '4px 14px' : '0'; save.flush(); s.close(); } }, c === 'none' ? 'Plain' : c[0].toUpperCase() + c.slice(1)))) }); } },
         { icon: '📤', label: 'Share or copy', run: () => shareText((title.value ? title.value + '\n\n' : '') + body.value, title.value || 'Note') },
+        { icon: note.mode === 'code' ? '📝' : '💻', label: note.mode === 'code' ? 'Switch to text mode' : 'Switch to code mode', sub: note.mode === 'code' ? 'Normal writing' : 'Colors, line numbers and ▶ Run', run: () => { note.mode = note.mode === 'code' ? 'text' : 'code'; note.lang = note.lang || 'js'; note.title = title.value; note.body = body.value; save.flush(); editView(note); } },
+        { icon: '📘', label: 'Guide and commands (/help)', run: () => helpSheet() },
+        { icon: '🗂️', label: 'Make flashcards from this note', run: () => { note.title = title.value; note.body = body.value; save.flush(); setTimeout(() => Shell.go('cards', 'make:' + note.id), 300); } },
         { icon: '☑️', label: 'Add a checklist line', sub: 'Adds “☐ ” — tap ☐ later to tick it', run: () => { body.value += (body.value && !body.value.endsWith('\n') ? '\n' : '') + '☐ '; onInput(); body.focus(); } },
         { icon: '🗑️', label: 'Delete note', danger: true, run: async () => { if (await UI.ask('Delete this note?', { ok: 'Delete', danger: true })) { save.flush(); await DB.del('notes', note.id); dirty = false; note.title = note.body = ''; listView(); } } },
       ]) }));
@@ -1016,6 +1288,30 @@ const Rem = {
 setTimeout(() => { Rem.tick(); setInterval(() => Rem.tick(), 15000); }, 2500);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) Rem.tick(); });
 
+const QUOTES = [
+  ['The secret of getting ahead is getting started.', 'Mark Twain'], ['It always seems impossible until it’s done.', 'Nelson Mandela'], ['Believe you can and you’re halfway there.', 'Theodore Roosevelt'],
+  ['Well done is better than well said.', 'Benjamin Franklin'], ['Do what you can, with what you have, where you are.', 'Theodore Roosevelt'], ['Whether you think you can, or you think you can’t — you’re right.', 'Henry Ford'],
+  ['Energy and persistence conquer all things.', 'Benjamin Franklin'], ['Act as if what you do makes a difference. It does.', 'William James'], ['The journey of a thousand miles begins with one step.', 'Lao Tzu'],
+  ['Fall seven times, stand up eight.', 'Japanese proverb'], ['Courage is grace under pressure.', 'Ernest Hemingway'], ['Life is like riding a bicycle. To keep your balance you must keep moving.', 'Albert Einstein'],
+  ['Keep your face always toward the sunshine.', 'Walt Whitman'], ['I can do all things through Christ who strengthens me.', 'Philippians 4:13'], ['Be strong and courageous. Do not be afraid.', 'Joshua 1:9'],
+  ['No act of kindness, no matter how small, is ever wasted.', 'Aesop'], ['Slow and steady wins the race.', 'Aesop'], ['Great things are done by a series of small things brought together.', 'Vincent van Gogh'],
+  ['Start where you are. Use what you have. Do what you can.', 'Arthur Ashe'], ['Hard work beats talent when talent doesn’t work hard.', 'Tim Notke'], ['It does not matter how slowly you go as long as you do not stop.', 'Confucius'],
+  ['You miss 100% of the shots you don’t take.', 'Wayne Gretzky'], ['Champions keep playing until they get it right.', 'Billie Jean King'], ['Nothing will work unless you do.', 'Maya Angelou'],
+  ['Try to be a rainbow in someone’s cloud.', 'Maya Angelou'], ['With the new day comes new strength and new thoughts.', 'Eleanor Roosevelt'], ['Knowledge is power.', 'Francis Bacon'],
+  ['An investment in knowledge pays the best interest.', 'Benjamin Franklin'], ['Learning never exhausts the mind.', 'Leonardo da Vinci'], ['The only way to do great work is to love what you do.', 'Steve Jobs'],
+  ['Done is better than perfect.', 'Proverb'], ['Practice makes progress.', 'Proverb'], ['Small steps every day add up to big results.', 'Proverb'],
+  ['This is the day the Lord has made; let us rejoice and be glad in it.', 'Psalm 118:24'], ['Give thanks in all circumstances.', '1 Thessalonians 5:18'], ['Whatever you do, work at it with all your heart.', 'Colossians 3:23'],
+  ['Be kind, for everyone you meet is fighting a hard battle.', 'Ian Maclaren'], ['The best time to plant a tree was 20 years ago. The second best time is now.', 'Chinese proverb'], ['A smooth sea never made a skilled sailor.', 'English proverb'],
+  ['If you want to go fast, go alone. If you want to go far, go together.', 'African proverb'], ['Dream big and dare to fail.', 'Norman Vaughan'], ['Quality means doing it right when no one is looking.', 'Henry Ford'],
+  ['What we learn with pleasure we never forget.', 'Alfred Mercier'], ['Strive for progress, not perfection.', 'Proverb'], ['The expert in anything was once a beginner.', 'Helen Hayes'],
+];
+const REM_IDEAS = [ // emoji, text, repeat, time
+  ['💧', 'Drink a glass of water', 'daily', '10:00'], ['🎒', 'Pack my school bag', 'daily', '20:30'], ['📚', 'Do my homework', 'daily', '17:00'], ['🪥', 'Brush my teeth', 'daily', '21:00'],
+  ['🤸', 'Calisthenics workout', 'daily', '16:30'], ['🔋', 'Charge my phone', 'daily', '21:30'], ['🧊', 'Practice the cube', 'daily', '18:30'], ['📖', 'Read for 20 minutes', 'daily', '20:00'],
+  ['🙏', 'Read my Bible verse', 'daily', '07:30'], ['🐶', 'Feed my pet', 'daily', '08:00'], ['🗑️', 'Take out the trash', 'weekly', '19:00'], ['🧹', 'Clean my room', 'weekly', '10:00'],
+  ['📞', 'Call grandparents', 'weekly', '15:00'], ['🪴', 'Water the plants', 'weekly', '09:00'], ['📕', 'Return library books', 'none', '15:30'], ['😊', 'Say thank you to someone', 'daily', '12:00'],
+];
+const Quote = { of(day) { return QUOTES[hashStr(day || ymd(new Date())) % QUOTES.length]; } };
 Apps.reg({
   id: 'reminders', name: 'Reminders', icon: '⏰', color: 'linear-gradient(135deg,#FFA94D,#F76707)', group: 'day', keys: 'todo to-do tasks alarm', blurb: 'To-dos with alerts',
   badge: () => Rem.dueCount(),
@@ -1025,9 +1321,19 @@ Apps.reg({
     const addQuick = async () => { const t = quick.value.trim(); if (!t) return; await DB.put('reminders', { id: uid(), text: t, due: '', repeat: 'none', done: false, created: Date.now() }); quick.value = ''; load(); };
     quick.addEventListener('keydown', e => { if (e.key === 'Enter') addQuick(); });
     const box = h('div');
-    v.append(h('div', { class: 'quick' }, quick, h('button', { class: 'btn pri', onclick: addQuick, 'aria-label': 'Add' }, 'Add')),
+    let qi = QUOTES.indexOf(Quote.of());
+    const qt = h('p', { style: { margin: '0', fontSize: '18px', fontWeight: 700, lineHeight: 1.35, fontFamily: 'Georgia,serif' } }), qa = h('small', { style: { opacity: 0.85 } });
+    const paintQ = () => { const [t, a] = QUOTES[qi]; qt.textContent = '“' + t + '”'; qa.textContent = '— ' + a; };
+    paintQ();
+    const quoteCard = h('div', { class: 'card mb', style: { background: 'linear-gradient(135deg,#2F6BFF,#FF2E4D)', color: '#fff', border: 0 } }, h('div', { class: 'small', style: { fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', opacity: 0.85, marginBottom: '6px' } }, '💬 Quote of the day'), qt, h('div', { class: 'row nw mt', style: { alignItems: 'center' } }, qa, h('span', { class: 'sp' }),
+      h('button', { class: 'btn sm', style: { background: 'rgba(255,255,255,.2)', color: '#fff', border: 0 }, onclick: () => Speak.say(QUOTES[qi][0] + ' — ' + QUOTES[qi][1]) }, '🔊'), h('button', { class: 'btn sm', style: { background: 'rgba(255,255,255,.2)', color: '#fff', border: 0 }, onclick: () => { qi = (qi + 1) % QUOTES.length; paintQ(); } }, '🔀 Another')));
+    const nextAt = tm => { const d = new Date(); const [hh, mm] = tm.split(':').map(Number); d.setHours(hh, mm, 0, 0); if (d < new Date()) d.setDate(d.getDate() + 1); return ymd(d) + 'T' + tm; };
+    const ideas = h('div', { class: 'chips' }, REM_IDEAS.map(([e, t, rep, tm]) => h('button', { class: 'chip', onclick: async () => { const r = { id: uid(), text: e + ' ' + t, due: nextAt(tm), repeat: rep, done: false, created: Date.now() }; await DB.put('reminders', r); Sfx.good(); UI.toast('Added: ' + t + ' · ' + Rem.label(r)); } }, e + ' ' + t)));
+    const ideasBox = h('details', { class: 'mt' }, h('summary', { class: 'sec', style: { cursor: 'pointer', listStyle: 'none' } }, '💡 Ideas to remind yourself (tap to add)'), ideas, h('p', { class: 'tiny muted' }, 'Each one is added with a good time — tap it in your list to change the time.'));
+    v.append(quoteCard, h('div', { class: 'quick' }, quick, h('button', { class: 'btn pri', onclick: addQuick, 'aria-label': 'Add' }, 'Add')),
       h('p', { class: 'tiny muted', style: { margin: '0 4px 4px' } }, 'Tip: tap a reminder to give it a time. I ring while Super One is open. For alerts when it’s closed, use “Add to phone calendar”.'),
-      box, h('button', { class: 'fab', 'aria-label': 'New reminder with time', html: SVG.plus, onclick: () => edit({}) }));
+      box, ideasBox, h('button', { class: 'fab', 'aria-label': 'New reminder with time', html: SVG.plus, onclick: () => edit({}) }));
+    if (!Prefs.get('remIdeasSeen')) { ideasBox.open = true; Prefs.set('remIdeasSeen', true); }
     if ('Notification' in window && Notification.permission === 'default') ctx.setActions(h('button', { class: 'btn ghost sm', onclick: async e => { try { await Notification.requestPermission(); } catch (x) { } e.target.remove(); } }, '🔔 Allow alerts'));
     async function load() { list = await DB.all('reminders'); draw(); }
     function row(r) {
@@ -1426,8 +1732,58 @@ addCSS(`
 .lead b{font-size:20px;line-height:1.25;display:block}
 `);
 const strip = s => String(s || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
+/* more news: topics from Wikipedia's daily "Current events" portal, and news about one country */
+const NEWS_TOPICS = { sports: ['⚽ Sports', ['Sports']], science: ['🔬 Science', ['Science and technology', 'Health and environment']], politics: ['🏛️ Politics', ['Politics and elections', 'International relations']], culture: ['🎭 Culture', ['Arts and culture']], business: ['💼 Business', ['Business and economy']] };
+const NEWS_COUNTRIES = [['Canada', '🇨🇦', 'Canadian'], ['United States', '🇺🇸', 'American'], ['United Kingdom', '🇬🇧', 'British'], ['Australia', '🇦🇺', 'Australian'], ['New Zealand', '🇳🇿', 'New Zealand'], ['Ireland', '🇮🇪', 'Irish'], ['India', '🇮🇳', 'Indian'], ['Philippines', '🇵🇭', 'Filipino'], ['China', '🇨🇳', 'Chinese'], ['Japan', '🇯🇵', 'Japanese'], ['South Korea', '🇰🇷', 'South Korean'], ['France', '🇫🇷', 'French'], ['Germany', '🇩🇪', 'German'], ['Italy', '🇮🇹', 'Italian'], ['Spain', '🇪🇸', 'Spanish'], ['Mexico', '🇲🇽', 'Mexican'], ['Brazil', '🇧🇷', 'Brazilian'], ['Nigeria', '🇳🇬', 'Nigerian'], ['South Africa', '🇿🇦', 'South African'], ['Ukraine', '🇺🇦', 'Ukrainian']];
+const NewsMore = {
+  WIKI: 'https://en.wikipedia.org/w/api.php?format=json&formatversion=2&origin=*&',
+  MONTHS: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+  country() { const c = Prefs.get('newsCountry', null); if (c) return NEWS_COUNTRIES.find(x => x[0] === c) || NEWS_COUNTRIES[0]; const r = typeof Holidays !== 'undefined' ? Holidays.region() : 'CA'; return NEWS_COUNTRIES.find(x => x[0] === ({ CA: 'Canada', US: 'United States', GB: 'United Kingdom' })[r]) || NEWS_COUNTRIES[0]; },
+  async page(title) { const j = await (await fetch(this.WIKI + 'action=parse&prop=text&redirects=1&page=' + encodeURIComponent(title))).json(); return j.parse ? new DOMParser().parseFromString(j.parse.text, 'text/html') : null; },
+  // every item from the last few days, tagged with its heading (Sports, Politics and elections, …)
+  async current(days = 3) {
+    const all = [];
+    for (let k = 0; k < days; k++) {
+      const d = new Date(); d.setDate(d.getDate() - k); d.setHours(12, 0, 0, 0);
+      let doc = null; try { doc = await this.page('Portal:Current_events/' + d.getFullYear() + '_' + this.MONTHS[d.getMonth()] + '_' + d.getDate()); } catch (e) { }
+      const box = doc && doc.querySelector('.current-events-content'); if (!box) continue;
+      let cat = 'Other';
+      const walk = (ul, topic) => { for (const li of ul.children) { if (li.tagName !== 'LI') continue; const sub = [...li.children].find(x => x.tagName === 'UL'); const own = [...li.childNodes].filter(n => n.nodeName !== 'UL').map(n => n.textContent).join('').replace(/\s+/g, ' ').trim();
+        if (sub) { walk(sub, topic || own); continue; }
+        const a = li.querySelector('a[href^="/wiki/"]'), ext = [...li.querySelectorAll('a.external')].pop();
+        const title = own.replace(/\s*\([^()]{1,40}\)\s*$/, '').trim(); if (title.length < 12) continue;
+        all.push({ cat, title, sum: topic && topic !== own ? topic : '', src: (ext ? ext.textContent.replace(/[()]/g, '').trim() + ' · ' : '') + 'Wikipedia current events', url: a ? 'https://en.m.wikipedia.org' + a.getAttribute('href') : null, when: d.getTime() }); } };
+      for (const el of box.children) { if (el.tagName === 'P' || el.getAttribute('role') === 'heading' || el.classList.contains('current-events-content-heading')) { const t = el.textContent.trim(); if (t) cat = t; } else if (el.tagName === 'UL') walk(el, ''); }
+    }
+    return all;
+  },
+  // "2026 in Canada" style articles list dated events; plus current-events items that mention the country
+  async countryNews([name, flag, dem], cur) {
+    const items = [], now = new Date(), M = this.MONTHS.join('|');
+    try {
+      const doc = await this.page(now.getFullYear() + ' in ' + name);
+      if (doc) for (const li of doc.querySelectorAll('li')) {
+        const own = [...li.childNodes].filter(n => n.nodeName !== 'UL').map(n => n.textContent).join('').replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim();
+        let m = own.match(new RegExp('^(' + M + ')\\s+(\\d{1,2})(?:\\s*[–—-]\\s*(.+))?$')) || own.match(new RegExp('^(\\d{1,2})\\s+(' + M + ')(?:\\s*[–—-]\\s*(.+))?$'));
+        if (!m) continue; const mo = this.MONTHS.indexOf(isNaN(m[1]) ? m[1] : m[2]), day = +(isNaN(m[1]) ? m[2] : m[1]), d = new Date(now.getFullYear(), mo, day, 12);
+        if (d > now || now - d > 60 * 864e5) continue;
+        const texts = m[3] ? [m[3]] : [...(([...li.children].find(x => x.tagName === 'UL') || { children: [] }).children)].map(x => x.textContent.replace(/\[\d+\]/g, '').trim());
+        const a = li.querySelector('a[href^="/wiki/"]');
+        for (const t of texts) if (t && t.length > 12) items.push({ title: t, sum: '', src: now.getFullYear() + ' in ' + name + ' · Wikipedia', url: a ? 'https://en.m.wikipedia.org' + a.getAttribute('href') : null, when: d.getTime() });
+      }
+    } catch (e) { }
+    const re = new RegExp('\\b(' + [name, dem].filter(Boolean).map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'i');
+    for (const it of cur || []) if (re.test(it.title + ' ' + it.sum)) items.push(Object.assign({}, it));
+    const seen = new Set(); return items.filter(x => { const k = x.title.slice(0, 60); if (seen.has(k)) return false; seen.add(k); return true; }).sort((a, b) => b.when - a.when).slice(0, 30);
+  },
+  async fetch() {
+    const cur = await this.current(3), at = Date.now();
+    for (const [k, [, cats]] of Object.entries(NEWS_TOPICS)) { const items = cur.filter(x => cats.includes(x.cat)).slice(0, 30); if (items.length) await DB.kset('news:' + k, { at, items }); }
+    const c = this.country(), items = await this.countryNews(c, cur); if (items.length) await DB.kset('news:country', { at, items, country: c[0] });
+  },
+};
 const News = {
-  SRC: { world: 'Wikipedia · In the news', space: 'Space news', tech: 'Tech news', day: 'On this day' },
+  SRC: { world: 'Wikipedia · In the news', space: 'Space news', tech: 'Tech news', day: 'On this day', country: 'Wikipedia', sports: 'Wikipedia current events', science: 'Wikipedia current events', politics: 'Wikipedia current events', culture: 'Wikipedia current events', business: 'Wikipedia current events' },
   async fetchAll() {
     const d = new Date(), path = d.getFullYear() + '/' + pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()), out = {};
     const job = async (k, f) => { try { out[k] = await f(); await DB.kset('news:' + k, { at: Date.now(), items: out[k] }); } catch (e) { out[k] = null; } };
@@ -1450,6 +1806,7 @@ const News = {
         } catch (e) { }
         if (!items.length) throw new Error('no news'); return items; }),
       job('space', async () => { const j = await (await fetch('https://api.spaceflightnewsapi.net/v4/articles/?limit=20')).json(); return (j.results || []).map(a => ({ title: a.title, sum: strip(a.summary), img: a.image_url, url: a.url, src: a.news_site, when: Date.parse(a.published_at) })); }),
+      NewsMore.fetch().catch(() => { }),
       job('tech', async () => { const ids = (await (await fetch('https://hacker-news.firebaseio.com/v0/topstories.json')).json()).slice(0, 20); const its = await Promise.all(ids.map(id => fetch('https://hacker-news.firebaseio.com/v0/item/' + id + '.json').then(r => r.json()).catch(() => null))); return its.filter(x => x && x.title).map(x => ({ title: x.title, sum: (x.score || 0) + ' points · ' + (x.descendants || 0) + ' comments', url: x.url || 'https://news.ycombinator.com/item?id=' + x.id, src: x.url ? new URL(x.url).hostname.replace(/^www\./, '') : 'Hacker News', when: x.time * 1000 })); }),
     ]);
     await DB.kset('newsAt', Date.now()); return out;
@@ -1459,22 +1816,25 @@ const News = {
 };
 setTimeout(() => News.auto(), 4000); addEventListener('online', () => setTimeout(() => News.auto(), 2000));
 Apps.reg({
-  id: 'news', name: 'News', icon: '📰', color: 'linear-gradient(135deg,#FF5F6D,#C81D25)', group: 'day', keys: 'headlines updates world space tech today', blurb: 'Headlines, saved for offline',
+  id: 'news', name: 'News', icon: '📰', color: 'linear-gradient(135deg,#FF5F6D,#C81D25)', group: 'day', keys: 'headlines updates world space tech today sports science politics country canada business culture', blurb: 'Headlines, saved for offline',
   mount(v, ctx) {
     let tab = Prefs.get('newsTab', 'world');
     const box = h('div'), status = h('div', { class: 'row small muted', style: { margin: '0 2px 10px' } });
-    v.append(UI.tabs([['world', '🌍 World'], ['space', '🚀 Space'], ['tech', '💻 Tech'], ['day', '📅 On this day']], tab, t => { tab = t; Prefs.set('newsTab', t); draw(); }), status, box);
+    const C = NewsMore.country();
+    v.append(UI.tabs([['world', '🌍 World'], ['country', C[1] + ' ' + C[0]], ...Object.entries(NEWS_TOPICS).map(([k, [l]]) => [k, l]), ['space', '🚀 Space'], ['tech', '💻 Tech'], ['day', '📅 On this day']], tab, t => { tab = t; Prefs.set('newsTab', t); draw(); }), status, box);
     const refresh = async () => { if (!navigator.onLine) return UI.toast('No internet right now — showing saved news'); status.textContent = 'Getting the latest…'; await News.fetchAll(); draw(); };
     ctx.setActions(h('button', { class: 'btn ghost sm', onclick: refresh }, '↻'));
     async function draw() {
       const c = await DB.kget('news:' + tab, null); box.innerHTML = ''; status.innerHTML = '';
+      if (tab === 'country') box.append(h('label', { class: 'f row nw', style: { alignItems: 'center', gap: '8px', marginBottom: '10px' } }, h('span', { style: { margin: 0, flex: '0 0 auto' } }, 'Country'), h('select', { onchange: async e => { Prefs.set('newsCountry', e.target.value); const cc = NewsMore.country(); const tb = v.querySelector('.tabs button[aria-pressed="true"]'); if (tb) tb.textContent = cc[1] + ' ' + cc[0]; if (!navigator.onLine) return UI.toast('Connect to the internet to get news for ' + cc[0]); status.textContent = 'Getting news for ' + cc[0] + '…'; const items = await NewsMore.countryNews(cc, await NewsMore.current(3)); await DB.kset('news:country', { at: Date.now(), items, country: cc[0] }); draw(); } }, NEWS_COUNTRIES.map(([n, f]) => h('option', { value: n, selected: n === NewsMore.country()[0] }, f + ' ' + n)))));
+      if (tab === 'country' && c && c.country && c.country !== NewsMore.country()[0]) { box.append(UI.empty('🌍', 'Tap ↻ to get news for ' + NewsMore.country()[0])); return; }
       status.append(h('span', { class: 'sp' }, c ? (navigator.onLine ? 'Updated ' : '📴 Offline · saved ') + fmtAgo(c.at) : ''), h('span', null, News.SRC[tab]));
       if (!c || !c.items.length) { box.append(UI.empty('📰', 'No news saved yet', navigator.onLine ? 'Tap ↻ to download today’s news.' : 'Connect to Wi-Fi once and I’ll save the news for offline reading.')); return; }
       const img = (u, fb) => ({ style: { backgroundImage: u && navigator.onLine ? 'url("' + u + '")' : 'none' } });
       const [first, ...rest] = c.items;
       box.append(h('button', { class: 'lead', onclick: () => read(first) }, h('div', Object.assign({ class: 'im' }, img(first.img)), first.img && navigator.onLine ? '' : '📰'), h('div', { class: 'tx' }, h('b', null, first.title), first.sum ? h('p', { class: 'muted', style: { margin: '6px 0 0' } }, first.sum.slice(0, 160) + (first.sum.length > 160 ? '…' : '')) : null, h('small', { class: 'muted' }, first.src + (first.when ? ' · ' + fmtAgo(first.when) : '')))),
-        h('div', { class: 'list mt' }, rest.map(s => h('button', { class: 'story', onclick: () => read(s) }, h('span', Object.assign({ class: 'im' }, img(s.img)), s.img && navigator.onLine ? '' : ({ world: '🌍', space: '🚀', tech: '💻', day: '📅' })[tab]), h('span', { style: { flex: 1, minWidth: 0 } }, h('b', null, s.title), s.sum && tab !== 'tech' ? h('p', null, s.sum) : null, h('small', null, s.src + (s.when ? ' · ' + fmtAgo(s.when) : '') + (tab === 'tech' ? ' · ' + s.sum : '')))))));
-      box.append(h('p', { class: 'tiny muted center mt' }, 'News updates by itself whenever you’re online, and stays readable offline. Sources: Wikipedia, Spaceflight News API, Hacker News.'));
+        h('div', { class: 'list mt' }, rest.map(s => h('button', { class: 'story', onclick: () => read(s) }, h('span', Object.assign({ class: 'im' }, img(s.img)), s.img && navigator.onLine ? '' : ({ world: '🌍', space: '🚀', tech: '💻', day: '📅', country: NewsMore.country()[1], sports: '⚽', science: '🔬', politics: '🏛️', culture: '🎭', business: '💼' })[tab]), h('span', { style: { flex: 1, minWidth: 0 } }, h('b', null, s.title), s.sum && tab !== 'tech' ? h('p', null, s.sum) : null, h('small', null, s.src + (s.when ? ' · ' + fmtAgo(s.when) : '') + (tab === 'tech' ? ' · ' + s.sum : '')))))));
+      box.append(h('p', { class: 'tiny muted center mt' }, 'News updates by itself whenever you’re online, and stays readable offline. Sources: Wikipedia (In the news, Current events, “year in country” pages), Spaceflight News API, Hacker News.'));
     }
     function read(s) {
       UI.sheet({ title: s.src, body: h('div', null, s.img && navigator.onLine ? h('img', { src: s.img, alt: '', style: { width: '100%', borderRadius: '14px', marginBottom: '10px' } }) : null, h('h3', { style: { fontSize: '21px', marginBottom: '8px' } }, s.title), s.sum ? h('p', { style: { fontSize: '17px', lineHeight: 1.55 } }, s.sum) : null, s.when ? h('p', { class: 'small muted' }, new Date(s.when).toLocaleString()) : null),
@@ -1554,12 +1914,15 @@ Apps.reg({
     const box = h('div');
     const add = () => UI.menu('Add', [
       { icon: '🖼️', label: 'Choose photos or videos', sub: 'From your library or Files', run: async () => { const f = await pickFiles('image/*,video/*'); if (f.length) { UI.toast('Adding ' + f.length + '…'); const n = await Media.add(f); UI.toast('Added ' + n); draw(); } } },
+      { icon: '🎯', label: 'Practice camera', sub: 'Grid, level line and a daily challenge', run: () => PhotoCoach.camera() },
       { icon: '📷', label: 'Take a photo', run: async () => { const f = await pickFiles('image/*', { multiple: false, capture: 'environment' }); if (f.length) { await Media.add(f); draw(); } } },
       { icon: '🎥', label: 'Record a video', run: async () => { const f = await pickFiles('video/*', { multiple: false, capture: 'environment' }); if (f.length) { await Media.add(f); draw(); } } },
     ]);
     ctx.setActions(h('button', { class: 'btn ghost sm', onclick: add }, '＋ Add'));
-    v.append(UI.tabs([['all', 'All'], ['photo', '📷 Photos'], ['video', '🎥 Videos'], ['drawing', '🎨 Drawings'], ['fav', '❤️ Favorites']], filter, f => { filter = f; draw(); }), box);
+    if (ctx.param === 'coach') filter = 'coach';
+    v.append(UI.tabs([['all', 'All'], ['coach', '📸 Photo coach'], ['photo', '📷 Photos'], ['video', '🎥 Videos'], ['drawing', '🎨 Drawings'], ['fav', '❤️ Favorites']], filter, f => { filter = f; draw(); }), box);
     async function draw() {
+      if (filter === 'coach') { box.innerHTML = ''; PhotoCoach.render(box, draw); return; }
       const all = (await DB.all('media')).sort((a, b) => (b.created || 0) - (a.created || 0));
       const list = all.filter(m => filter === 'all' || (filter === 'fav' ? m.fav : m.kind === filter)); box.innerHTML = '';
       if (!all.length) { box.append(UI.empty('🖼️', 'No pictures yet', 'Add photos and videos here, or draw something in Studio. They stay on this device.'), h('div', { class: 'center' }, h('button', { class: 'btn pri', onclick: add }, '＋ Add photos'))); return; }
@@ -1573,6 +1936,122 @@ Apps.reg({
     draw();
   },
 });
+
+/* ---- 20b-photocoach.js ---- */
+/* ===== Photo coach: lessons, daily challenge, a practice camera with grid + level, and "check my photo" ===== */
+addCSS(`
+.pcard{background:linear-gradient(135deg,#2F6BFF,#FF2E4D);color:#fff;border-radius:20px;padding:16px;box-shadow:var(--shadow)}
+.pcard h3{margin:0 0 4px;font-size:22px}
+.pcard .btn{background:#fff;color:#1B2B7A;border:0;font-weight:800}
+.lesson-ill{position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:linear-gradient(180deg,#8EC5FF,#E0F0FF 60%,#9BD08B 60%,#6DB36A);margin:4px 0 10px}
+.lesson-ill .g{position:absolute;inset:0;background-image:linear-gradient(90deg,transparent 33%,rgba(255,255,255,.85) 33%,rgba(255,255,255,.85) calc(33% + 1.5px),transparent calc(33% + 1.5px),transparent 66%,rgba(255,255,255,.85) 66%,rgba(255,255,255,.85) calc(66% + 1.5px),transparent calc(66% + 1.5px)),linear-gradient(0deg,transparent 33%,rgba(255,255,255,.85) 33%,rgba(255,255,255,.85) calc(33% + 1.5px),transparent calc(33% + 1.5px),transparent 66%,rgba(255,255,255,.85) 66%,rgba(255,255,255,.85) calc(66% + 1.5px),transparent calc(66% + 1.5px))}
+.lesson-ill span{position:absolute;font-size:34px;transform:translate(-50%,-50%);filter:drop-shadow(0 3px 4px rgba(0,0,0,.3))}
+.pcam{position:fixed;inset:0;z-index:46;background:#000;color:#fff;display:flex;flex-direction:column}
+.pcam video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.pcam .gridov{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(90deg,transparent 33.2%,rgba(255,255,255,.55) 33.2%,rgba(255,255,255,.55) 33.5%,transparent 33.5%,transparent 66.5%,rgba(255,255,255,.55) 66.5%,rgba(255,255,255,.55) 66.8%,transparent 66.8%),linear-gradient(0deg,transparent 33.2%,rgba(255,255,255,.55) 33.2%,rgba(255,255,255,.55) 33.5%,transparent 33.5%,transparent 66.5%,rgba(255,255,255,.55) 66.5%,rgba(255,255,255,.55) 66.8%,transparent 66.8%)}
+.pcam .lvl{position:absolute;left:25%;right:25%;top:50%;height:3px;border-radius:2px;background:#FFD166;box-shadow:0 0 6px rgba(0,0,0,.6);transition:transform .1s,background .2s}
+.pcam .lvl.ok{background:#3DDC84}
+.pcam .bar{position:relative;z-index:2;display:flex;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;background:linear-gradient(180deg,rgba(0,0,0,.6),transparent)}
+.pcam .bar .ib{color:#fff;background:rgba(255,255,255,.18)}
+.pcam .tip{flex:1;font-weight:700;font-size:14px;text-shadow:0 1px 3px #000}
+.pcam .bot{position:absolute;left:0;right:0;bottom:0;z-index:2;display:flex;align-items:center;justify-content:space-around;padding:16px 20px calc(env(safe-area-inset-bottom) + 22px);background:linear-gradient(0deg,rgba(0,0,0,.6),transparent)}
+.pcam .shut{width:74px;height:74px;border-radius:50%;border:5px solid #fff;background:rgba(255,255,255,.25);padding:0}
+.pcam .shut:active{background:#fff}
+.pcam .tog{background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:999px;padding:10px 14px;font-weight:700}
+.pcam .tog[aria-pressed="true"]{background:#fff;color:#000}
+.pscore{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0}
+.pscore div{background:var(--surface2);border-radius:12px;padding:10px}
+.pscore b{display:block;font-size:15px}.pscore small{color:var(--muted)}
+`);
+const PHOTO_LESSONS = [
+  ['📐', 'Rule of thirds', ['Turn on the grid.', 'Put your subject where two lines cross — not in the middle.', 'Put the horizon on a line too.'], [[33, 33, '🐶']]],
+  ['☀️', 'Light is everything', ['Face your subject toward the light (a window is perfect).', 'Avoid harsh noon sun on faces.', 'Golden hour (just after sunrise or before sunset) looks magical.'], [[80, 20, '☀️'], [40, 60, '🧒']]],
+  ['🎯', 'Hold still and focus', ['Tap the screen where you want it sharp.', 'Tuck your elbows in and breathe out as you shoot.', 'Hold the button for a burst and pick the best one.'], [[50, 50, '🎯']]],
+  ['🔍', 'Get closer', ['Fill the frame with your subject.', 'Walk closer instead of zooming — zoom makes it blurry.', 'Small details make great photos.'], [[50, 55, '🌻']]],
+  ['🐜', 'Change your angle', ['Get down low to make things look big and heroic.', 'Shoot from above for patterns and food.', 'Pets look best at their eye level.'], [[30, 70, '🐱'], [70, 25, '📷']]],
+  ['📏', 'Straight horizons', ['Watch the level line in the practice camera — green means straight.', 'A tilted horizon makes a photo feel wrong (unless you mean it).'], [[50, 60, '🌊']]],
+  ['🛤️', 'Leading lines', ['Roads, fences, rivers and stairs lead the eye.', 'Let the lines point toward your subject.'], [[66, 33, '🏠']]],
+  ['🧹', 'Clean background', ['Look behind your subject before you shoot.', 'Move a few steps so nothing grows out of someone’s head.', 'Plain walls and sky make subjects pop.'], [[50, 50, '🧍']]],
+  ['😊', 'Portraits', ['Focus on the eyes.', 'Use Portrait mode for a blurry background.', 'Make them laugh — real smiles beat fake ones.'], [[50, 45, '😄']]],
+  ['🎨', 'Edit like a pro', ['Crop to fix the framing and straighten.', 'Brighten a little, add a bit of contrast.', 'Use filters lightly — try the Studio app.'], [[50, 50, '✨']]],
+];
+const PHOTO_CHALLENGES = ['Rule of thirds: put your subject on a grid crossing', 'Shoot from very low, like an ant', 'Find a reflection (puddle, window, mirror)', 'Golden hour: photo in soft evening light', 'Leading lines that point to something', 'Frame inside a frame (door, window, branches)', 'Close-up of an interesting texture', 'Perfect symmetry', 'A silhouette against a bright sky', 'Shadow art: photograph a cool shadow', 'Color pop: one bright color on a plain background', 'Action shot: someone jumping or running', 'Pet portrait at their eye level', 'Fill the whole frame with one thing', 'Lots of empty space around a small subject', 'Something blue and something red'];
+const PhotoCoach = {
+  challenge() { return PHOTO_CHALLENGES[hashStr(ymd(new Date())) % PHOTO_CHALLENGES.length]; },
+  // look at a photo: light, contrast, sharpness, color and where the interesting part is
+  async analyze(blob) {
+    const img = await new Promise((res, rej) => { const i = new Image(), u = URL.createObjectURL(blob); i.onload = () => { res(i); URL.revokeObjectURL(u); }; i.onerror = rej; i.src = u; });
+    const W = 240, H = Math.max(1, Math.round(W * img.height / img.width)), c = h('canvas', { width: W, height: H }), g = c.getContext('2d'); g.drawImage(img, 0, 0, W, H);
+    const d = g.getImageData(0, 0, W, H).data, L = new Float32Array(W * H); let sum = 0, rg = [], yb = [];
+    for (let i = 0, p = 0; i < d.length; i += 4, p++) { const r = d[i], gg = d[i + 1], b = d[i + 2]; L[p] = 0.299 * r + 0.587 * gg + 0.114 * b; sum += L[p]; rg.push(r - gg); yb.push((r + gg) / 2 - b); }
+    const mean = sum / L.length; let vv = 0; for (const x of L) vv += (x - mean) ** 2; const contrast = Math.sqrt(vv / L.length);
+    let lap = [], gx = 0, gy = 0, gw = 0; const grad = [];
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) { const p = y * W + x, v = L[p - 1] + L[p + 1] + L[p - W] + L[p + W] - 4 * L[p]; lap.push(v); const gm = Math.abs(L[p + 1] - L[p - 1]) + Math.abs(L[p + W] - L[p - W]); grad.push([gm, x, y]); }
+    const lm = lap.reduce((a, b) => a + b, 0) / lap.length, sharp = lap.reduce((a, b) => a + (b - lm) ** 2, 0) / lap.length;
+    grad.sort((a, b) => b[0] - a[0]); const top = grad.slice(0, Math.max(20, grad.length * 0.05 | 0)); for (const [m, x, y] of top) { gx += x * m; gy += y * m; gw += m; }
+    const cx = gx / gw / W, cy = gy / gw / H, ms = a => { const m = a.reduce((x, y) => x + y, 0) / a.length; return [m, Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length)]; };
+    const [mrg, srg] = ms(rg), [myb, syb] = ms(yb), color = Math.sqrt(srg ** 2 + syb ** 2) + 0.3 * Math.sqrt(mrg ** 2 + myb ** 2);
+    const tips = [], parts = [];
+    const light = mean < 60 ? ['🌑 Too dark', 'Move near a window or turn on a light.', 40] : mean < 85 ? ['🌘 A bit dark', 'A little more light would help.', 70] : mean > 205 ? ['🌕 Too bright', 'Step out of direct sun or tap a darker spot to expose.', 45] : mean > 180 ? ['🌖 A bit bright', 'Tap the bright part of the screen and slide down.', 75] : ['☀️ Good light', 'Nice — the light is just right.', 100];
+    const con = contrast < 30 ? ['🌫️ Flat', 'Add contrast in Studio, or find stronger light and shadow.', 50] : contrast > 85 ? ['⚡ Very punchy', 'Strong darks and brights — be careful the shadows don’t go black.', 80] : ['🎚️ Good contrast', 'Good mix of light and dark.', 100];
+    const sh = sharp < 40 ? ['🌀 Blurry', 'Hold still, tap to focus, and use more light.', 35] : sharp < 120 ? ['🔎 A bit soft', 'Brace your elbows and tap to focus.', 70] : ['🔪 Sharp', 'Nice and crisp!', 100];
+    const col = color < 12 ? ['⚪ Almost no color', 'That can look cool — or try a black-and-white filter.', 75] : color > 70 ? ['🌈 Super colorful', 'Bright colors — great for fun photos.', 100] : ['🎨 Nice colors', 'Good natural colors.', 95];
+    const center = Math.abs(cx - 0.5) < 0.1 && Math.abs(cy - 0.5) < 0.1, thirds = [[1 / 3, 1 / 3], [2 / 3, 1 / 3], [1 / 3, 2 / 3], [2 / 3, 2 / 3]].some(([a, b]) => Math.hypot(cx - a, cy - b) < 0.12);
+    const comp = thirds ? ['📐 Rule of thirds!', 'The interesting part sits on a third line. Pro move!', 100] : center ? ['🎯 Centered', 'Centered works for symmetry. Otherwise, try moving the subject to a grid line.', 75] : ['🧭 Off-center', 'Try lining up your subject with the grid lines.', 85];
+    for (const p of [light, con, sh, col, comp]) parts.push(p);
+    const score = Math.round(light[2] * 0.25 + sh[2] * 0.3 + con[2] * 0.15 + col[2] * 0.1 + comp[2] * 0.2);
+    return { score, parts, w: img.width, h: img.height };
+  },
+  report(blob, title) {
+    UI.toast('Looking at your photo…');
+    return this.analyze(blob).then(r => {
+      const url = URL.createObjectURL(blob), stars = '⭐'.repeat(Math.max(1, Math.round(r.score / 20)));
+      UI.sheet({ title: title || '🔍 Photo check', onClose: () => URL.revokeObjectURL(url), body: h('div', null, h('img', { src: url, alt: '', style: { width: '100%', borderRadius: '14px', maxHeight: '40vh', objectFit: 'contain', background: 'var(--surface2)' } }),
+        h('div', { class: 'center mt' }, h('div', { style: { fontSize: '40px', fontWeight: 900, fontFamily: 'var(--round)' } }, r.score + ' / 100'), h('div', { style: { fontSize: '22px' } }, stars)),
+        h('div', { class: 'pscore' }, r.parts.map(([a, b]) => h('div', null, h('b', null, a), h('small', null, b)))),
+        h('p', { class: 'tiny muted' }, 'This check looks at light, contrast, sharpness, color and where the busy part of the picture is. It’s a guide, not a rule — creative photos can break the rules!')), actions: [{ label: 'Nice!', cls: 'pri' }] });
+    }).catch(() => UI.toast('Couldn’t read that photo'));
+  },
+  async camera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return UI.toast('No camera here. Try “Take a photo” instead.');
+    let facing = 'environment', stream = null, grid = Prefs.get('pcGrid', true), alive = true;
+    const vid = h('video', { playsinline: '', autoplay: '', muted: '' }); vid.muted = true; vid.setAttribute('playsinline', '');
+    const gridEl = h('div', { class: 'gridov', hidden: !grid }), lvl = h('div', { class: 'lvl' }), tip = h('div', { class: 'tip' }, '🎯 ' + this.challenge());
+    const gridB = h('button', { class: 'tog', 'aria-pressed': String(grid) }, '# Grid');
+    gridB.onclick = () => { grid = !grid; Prefs.set('pcGrid', grid); gridEl.hidden = !grid; gridB.setAttribute('aria-pressed', String(grid)); };
+    const ov = h('div', { class: 'pcam', role: 'dialog', 'aria-label': 'Practice camera' }, vid, gridEl, lvl,
+      h('div', { class: 'bar' }, h('button', { class: 'ib', 'aria-label': 'Close camera', html: SVG.close, onclick: () => close() }), tip),
+      h('div', { class: 'bot' }, gridB, h('button', { class: 'shut', 'aria-label': 'Take photo', onclick: () => snap() }), h('button', { class: 'tog', onclick: () => { facing = facing === 'environment' ? 'user' : 'environment'; startCam(); } }, '🔄 Flip')));
+    document.body.append(ov);
+    const onOri = e => { if (e.gamma == null) return; const land = Math.abs(window.orientation || 0) === 90 || (screen.orientation && /landscape/.test(screen.orientation.type)), tilt = land ? e.beta : e.gamma; const t = Math.max(-30, Math.min(30, tilt || 0)); lvl.style.transform = 'rotate(' + (-t) + 'deg)'; lvl.classList.toggle('ok', Math.abs(t) < 1.5); };
+    try { if (window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission) DeviceOrientationEvent.requestPermission().catch(() => { }); } catch (e) { }
+    addEventListener('deviceorientation', onOri);
+    async function startCam() {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }); if (!alive) { stream.getTracks().forEach(t => t.stop()); return; } vid.srcObject = stream; await vid.play().catch(() => { }); }
+      catch (e) { tip.textContent = '📷 Camera not allowed. Allow it in Settings, or use “Take a photo”.'; }
+    }
+    function close() { alive = false; if (stream) stream.getTracks().forEach(t => t.stop()); removeEventListener('deviceorientation', onOri); ov.remove(); }
+    async function snap() {
+      if (!vid.videoWidth) return UI.toast('Camera is still starting…');
+      const c = h('canvas', { width: vid.videoWidth, height: vid.videoHeight }), g = c.getContext('2d'); if (facing === 'user') { g.translate(c.width, 0); g.scale(-1, 1); } g.drawImage(vid, 0, 0);
+      ov.animate([{ background: '#fff' }, { background: '#000' }], { duration: 250 }); Sfx.tap();
+      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9)); if (!blob) return;
+      await Media.add([new File([blob], 'photo-' + Date.now() + '.jpg', { type: 'image/jpeg' })]);
+      const r = await PhotoCoach.analyze(blob).catch(() => null);
+      UI.toast('Saved to Photos ✓' + (r ? ' · score ' + r.score + '/100' : ''), 2500);
+    }
+    startCam();
+  },
+  render(el, onChange) {
+    el.append(h('div', { class: 'pcard' }, h('h3', null, '📸 Take better photos'), h('p', { style: { margin: '0 0 12px', opacity: .95 } }, 'Today’s challenge: ', h('b', null, this.challenge())),
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => this.camera() }, '📷 Practice camera'), h('button', { class: 'btn', onclick: async () => { const [f] = await pickFiles('image/*', { multiple: false }); if (f) this.report(f); } }, '🔍 Check my photo'))));
+    el.append(h('div', { class: 'sec' }, 'Lessons'), h('div', { class: 'list' }, PHOTO_LESSONS.map(([e, t, tips, ill], i) => h('button', { class: 'li', onclick: () => {
+      UI.sheet({ title: e + ' ' + t, body: h('div', null, h('div', { class: 'lesson-ill' }, i === 0 || i === 6 ? h('div', { class: 'g' }) : null, i === 5 ? h('div', { style: { position: 'absolute', left: 0, right: 0, top: '60%', height: '3px', background: '#3DDC84' } }) : null, i === 6 ? h('div', { style: { position: 'absolute', left: '20%', bottom: 0, width: '0', height: '0', borderLeft: '40px solid transparent', borderRight: '40px solid transparent', borderBottom: '120px solid rgba(120,90,60,.55)' } }) : null, ill.map(([x, y, em]) => h('span', { style: { left: x + '%', top: y + '%' } }, em))),
+        h('ol', { style: { paddingLeft: '22px', lineHeight: 1.55, fontSize: '16px' } }, tips.map(x => h('li', null, x)))), actions: [{ label: '📷 Try it now', cls: 'pri', onClick: c => { c(); this.camera(); } }] });
+    } }, h('span', { class: 'ic' }, e), h('span', { class: 't' }, h('b', null, (i + 1) + '. ' + t), h('small', null, tips[0])), h('span', { class: 'chev' }, '›')))));
+  },
+};
 
 /* ---- 21-music.js ---- */
 /* ===== Music: your songs, built-in tunes, piano, beat maker ===== */
@@ -1905,6 +2384,70 @@ Apps.reg({
   },
 });
 
+/* ---- 21b-instruments.js ---- */
+/* ===== Many more instruments, all made with Web Audio (no samples, works offline) ===== */
+(() => {
+  const ks = new Map();
+  // Karplus–Strong plucked string: a burst of noise that loops and softens like a real string
+  function ksBuf(ctx, freq, dur, bright, decay) {
+    const key = ctx.sampleRate + '|' + freq.toFixed(1) + '|' + bright + '|' + decay + '|' + dur; let b = ks.get(key); if (b) return b;
+    if (ks.size > 300) ks.clear();
+    const sr = ctx.sampleRate, n = Math.floor(sr * dur), N = Math.max(2, Math.round(sr / freq)), d = new Float32Array(n);
+    for (let i = 0; i < Math.min(N, n); i++) d[i] = Math.random() * 2 - 1;
+    for (let i = N; i < n; i++) d[i] = decay * (bright * d[i - N] + (1 - bright) * d[Math.max(0, i - N - 1)]);
+    b = ctx.createBuffer(1, n, sr); b.copyToChannel ? b.copyToChannel(d, 0) : b.getChannelData(0).set(d); ks.set(key, b); return b;
+  }
+  const curve = amt => { const n = 1024, c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = i / n * 2 - 1; c[i] = (1 + amt) * x / (1 + amt * Math.abs(x)); } return c; };
+  const pulse = new WeakMap(); const pulseWave = ctx => { let w = pulse.get(ctx); if (!w) { const N = 32, re = new Float32Array(N), im = new Float32Array(N); for (let k = 1; k < N; k++) im[k] = (2 / (k * Math.PI)) * Math.sin(k * Math.PI * 0.25); w = ctx.createPeriodicWave(re, im); pulse.set(ctx, w); } return w; };
+  function voice(ctx, dest, t, dur, o) {
+    // o: { attack, decay (exp to silence, s), sustain, release, gain, chain: [nodes] }
+    const g = ctx.createGain(), srcs = [], v = (o.gain || 0.22); let head = g;
+    for (const n of o.chain || []) { head.connect(n); head = n; } head.connect(dest);
+    g.gain.setValueAtTime(0.0001, t);
+    if (o.decay) { g.gain.exponentialRampToValueAtTime(v, t + (o.attack || 0.005)); g.gain.exponentialRampToValueAtTime(0.0001, t + (o.attack || 0.005) + o.decay); }
+    else { g.gain.linearRampToValueAtTime(v, t + (o.attack || 0.01)); if (o.sustain != null) g.gain.setTargetAtTime(v * o.sustain, t + (o.attack || 0.01), 0.2); }
+    const add = (node, gain = 1, out = g) => { const gg = ctx.createGain(); gg.gain.value = gain; node.connect(gg).connect(out); node.start(t); srcs.push(node); return node; };
+    const osc = (type, f, gain, detune = 0) => { const x = ctx.createOscillator(); if (type === 'pulse') x.setPeriodicWave(pulseWave(ctx)); else x.type = type; x.frequency.setValueAtTime(f, t); x.detune.value = detune; return add(x, gain); };
+    const vib = (rate, depth, delay = 0.15) => { const l = ctx.createOscillator(), lg = ctx.createGain(); l.frequency.value = rate; lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(depth, t + delay + 0.25); l.connect(lg); srcs.filter(s => s.frequency).forEach(s => lg.connect(s.frequency)); l.start(t); srcs.push(l); };
+    const rel = o.release || 0.08;
+    const stop = at => { at = Math.max(at, t + 0.02); try { g.gain.cancelScheduledValues(at); g.gain.setValueAtTime(Math.max(0.0001, g.gain.value || 0.0001), at); } catch (e) { } g.gain.setTargetAtTime(0.0001, at, rel / 3); srcs.forEach(s => { try { s.stop(at + rel + 0.4); } catch (e) { } }); };
+    return { g, osc, add, vib, stop, srcs, fin(d) { const end = o.decay ? t + (o.attack || 0.005) + o.decay : null; if (dur != null) stop(t + dur); else if (end) srcs.forEach(s => { try { s.stop(end + 0.1); } catch (e) { } }); return stop; } };
+  }
+  const filt = (ctx, type, f, q, t, f2, tt) => { const x = ctx.createBiquadFilter(); x.type = type; x.frequency.setValueAtTime(f, t); if (q) x.Q.value = q; if (f2) x.frequency.exponentialRampToValueAtTime(f2, t + tt); return x; };
+  const string = (ctx, dest, freq, t, dur, vel, bright, decay, len, chain, gain) => { const V = voice(ctx, dest, t, null, { attack: 0.002, decay: len, gain: (gain || 1.1) * vel, chain }); const s = ctx.createBufferSource(); s.buffer = ksBuf(ctx, freq, len, bright, decay); V.add(s); return dur != null ? (V.stop(t + Math.max(dur, 0.15) + 0.6), V.stop) : V.fin(); };
+  const EXTRA = {
+    guitar: ['🎸 Guitar', (c, d, f, t, du, v) => string(c, d, f, t, du, v, 0.5, 0.996, 2.6, [filt(c, 'lowpass', 3600, 0.5, t)], 1.2)],
+    eguitar: ['🎸 Electric guitar', (c, d, f, t, du, v) => { const ws = c.createWaveShaper(); ws.curve = curve(30); return string(c, d, f, t, du, v, 0.55, 0.997, 2.8, [ws, filt(c, 'lowpass', 2600, 0.7, t)], 0.3); }],
+    bassgtr: ['🎸 Bass guitar', (c, d, f, t, du, v) => string(c, d, f / 2, t, du, v, 0.3, 0.997, 2.2, [filt(c, 'lowpass', 900, 0.6, t)], 1.4)],
+    harp: ['🪕 Harp', (c, d, f, t, du, v) => string(c, d, f, t, du, v, 0.55, 0.998, 3.2, [filt(c, 'lowpass', 4200, 0.4, t)], 1.1)],
+    banjo: ['🪕 Banjo', (c, d, f, t, du, v) => string(c, d, f, t, du, v, 0.85, 0.992, 1.3, [filt(c, 'highpass', 320, 0.7, t)])],
+    sitar: ['🪈 Sitar', (c, d, f, t, du, v) => { const ws = c.createWaveShaper(); ws.curve = curve(4); return string(c, d, f, t, du, v, 0.7, 0.997, 2.6, [filt(c, 'bandpass', f * 3, 2, t), ws], 0.9); }],
+    harpsi: ['🎹 Harpsichord', (c, d, f, t, du, v) => string(c, d, f, t, du, v, 0.92, 0.995, 1.8, [filt(c, 'highpass', 380, 0.6, t)], 1)],
+    epiano: ['🎹 Electric piano', (c, d, f, t, du, v) => { const V = voice(c, d, t, du, { attack: 0.004, decay: du == null ? 2.2 : null, sustain: 0.55, release: 0.35, gain: 0.26 * v }); const car = V.osc('sine', f, 1), m = c.createOscillator(), mg = c.createGain(); m.frequency.value = f; mg.gain.setValueAtTime(f * 1.6, t); mg.gain.exponentialRampToValueAtTime(f * 0.12, t + 0.9); m.connect(mg).connect(car.frequency); m.start(t); V.srcs.push(m); V.osc('sine', f * 2, 0.08); return V.fin(du); }],
+    violin: ['🎻 Violin', (c, d, f, t, du, v) => { const V = voice(c, d, t, du, { attack: 0.12, sustain: 0.85, release: 0.25, gain: 0.16 * v, chain: [filt(c, 'lowpass', 2800, 1.2, t), filt(c, 'peaking', 1200, 1, t)] }); V.osc('sawtooth', f, 0.7); V.osc('sawtooth', f, 0.5, 6); V.vib(5.6, f * 0.007); return V.fin(du == null ? 1.2 : du); }],
+    cello: ['🎻 Cello', (c, d, f, t, du, v) => { const V = voice(c, d, t, du, { attack: 0.15, sustain: 0.85, release: 0.3, gain: 0.2 * v, chain: [filt(c, 'lowpass', 1500, 1, t)] }); V.osc('sawtooth', f / 2, 0.8); V.osc('sawtooth', f / 2, 0.5, -5); V.vib(5, f * 0.004); return V.fin(du == null ? 1.4 : du); }],
+    strings: ['🎻 Strings', (c, d, f, t, du, v) => { const V = voice(c, d, t, du, { attack: 0.3, sustain: 0.9, release: 0.6, gain: 0.13 * v, chain: [filt(c, 'lowpass', 2400, 0.7, t)] }); for (const dt of [-9, -3, 4, 10]) V.osc('sawtooth', f, 0.35, dt); V.vib(5.2, f * 0.004, 0.3); return V.fin(du == null ? 1.6 : du); }],
+    choir: ['🗣️ Choir (aah)', (c, d, f, t, du, v) => { const out = c.createGain(), mix = c.createGain(); for (const [ff, q, gg] of [[800, 6, 1], [1150, 8, 0.6], [2900, 10, 0.25]]) { const b = filt(c, 'bandpass', ff, q, t), bg = c.createGain(); bg.gain.value = gg * 3; mix.connect(b).connect(bg).connect(out); } out.connect(d); const V = voice(c, mix, t, du, { attack: 0.25, sustain: 0.9, release: 0.5, gain: 0.3 * v }); for (const dt of [-8, 0, 7]) V.osc('sawtooth', f, 0.4, dt); V.vib(5, f * 0.006, 0.25); return V.fin(du == null ? 1.6 : du); }],
+    pad: ['🌌 Space pad', (c, d, f, t, du, v) => { const V = voice(c, d, t, du, { attack: 0.6, sustain: 0.95, release: 1.2, gain: 0.12 * v, chain: [filt(c, 'lowpass', 600, 1, t, 2200, 2)] }); for (const dt of [-12, -4, 5, 13]) V.osc('sawtooth', f, 0.3, dt); V.osc('sine', f / 2, 0.4); return V.fin(du == null ? 2.2 : du); }],
+    flute: ['🪈 Flute', (c, d, f, t, du, v) => { const V = voice(c, d, t, du, { attack: 0.08, sustain: 0.9, release: 0.15, gain: 0.24 * v }); V.osc('sine', f, 0.9); V.osc('triangle', f * 2, 0.06); const n = c.createBufferSource(); n.buffer = Synth.noiseBuf(c); n.loop = true; const bp = filt(c, 'bandpass', f * 2, 3, t), ng = c.createGain(); ng.gain.value = 0.05; n.connect(bp).connect(ng).connect(V.g); n.start(t); V.srcs.push(n); V.vib(5, f * 0.006); return V.fin(du == null ? 1 : du); }],
+    whistle: ['😗 Whistle', (c, d, f, t, du, v) => { const V = voice(c, d, t, du, { attack: 0.05, sustain: 0.9, release: 0.1, gain: 0.2 * v }); const o = V.osc('sine', f * 2, 1); o.frequency.setValueAtTime(f * 1.94, t); o.frequency.linearRampToValueAtTime(f * 2, t + 0.08); V.vib(6, f * 0.02, 0.1); return V.fin(du == null ? 0.8 : du); }],
+    trumpet: ['🎺 Trumpet', (c, d, f, t, du, v) => { const V = voice(c, d, t, du, { attack: 0.04, sustain: 0.8, release: 0.12, gain: 0.17 * v, chain: [filt(c, 'lowpass', 900, 1.5, t, 3200, 0.08)] }); V.osc('sawtooth', f, 0.8); V.osc('square', f, 0.15); V.vib(5.5, f * 0.004, 0.25); return V.fin(du == null ? 0.9 : du); }],
+    sax: ['🎷 Saxophone', (c, d, f, t, du, v) => { const V = voice(c, d, t, du, { attack: 0.05, sustain: 0.85, release: 0.15, gain: 0.17 * v, chain: [filt(c, 'bandpass', 1100, 0.6, t), filt(c, 'lowpass', 3200, 0.7, t)] }); V.osc('square', f, 0.5); V.osc('sawtooth', f, 0.5, 4); V.vib(5, f * 0.006, 0.2); return V.fin(du == null ? 1 : du); }],
+    clarinet: ['🪈 Clarinet', (c, d, f, t, du, v) => { const V = voice(c, d, t, du, { attack: 0.05, sustain: 0.9, release: 0.12, gain: 0.18 * v, chain: [filt(c, 'lowpass', 1900, 0.8, t)] }); V.osc('square', f, 0.8); V.osc('sine', f, 0.3); V.vib(4.5, f * 0.003, 0.3); return V.fin(du == null ? 1 : du); }],
+    accordion: ['🪗 Accordion', (c, d, f, t, du, v) => { const V = voice(c, d, t, du, { attack: 0.04, sustain: 0.95, release: 0.12, gain: 0.12 * v, chain: [filt(c, 'lowpass', 3000, 0.7, t)] }); V.osc('sawtooth', f, 0.5, -7); V.osc('sawtooth', f, 0.5, 7); V.osc('square', f / 2, 0.25); return V.fin(du == null ? 1 : du); }],
+    marimba: ['🪘 Marimba', (c, d, f, t, du, v) => { const V = voice(c, d, t, null, { attack: 0.002, decay: 0.7, gain: 0.7 * v }); V.osc('sine', f, 1); const o = V.osc('sine', f * 4, 0.12); return V.fin(); }],
+    xylo: ['🎼 Xylophone', (c, d, f, t, du, v) => { const V = voice(c, d, t, null, { attack: 0.001, decay: 0.38, gain: 0.75 * v }); V.osc('sine', f * 2, 1); V.osc('sine', f * 6, 0.18); return V.fin(); }],
+    vibes: ['🎶 Vibraphone', (c, d, f, t, du, v) => { const trem = c.createGain(), l = c.createOscillator(), lg = c.createGain(); trem.gain.value = 0.75; l.frequency.value = 5; lg.gain.value = 0.25; l.connect(lg).connect(trem.gain); l.start(t); l.stop(t + 3); const V = voice(c, d, t, null, { attack: 0.002, decay: 2.6, gain: 0.6 * v, chain: [trem] }); V.osc('sine', f, 1); V.osc('sine', f * 4, 0.08); return V.fin(); }],
+    steel: ['🥁 Steel drum', (c, d, f, t, du, v) => { const V = voice(c, d, t, null, { attack: 0.002, decay: 0.95, gain: 0.6 * v }); V.osc('sine', f, 1); V.osc('sine', f * 2.4, 0.35); V.osc('sine', f * 3.9, 0.12); return V.fin(); }],
+    kalimba: ['🎵 Kalimba', (c, d, f, t, du, v) => { const V = voice(c, d, t, null, { attack: 0.001, decay: 1.3, gain: 0.65 * v }); V.osc('sine', f * 2, 1); V.osc('sine', f * 2 * 5.4, 0.1); return V.fin(); }],
+    chip: ['👾 8-bit', (c, d, f, t, du, v) => { const V = voice(c, d, t, du, { attack: 0.002, sustain: 0.8, release: 0.03, gain: 0.12 * v }); V.osc('pulse', f, 1); return V.fin(du == null ? 0.35 : du); }],
+    b808: ['🔊 808 bass', (c, d, f, t, du, v) => { const V = voice(c, d, t, null, { attack: 0.003, decay: 1.4, gain: 0.7 * v }); const o = V.osc('sine', f / 2 * 1.6, 1); o.frequency.exponentialRampToValueAtTime(f / 2, t + 0.08); return V.fin(); }],
+  };
+  Object.assign(Synth.INST, Object.fromEntries(Object.entries(EXTRA).map(([k, [n]]) => [k, n])));
+  const base = Synth.note.bind(Synth);
+  Synth.note = (ctx, dest, inst, freq, t, dur, vel = 1) => EXTRA[inst] ? EXTRA[inst][1](ctx, dest, freq, t, dur, vel) : base(ctx, dest, inst, freq, t, dur, vel);
+})();
+
 /* ---- 22-memos.js ---- */
 /* ===== Voice memos ===== */
 addCSS(`
@@ -1914,11 +2457,68 @@ addCSS(`
 .recbtn{width:84px;height:84px;border-radius:50%;border:5px solid var(--line);background:var(--surface);display:inline-grid;place-items:center;padding:0}
 .recbtn i{display:block;width:62px;height:62px;border-radius:31px;background:#FF3B30;transition:all .2s}
 .recbtn.on i{width:34px;height:34px;border-radius:8px}
+.mplay{width:42px;height:42px;border-radius:50%;border:0;background:linear-gradient(135deg,#FF6B6B,#B5179E);display:grid;place-items:center;flex:0 0 auto;padding:0;box-shadow:0 3px 8px rgba(181,23,158,.3)}
+.mplay svg{width:20px;height:20px;fill:#fff}
 .memo .pbar{height:4px;border-radius:2px;background:var(--surface2);margin-top:6px;overflow:hidden}
 .memo .pbar i{display:block;height:100%;width:0;background:var(--accent)}
 `);
+/* ---------- voice changer + studio: effects made with Web Audio, saved as a new recording ---------- */
+const VoiceFX = {
+  FX: [['normal', '🙂', 'Normal'], ['chipmunk', '🐿️', 'Chipmunk'], ['squeaky', '🐭', 'Squeaky'], ['deep', '🐻', 'Deep'], ['monster', '👹', 'Monster'], ['robot', '🤖', 'Robot'], ['alien', '👽', 'Alien'],
+    ['echo', '🏔️', 'Echo'], ['cave', '🕳️', 'Cave'], ['radio', '📻', 'Radio'], ['underwater', '🐠', 'Underwater'], ['megaphone', '📢', 'Megaphone'], ['reverse', '⏪', 'Backwards']],
+  RATE: { chipmunk: 1.55, squeaky: 2, deep: 0.75, monster: 0.62 },
+  TAIL: { echo: 2.2, cave: 3 },
+  curve(a) { const n = 1024, c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = i / n * 2 - 1; c[i] = (1 + a) * x / (1 + a * Math.abs(x)); } return c; },
+  impulse(ctx, secs) { const sr = ctx.sampleRate, n = Math.floor(sr * secs), b = ctx.createBuffer(2, n, sr); for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2.6); } return b; },
+  // wire src → effect → out, returns nothing
+  chain(ctx, fx, src, out) {
+    const bq = (type, f, q) => { const x = ctx.createBiquadFilter(); x.type = type; x.frequency.value = f; if (q) x.Q.value = q; return x; };
+    const ws = a => { const x = ctx.createWaveShaper(); x.curve = this.curve(a); return x; };
+    const gain = v => { const g = ctx.createGain(); g.gain.value = v; return g; };
+    const ring = (f, mixDry) => { const m = gain(0), o = ctx.createOscillator(); o.frequency.value = f; o.connect(m.gain); o.start(); src.connect(m).connect(out); if (mixDry) src.connect(gain(mixDry)).connect(out); };
+    const wobble = (rate, depth, dry) => { const dl = ctx.createDelay(0.1); dl.delayTime.value = 0.01; const l = ctx.createOscillator(), lg = gain(depth); l.frequency.value = rate; l.connect(lg).connect(dl.delayTime); l.start(); return dl; };
+    switch (fx) {
+      case 'monster': src.connect(ws(2)).connect(bq('lowpass', 1800, 0.7)).connect(gain(0.8)).connect(out); break;
+      case 'robot': ring(55, 0.15); break;
+      case 'alien': { const w = wobble(7, 0.004); src.connect(w); const m = gain(0), o = ctx.createOscillator(); o.frequency.value = 380; o.connect(m.gain); o.start(); w.connect(m).connect(out); w.connect(gain(0.35)).connect(out); break; }
+      case 'echo': { const dl = ctx.createDelay(1), fb = gain(0.45); dl.delayTime.value = 0.3; src.connect(out); src.connect(dl); dl.connect(fb).connect(dl); dl.connect(gain(0.7)).connect(out); break; }
+      case 'cave': { const cv = ctx.createConvolver(); cv.buffer = this.impulse(ctx, 2.6); src.connect(gain(0.7)).connect(out); src.connect(cv).connect(gain(0.6)).connect(out); break; }
+      case 'radio': src.connect(bq('highpass', 380, 0.7)).connect(bq('lowpass', 3000, 0.9)).connect(bq('peaking', 1600, 1)).connect(ws(5)).connect(gain(0.55)).connect(out); break;
+      case 'underwater': { const w = wobble(1.4, 0.006); src.connect(bq('lowpass', 520, 1.2)).connect(w).connect(gain(1.3)).connect(out); break; }
+      case 'megaphone': src.connect(bq('highpass', 700, 0.8)).connect(ws(12)).connect(bq('lowpass', 4200, 0.7)).connect(gain(0.45)).connect(out); break;
+      default: src.connect(out);
+    }
+  },
+  async decode(blob) { const C = window.AudioContext || window.webkitAudioContext, ctx = Sfx.ctx() || new C(); const ab = await blob.arrayBuffer(); return await new Promise((res, rej) => { const p = ctx.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); }); },
+  // the trimmed, faded (and maybe reversed) part of the recording
+  prep(buf, o) {
+    const sr = buf.sampleRate, a = Math.floor((o.start || 0) * sr), b = Math.min(buf.length, Math.floor((o.end == null ? buf.duration : o.end) * sr)), n = Math.max(1, b - a);
+    const C = window.AudioContext || window.webkitAudioContext, tmp = (Sfx.ctx() || new C()).createBuffer(1, n, sr), d = tmp.getChannelData(0);
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) { const s = buf.getChannelData(ch); for (let i = 0; i < n; i++) d[i] += s[a + i] / buf.numberOfChannels; }
+    if (o.fx === 'reverse') d.reverse();
+    const fi = Math.min(n, Math.floor(sr * 0.8)); if (o.fadeIn) for (let i = 0; i < fi; i++) d[i] *= i / fi;
+    if (o.fadeOut) for (let i = 0; i < fi; i++) d[n - 1 - i] *= i / fi;
+    return tmp;
+  },
+  async render(buf, o) {
+    const src0 = this.prep(buf, o), rate = this.RATE[o.fx] || 1, sr = 44100, secs = src0.duration / rate + (this.TAIL[o.fx] || 0.2);
+    const C = window.OfflineAudioContext || window.webkitOfflineAudioContext, ctx = new C(1, Math.ceil(secs * sr), sr);
+    const out = ctx.createGain(); out.connect(ctx.destination);
+    const src = ctx.createBufferSource(); src.buffer = src0; src.playbackRate.value = rate; this.chain(ctx, o.fx, src, out); src.start(0);
+    if (o.music) { const mb = await this.decode(o.music); const m = ctx.createBufferSource(); m.buffer = mb; m.loop = true; const mg = ctx.createGain(); mg.gain.value = 0.22; mg.gain.setValueAtTime(0.22, Math.max(0, secs - 1.2)); mg.gain.linearRampToValueAtTime(0, secs); m.connect(mg).connect(ctx.destination); m.start(0); }
+    const res = await ctx.startRendering();
+    if (o.louder) { const d = res.getChannelData(0); let pk = 0; for (const x of d) pk = Math.max(pk, Math.abs(x)); if (pk > 0.001) { const k = 0.95 / pk; for (let i = 0; i < d.length; i++) d[i] *= k; } }
+    return res;
+  },
+  // live preview through the speakers
+  preview(buf, o) {
+    const ctx = Sfx.ctx(); if (!ctx) return () => { };
+    const src0 = this.prep(buf, o), src = ctx.createBufferSource(), out = ctx.createGain(); src.buffer = src0; src.playbackRate.value = this.RATE[o.fx] || 1; out.connect(ctx.destination); this.chain(ctx, o.fx, src, out); src.start();
+    return () => { try { src.stop(); } catch (e) { } try { out.disconnect(); } catch (e) { } };
+  },
+};
 Apps.reg({
-  id: 'memos', name: 'Voice Memos', icon: '🎙️', color: 'linear-gradient(135deg,#FF6B6B,#B5179E)', group: 'make', keys: 'record voice audio microphone', blurb: 'Record your voice',
+  id: 'memos', name: 'Voice Memos', icon: '🎙️', color: 'linear-gradient(135deg,#FF6B6B,#B5179E)', group: 'make', keys: 'record voice audio microphone changer effects robot chipmunk studio', blurb: 'Record your voice',
   mount(v, ctx) {
     let rec = null, stream = null, chunks = [], t0 = 0, acc = 0, timer = null, raf = null, an = null, src = null;
     const audio = new Audio(); audio.setAttribute('playsinline', ''); let playing = null, speed = 1;
@@ -1965,17 +2565,48 @@ Apps.reg({
       if (!all.length) { list.append(UI.empty('🎙️', 'No recordings yet', 'Your voice memos will show up here.')); return; }
       list.append(h('div', { class: 'list' }, all.map(m => {
         const bar = h('i'), isP = playing === m.id;
-        const pb = h('button', { class: 'ic', style: { border: 0 }, 'aria-label': isP && !audio.paused ? 'Pause' : 'Play' }, isP && !audio.paused ? '⏸' : '▶️');
+        const pb = h('button', { class: 'mplay', 'aria-label': isP && !audio.paused ? 'Pause' : 'Play', html: isP && !audio.paused ? '<svg viewBox="0 0 24 24"><rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"/></svg>' });
         pb.onclick = () => { if (playing === m.id) { audio.paused ? audio.play() : audio.pause(); } else { if (audio.src) URL.revokeObjectURL(audio.src); audio.src = URL.createObjectURL(m.blob); audio.playbackRate = speed; audio.play().catch(() => UI.toast('This recording can’t play on this device')); playing = m.id; } setTimeout(draw, 50); };
         if (isP) audio.ontimeupdate = () => { bar.style.width = (100 * audio.currentTime / (m.dur || audio.duration || 1)) + '%'; };
         return h('div', { class: 'li memo' }, pb, h('div', { class: 't' }, h('b', null, m.name), h('small', null, fmtDay(new Date(m.created)) + ' · ' + fmtTime(new Date(m.created)) + ' · ' + fmtDur(m.dur)), isP ? h('div', { class: 'pbar' }, bar) : null),
           isP ? h('button', { class: 'btn sm', onclick: () => { speed = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1; audio.playbackRate = speed; draw(); } }, speed + '×') : null,
+          h('button', { class: 'btn sm', 'aria-label': 'Studio and voice changer', onclick: () => studio(m) }, '🎛️'),
           h('button', { class: 'ib', 'aria-label': 'Memo options', html: SVG.more, onclick: () => UI.menu(m.name, [
+            { icon: '🎛️', label: 'Studio & voice changer', sub: 'Robot, chipmunk, echo, trim, music…', run: () => studio(m) },
             { icon: '✏️', label: 'Rename', run: async () => { const t = await UI.prompt('Name', { value: m.name }); if (t && t.trim()) { m.name = t.trim(); await DB.put('memos', m); draw(); } } },
             { icon: '📤', label: 'Share or save', run: () => saveFile(m.blob, m.name + (m.type.includes('mp4') ? '.m4a' : m.type.includes('ogg') ? '.ogg' : '.webm')) },
             { icon: '🗑️', label: 'Delete', danger: true, run: async () => { if (await UI.ask('Delete “' + m.name + '”?', { ok: 'Delete', danger: true })) { if (playing === m.id) { audio.pause(); playing = null; } await DB.del('memos', m.id); draw(); } } },
           ]) }));
       })));
+    }
+    async function studio(m) {
+      let buf; UI.toast('Opening the studio…');
+      try { buf = await VoiceFX.decode(m.blob); } catch (e) { UI.toast('This recording can’t be opened in the studio on this device'); return; }
+      const o = { fx: 'normal', start: 0, end: buf.duration, fadeIn: false, fadeOut: false, louder: true, music: null }; let stopP = null;
+      const cv = h('canvas', { width: 640, height: 110, style: { width: '100%', height: '90px', display: 'block', borderRadius: '12px', background: 'var(--surface2)' } }), g = cv.getContext('2d');
+      const peaks = (() => { const d = buf.getChannelData(0), n = 160, step = Math.floor(d.length / n), p = []; for (let i = 0; i < n; i++) { let mx = 0; for (let j = 0; j < step; j++) mx = Math.max(mx, Math.abs(d[i * step + j] || 0)); p.push(mx); } return p; })();
+      const paintW = () => { const W = cv.width, H = cv.height, mx = Math.max(...peaks, 0.01); g.clearRect(0, 0, W, H); peaks.forEach((p, i) => { const x = i / peaks.length * W, on = x / W * buf.duration >= o.start && x / W * buf.duration <= o.end; g.fillStyle = on ? '#2F6BFF' : 'rgba(128,132,150,.4)'; const bh = Math.max(2, p / mx * H * 0.9); g.fillRect(x, (H - bh) / 2, W / peaks.length - 1, bh); }); };
+      const st = h('input', { type: 'range', min: 0, max: buf.duration, step: 0.05, value: 0, 'aria-label': 'Start' }), en = h('input', { type: 'range', min: 0, max: buf.duration, step: 0.05, value: buf.duration, 'aria-label': 'End' }), trimL = h('div', { class: 'small muted center' });
+      const syncT = () => { o.start = Math.min(+st.value, +en.value - 0.2); o.end = Math.max(+en.value, o.start + 0.2); trimL.textContent = '✂️ Keep ' + fmtDur(o.start) + ' → ' + fmtDur(o.end) + ' (' + (o.end - o.start).toFixed(1) + ' s)'; paintW(); }; st.oninput = en.oninput = syncT;
+      const fxBox = h('div', { class: 'chips' }), drawFx = () => { fxBox.innerHTML = ''; for (const [k, e, n] of VoiceFX.FX) fxBox.append(h('button', { class: 'chip', 'aria-pressed': String(o.fx === k), onclick: () => { o.fx = k; drawFx(); play(); } }, e + ' ' + n)); };
+      const tog = (k, l) => { const b = h('button', { class: 'chip', 'aria-pressed': String(o[k]) }, l); b.onclick = () => { o[k] = !o[k]; b.setAttribute('aria-pressed', String(o[k])); }; return b; };
+      const mus = h('select', { 'aria-label': 'Background music' }, [h('option', { value: '' }, '🔇 No music'), ...TUNES.map(t => h('option', { value: t.id }, t.icon + ' ' + t.name))]);
+      mus.onchange = async () => { o.music = mus.value ? await renderTune(TUNES.find(t => t.id === mus.value)) : null; };
+      const playB = h('button', { class: 'btn pri' }, '▶ Preview');
+      const play = () => { if (stopP) { stopP(); stopP = null; } stopP = VoiceFX.preview(buf, o); playB.textContent = '⏹ Stop'; const len = (o.end - o.start) / (VoiceFX.RATE[o.fx] || 1) * 1000 + 300; clearTimeout(play.t); play.t = setTimeout(() => { playB.textContent = '▶ Preview'; stopP = null; }, len); };
+      playB.onclick = () => { if (stopP) { stopP(); stopP = null; playB.textContent = '▶ Preview'; } else play(); };
+      drawFx(); syncT();
+      UI.sheet({ title: '🎛️ Studio · ' + m.name, onClose: () => { if (stopP) stopP(); }, body: h('div', { class: 'stack' },
+        h('div', { class: 'sec', style: { margin: 0 } }, '🎭 Voice changer'), fxBox,
+        h('div', { class: 'sec', style: { margin: '6px 0 0' } }, '✂️ Trim'), cv, h('label', { class: 'f' }, h('span', null, 'Start'), st), h('label', { class: 'f' }, h('span', null, 'End'), en), trimL,
+        h('div', { class: 'sec', style: { margin: '6px 0 0' } }, '🎚️ Polish'), h('div', { class: 'chips' }, tog('louder', '🔊 Louder'), tog('fadeIn', '🌅 Fade in'), tog('fadeOut', '🌇 Fade out')),
+        h('label', { class: 'f' }, h('span', null, '🎵 Background music'), mus), h('div', { class: 'center' }, playB)),
+        actions: [{ label: 'Cancel' }, { label: '💾 Save as new', cls: 'pri', onClick: async c => {
+          if (stopP) stopP(); UI.toast('Making your recording…');
+          try { const res = await VoiceFX.render(buf, o), blob = Synth.wav(res), fx = VoiceFX.FX.find(x => x[0] === o.fx);
+            await DB.put('memos', { id: uid(), name: m.name + (o.fx !== 'normal' ? ' (' + fx[2] + ')' : ' (edit)'), blob, type: 'audio/wav', dur: res.duration, size: blob.size, created: Date.now() }); Sfx.good(); UI.toast('Saved ✓'); c(); draw(); }
+          catch (e) { console.error(e); UI.toast('Couldn’t save: ' + e.message); }
+        } }] });
     }
     audio.onended = () => { playing = null; draw(); };
     draw();
@@ -2318,7 +2949,7 @@ addCSS(`
 `);
 const BLOCKED_SITES = /(^|\.)(youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com|fb\.watch|twitter\.com|x\.com|snapchat\.com|twitch\.tv|vimeo\.com|netflix\.com|disneyplus\.com|reddit\.com|roblox\.com)$/i;
 Apps.reg({
-  id: 'videos', name: 'Videos', icon: '🎬', color: 'linear-gradient(135deg,#FF416C,#8E2DE2)', group: 'make', keys: 'movies clips watch player download link', blurb: 'Watch and save videos',
+  id: 'videos', name: 'Videos', icon: '🎬', color: 'linear-gradient(135deg,#FF416C,#8E2DE2)', group: 'make', keys: 'movies clips watch player download link captions cc subtitles swipe reels make video maker', blurb: 'Watch and save videos',
   mount(v, ctx) {
     let urlNow = null;
     const pos = id => Prefs.get('vpos', {})[id] || 0, setPos = (id, t, d) => { const p = Prefs.get('vpos', {}); if (t < 3 || (d && t > d - 3)) delete p[id]; else p[id] = t; Prefs.set('vpos', p); };
@@ -2328,6 +2959,9 @@ Apps.reg({
       ctx.setActions(h('button', { class: 'btn ghost sm', onclick: add }, '＋ Add'));
       const all = (await DB.all('media')).filter(m => m.kind === 'video').sort((a, b) => b.created - a.created);
       const watch = () => typeof Links !== 'undefined' ? Links.row('Videos', '📺 Watch online') : '';
+      const tools = () => h('div', { class: 'grid2 mb' }, h('button', { class: 'bigbtn', style: { minHeight: '84px', background: 'linear-gradient(135deg,#FF416C,#8E2DE2)', color: '#fff', border: 0 }, onclick: async () => { const vs = (await DB.all('media')).filter(m => m.kind === 'video').sort((a, b) => b.created - a.created); VFeed.open(vs); } }, h('span', { class: 'e' }, '📱'), h('b', null, 'Swipe'), h('small', { style: { color: 'rgba(255,255,255,.9)' } }, 'Scroll your videos')),
+        h('button', { class: 'bigbtn', style: { minHeight: '84px', background: 'linear-gradient(135deg,#2F6BFF,#FF2E4D)', color: '#fff', border: 0 }, onclick: () => VMaker.open(list) }, h('span', { class: 'e' }, '🎬'), h('b', null, 'Make a video'), h('small', { style: { color: 'rgba(255,255,255,.9)' } }, 'From photos or a title')));
+      v.append(tools());
       if (!all.length) { v.append(UI.empty('🎬', 'No videos yet', 'Add videos from your library, record one, or paste a link to a video file.'), h('div', { class: 'center' }, h('button', { class: 'btn pri', onclick: add }, '＋ Add a video')), watch()); return; }
       const thumb = m => h('div', { class: 'vthumb' }, m.thumb ? h('img', { src: m.thumb, alt: '' }) : '🎬', m.dur ? h('span', { class: 'd' }, fmtDur(m.dur)) : null, pos(m.id) && m.dur ? h('span', { class: 'pg', style: { width: (100 * pos(m.id) / m.dur) + '%' } }) : null);
       const cont = all.filter(m => pos(m.id));
@@ -2389,7 +3023,8 @@ Apps.reg({
       const speedB = h('div', { class: 'chips' }, [0.5, 1, 1.25, 1.5, 2].map(r => h('button', { class: 'chip', 'aria-pressed': String(r === 1), onclick: e => { vid.playbackRate = r; $$('.chip', speedB).forEach(b => b.setAttribute('aria-pressed', String(b === e.currentTarget))); } }, r + '×')));
       const loopB = h('button', { class: 'chip', 'aria-pressed': String(loop), onclick: () => { loop = !loop; vid.loop = loop; Prefs.set('vloop', loop); loopB.setAttribute('aria-pressed', String(loop)); } }, '🔁 Loop');
       const pip = (document.pictureInPictureEnabled || vid.webkitSupportsPresentationMode) ? h('button', { class: 'chip', onclick: () => { try { if (vid.webkitSetPresentationMode) vid.webkitSetPresentationMode('picture-in-picture'); else vid.requestPictureInPicture(); } catch (e) { UI.toast('Picture in picture isn’t available'); } } }, '⧉ Picture in picture') : null;
-      v.append(h('div', { class: 'vplayer' }, vid), h('div', { class: 'row mt' }, h('span', { class: 'small muted' }, 'Speed'), speedB), h('div', { class: 'row mt' }, loopB, pip, h('button', { class: 'chip', onclick: () => { vid.currentTime = Math.max(0, vid.currentTime - 10); } }, '⏪ 10s'), h('button', { class: 'chip', onclick: () => { vid.currentTime += 10; } }, '10s ⏩')),
+      const cc = Caps.overlay(vid, m), ccB = h('button', { class: 'chip', 'aria-pressed': String(Prefs.get('ccOn', true)), onclick: () => { const on = !Prefs.get('ccOn', true); Prefs.set('ccOn', on); ccB.setAttribute('aria-pressed', String(on)); cc.paint(); } }, 'CC');
+      v.append(h('div', { class: 'vplayer' }, vid, cc), h('div', { class: 'row mt' }, ccB, h('button', { class: 'chip', onclick: () => Caps.editor(m, vid, () => cc.paint()) }, '💬 Captions' + (m.caps && m.caps.length ? ' (' + m.caps.length + ')' : '')), h('button', { class: 'chip', onclick: () => { save(); VFeed.open(all, Math.max(0, all.indexOf(m))); vid.pause(); } }, '📱 Swipe')), h('div', { class: 'row mt' }, h('span', { class: 'small muted' }, 'Speed'), speedB), h('div', { class: 'row mt' }, loopB, pip, h('button', { class: 'chip', onclick: () => { vid.currentTime = Math.max(0, vid.currentTime - 10); } }, '⏪ 10s'), h('button', { class: 'chip', onclick: () => { vid.currentTime += 10; } }, '10s ⏩')),
         nextV ? h('div', null, h('div', { class: 'sec' }, 'Up next'), h('button', { class: 'vcard', style: { width: '100%' }, onclick: () => { save(); clearInterval(tsave); play(nextV, all); } }, h('div', { class: 'vthumb' }, nextV.thumb ? h('img', { src: nextV.thumb, alt: '' }) : '🎬'), h('b', null, nextV.name || 'Video'))) : null);
       if (ctx._clean) ctx._clean(); ctx._clean = () => { save(); clearInterval(tsave); vid.pause(); };
     }
@@ -2397,6 +3032,159 @@ Apps.reg({
     return () => { if (ctx._clean) ctx._clean(); if (urlNow) URL.revokeObjectURL(urlNow); };
   },
 });
+
+/* ---- 25b-video-extra.js ---- */
+/* ===== Videos extra: CC captions, a swipe-up feed, and a video maker ===== */
+addCSS(`
+.vplayer{position:relative}
+.ccbox{position:absolute;left:6%;right:6%;bottom:14%;text-align:center;pointer-events:none;z-index:2}
+.ccbox span{display:inline;background:rgba(0,0,0,.78);color:#fff;font-weight:700;font-size:clamp(14px,4vw,22px);line-height:1.5;padding:2px 8px;border-radius:6px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.vfeed{position:fixed;inset:0;z-index:46;background:#000;overflow-y:auto;scroll-snap-type:y mandatory;overscroll-behavior:contain;scrollbar-width:none}
+.vfeed::-webkit-scrollbar{display:none}
+.vfeed .it{position:relative;height:100vh;height:100dvh;scroll-snap-align:start;scroll-snap-stop:always;display:grid;place-items:center;overflow:hidden}
+.vfeed video{width:100%;height:100%;object-fit:contain;background:#000}
+.vfeed .side{position:absolute;right:10px;bottom:calc(env(safe-area-inset-bottom) + 110px);display:flex;flex-direction:column;gap:16px;z-index:3}
+.vfeed .side button{width:50px;height:50px;border-radius:50%;border:0;background:rgba(255,255,255,.18);color:#fff;font-size:22px;font-weight:800;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.vfeed .side button[aria-pressed="true"]{background:#fff;color:#000}
+.vfeed .meta{position:absolute;left:14px;right:80px;bottom:calc(env(safe-area-inset-bottom) + 28px);color:#fff;z-index:3;text-shadow:0 1px 4px #000}
+.vfeed .meta b{display:block;font-size:17px}
+.vfeed .vtop{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:12px;right:12px;display:flex;align-items:center;gap:10px;z-index:4;color:#fff;font-weight:800;text-shadow:0 1px 4px #000;pointer-events:none}
+.vfeed .vtop .ib{pointer-events:auto;background:rgba(0,0,0,.4);color:#fff}
+.vfeed .tap{position:absolute;inset:0;z-index:2}
+.vfeed .ccbox{bottom:22%}
+.vfeed .pp{position:absolute;inset:0;display:grid;place-items:center;font-size:70px;color:#fff;pointer-events:none;opacity:0;transition:opacity .2s;z-index:2}
+.vfeed .pp.on{opacity:.85}
+.vmake canvas{width:100%;max-width:300px;display:block;margin:0 auto;border-radius:14px;background:#000}
+`);
+const Caps = {
+  parse(text) {
+    const tm = s => { const m = s.trim().replace(',', '.').match(/(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)/); return m ? (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]) : 0; }, out = [];
+    for (const block of text.replace(/\r/g, '').split(/\n\s*\n/)) { const lines = block.split('\n').filter(Boolean), i = lines.findIndex(l => l.includes('-->')); if (i < 0) continue; const [a, b] = lines[i].split('-->'); const t = lines.slice(i + 1).join('\n').replace(/<[^>]+>/g, '').trim(); if (t) out.push({ s: tm(a), e: tm(b), t }); }
+    return out.sort((x, y) => x.s - y.s);
+  },
+  srt(caps) { const f = x => { const ms = Math.round(x * 1000), h2 = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, s = Math.floor(ms / 1000) % 60; return pad2(h2) + ':' + pad2(m) + ':' + pad2(s) + ',' + String(ms % 1000).padStart(3, '0'); }; return caps.map((c, i) => (i + 1) + '\n' + f(c.s) + ' --> ' + f(c.e) + '\n' + c.t + '\n').join('\n'); },
+  at(caps, t) { return (caps || []).find(c => t >= c.s && t <= c.e); },
+  overlay(vid, m) {
+    const box = h('div', { class: 'ccbox', 'aria-live': 'polite' }), span = h('span'); box.append(span);
+    const paint = () => { const on = Prefs.get('ccOn', true), c = on && this.at(m.caps, vid.currentTime); span.textContent = c ? c.t : ''; box.hidden = !c; };
+    vid.addEventListener('timeupdate', paint); paint(); box.paint = paint; return box;
+  },
+  editor(m, vid, after) {
+    const list = h('div'), inp = h('input', { type: 'text', placeholder: 'Type what is said right now…', enterkeyhint: 'done' });
+    m.caps = m.caps || [];
+    const save = async () => { m.caps.sort((a, b) => a.s - b.s); await DB.put('media', m); after && after(); };
+    const draw = () => { list.innerHTML = ''; if (!m.caps.length) return list.append(h('p', { class: 'small muted' }, 'No captions yet. Play the video, pause where someone talks, type it, and tap Add.'));
+      list.append(h('div', { class: 'list' }, m.caps.map((c, i) => h('div', { class: 'li' }, h('button', { class: 'btn sm', onclick: () => { vid.currentTime = c.s; } }, fmtDur(c.s)), h('input', { type: 'text', value: c.t, style: { flex: 1, minWidth: 0 }, onchange: e => { c.t = e.target.value; save(); } }), h('button', { class: 'ib', 'aria-label': 'Delete caption', onclick: () => { m.caps.splice(i, 1); save(); draw(); } }, '✕'))))); };
+    const add = () => { const t = inp.value.trim(); if (!t) return; const s0 = Math.max(0, vid.currentTime - 0.3); m.caps.push({ s: s0, e: s0 + Math.max(2, Math.min(6, t.split(/\s+/).length * 0.45)), t }); inp.value = ''; save(); draw(); };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') add(); });
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let rec = null;
+    const listenB = SR ? h('button', { class: 'btn sm' }, '🎤 Listen & caption') : null;
+    if (listenB) listenB.onclick = () => {
+      if (rec) { rec.stop(); return; }
+      rec = new SR(); rec.continuous = true; rec.interimResults = false; rec.lang = navigator.language || 'en-US'; let segStart = vid.currentTime;
+      rec.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) { const t = e.results[i][0].transcript.trim(); if (t) { m.caps.push({ s: Math.max(0, segStart), e: Math.max(segStart + 1.5, vid.currentTime), t }); save(); draw(); } segStart = vid.currentTime; } };
+      rec.onend = () => { rec = null; listenB.textContent = '🎤 Listen & caption'; vid.pause(); };
+      rec.onerror = ev => UI.toast(ev.error === 'not-allowed' ? 'Microphone not allowed' : 'Listening needs internet on this device');
+      try { rec.start(); listenB.textContent = '⏹ Stop listening'; vid.muted = false; vid.play(); UI.toast('Playing out loud and listening… keep it quiet around you', 3500); } catch (e) { rec = null; }
+    };
+    draw();
+    UI.sheet({ title: '💬 Captions (CC)', body: h('div', { class: 'stack' }, h('div', { class: 'row nw' }, inp, h('button', { class: 'btn pri', onclick: add }, 'Add at ' + fmtDur(vid.currentTime))), list,
+      h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: async () => { const [f] = await pickFiles('.srt,.vtt,text/vtt', { multiple: false }); if (!f) return; const cs = this.parse(await f.text()); if (!cs.length) return UI.toast('No captions found in that file'); m.caps = cs; await save(); draw(); UI.toast('Loaded ' + cs.length + ' captions'); } }, '📂 Load .srt / .vtt'),
+        m.caps.length ? h('button', { class: 'btn sm', onclick: () => saveFile(new Blob([this.srt(m.caps)], { type: 'text/plain' }), (m.name || 'video').replace(/\.[^.]+$/, '') + '.srt') }, '📤 Save .srt') : null, listenB),
+      h('p', { class: 'tiny muted' }, listenB ? '🎤 “Listen & caption” plays the video out loud and writes what it hears. It works best in a quiet room and needs internet on iPhone.' : 'Tip: load a caption file (.srt) if you have one.')), onClose: () => { if (rec) rec.stop(); } });
+  },
+};
+/* ---------- swipe-up feed ---------- */
+const VFeed = {
+  open(all, start = 0) {
+    if (!all.length) return UI.toast('No videos yet');
+    let muted = false; const urls = [], el = h('div', { class: 'vfeed', role: 'dialog', 'aria-label': 'Video feed' }), counter = h('span');
+    const top = h('div', { class: 'vtop' }, h('button', { class: 'ib', 'aria-label': 'Close', html: SVG.close, onclick: () => close() }), h('span', null, '📱 Your videos'), h('span', { style: { flex: 1 } }), counter);
+    const items = all.map((m, i) => {
+      const vid = h('video', { playsinline: '', loop: '', preload: 'metadata' }); vid.setAttribute('playsinline', ''); vid.loop = true;
+      const pp = h('div', { class: 'pp' }, '▶'), cc = Caps.overlay(vid, m);
+      const ccB = h('button', { 'aria-label': 'Captions', 'aria-pressed': String(Prefs.get('ccOn', true)), onclick: () => { const on = !Prefs.get('ccOn', true); Prefs.set('ccOn', on); el.querySelectorAll('.ccb').forEach(b => b.setAttribute('aria-pressed', String(on))); cc.paint(); } }, 'CC'); ccB.classList.add('ccb');
+      const favB = h('button', { 'aria-label': 'Favorite', 'aria-pressed': String(!!m.fav), onclick: async () => { m.fav = !m.fav; favB.setAttribute('aria-pressed', String(m.fav)); favB.textContent = m.fav ? '❤️' : '🤍'; await DB.put('media', m); } }, m.fav ? '❤️' : '🤍');
+      const snd = h('button', { class: 'sndb', 'aria-label': 'Sound on or off', onclick: () => { muted = !muted; el.querySelectorAll('video').forEach(v2 => v2.muted = muted); el.querySelectorAll('.sndb').forEach(b => b.textContent = muted ? '🔇' : '🔊'); } }, '🔊');
+      const it = h('div', { class: 'it', 'data-i': i }, vid, cc, pp, h('div', { class: 'tap', onclick: () => { if (vid.paused) { vid.play().catch(() => { }); pp.classList.remove('on'); } else { vid.pause(); pp.classList.add('on'); } } }),
+        h('div', { class: 'side' }, favB, ccB, snd, h('button', { 'aria-label': 'Captions editor', onclick: () => Caps.editor(m, vid, () => cc.paint()) }, '💬')),
+        h('div', { class: 'meta' }, h('b', null, m.name || 'Video'), h('small', null, fmtDay(new Date(m.created)) + (m.dur ? ' · ' + fmtDur(m.dur) : ''))));
+      it.vid = vid; it.m = m; return it;
+    });
+    el.append(top, ...items); document.body.append(el);
+    const load = it => { if (!it.vid.src) { const u = URL.createObjectURL(it.m.blob); urls.push(u); it.vid.src = u; } };
+    const io = new IntersectionObserver(es => { for (const e of es) { const it = e.target, i = +it.dataset.i; if (e.isIntersecting && e.intersectionRatio > 0.6) { load(it); [items[i + 1], items[i - 1]].forEach(x => x && load(x)); it.vid.muted = muted; it.vid.play().catch(() => { it.vid.muted = true; muted = true; el.querySelectorAll('.sndb').forEach(b => b.textContent = '🔇'); it.vid.play().catch(() => { }); }); counter.textContent = (i + 1) + ' / ' + items.length; } else it.vid.pause(); } }, { root: el, threshold: [0, 0.6, 1] });
+    items.forEach(it => io.observe(it));
+    load(items[start]); requestAnimationFrame(() => { el.scrollTop = items[start].offsetTop; });
+    const key = e => { if (e.key === 'Escape') close(); }; addEventListener('keydown', key);
+    function close() { io.disconnect(); items.forEach(it => { it.vid.pause(); it.vid.removeAttribute('src'); }); urls.forEach(u => URL.revokeObjectURL(u)); removeEventListener('keydown', key); el.remove(); }
+    return { close };
+  },
+};
+/* ---------- video maker: photos (or just a title) + music → a new video ---------- */
+const VMaker = {
+  TEMPLATES: [['slides', '🖼️ Photo slideshow', 'Your photos with smooth zooms and a title'], ['intro', '✨ Title intro', 'Big animated text — great for the start of a video'], ['party', '🎉 Emoji party', 'Flying emojis and your words']],
+  async open(done) {
+    let tpl = 'slides', photos = [], title = 'My video', emoji = '🔥', tune = TUNES[0].id, per = 3, busy = false;
+    const pv = h('canvas', { width: 360, height: 640 }), pg = pv.getContext('2d');
+    const photoInfo = h('div', { class: 'small muted' });
+    const tIn = h('input', { type: 'text', value: title, maxlength: 40, oninput: e => { title = e.target.value; } }), eIn = h('input', { type: 'text', value: emoji, maxlength: 4, style: { width: '70px', textAlign: 'center', fontSize: '22px' }, oninput: e => { emoji = e.target.value || '🔥'; } });
+    const tSel = h('select', null, TUNES.map(t => h('option', { value: t.id }, t.icon + ' ' + t.name)).concat(h('option', { value: '' }, '🔇 No music'))); tSel.onchange = () => { tune = tSel.value; };
+    const pickPh = async () => {
+      const lib = (await DB.all('media')).filter(m => m.kind !== 'video').sort((a, b) => b.created - a.created).slice(0, 40);
+      const chosen = new Set(photos.map(p => p.id)), grid = h('div', { class: 'gal' }, lib.map(m => { const b = h('button', { style: { outline: chosen.has(m.id) ? '3px solid var(--accent)' : 'none' } }, m.thumb ? h('img', { src: m.thumb, alt: '' }) : '🖼️'); b.onclick = () => { if (chosen.has(m.id)) chosen.delete(m.id); else chosen.add(m.id); b.style.outline = chosen.has(m.id) ? '3px solid var(--accent)' : 'none'; }; return b; }));
+      UI.sheet({ title: 'Pick photos', body: h('div', null, lib.length ? grid : UI.empty('🖼️', 'No photos in Super One yet'), h('div', { class: 'center mt' }, h('button', { class: 'btn', onclick: async e => { const fs = await pickFiles('image/*'); if (fs.length) { await Media.add(fs); e.target.closest('.scrim').remove(); pickPh(); } } }, '＋ Add from my library'))),
+        actions: [{ label: 'Done', cls: 'pri', onClick: c => { photos = lib.filter(m => chosen.has(m.id)); photoInfo.textContent = photos.length ? photos.length + ' photos · about ' + Math.round(photos.length * per + 2) + ' seconds' : 'No photos picked'; c(); } }] });
+    };
+    const tplBox = h('div', { class: 'list' }), drawT = () => { tplBox.innerHTML = ''; for (const [k, n, d] of this.TEMPLATES) tplBox.append(h('button', { class: 'li', style: tpl === k ? { background: 'var(--accent-soft)' } : null, onclick: () => { tpl = k; drawT(); phRow.hidden = k !== 'slides'; } }, h('span', { class: 'ic' }, n.split(' ')[0]), h('span', { class: 't' }, h('b', null, n.slice(n.indexOf(' ') + 1)), h('small', null, d)), h('span', { class: 'chev' }, tpl === k ? '✓' : ''))); };
+    const phRow = h('div', { class: 'row' }, h('button', { class: 'btn', onclick: pickPh }, '🖼️ Pick photos'), photoInfo); drawT();
+    const prog = h('div', { class: 'prog', hidden: true }, h('i', { style: { width: '0%' } }));
+    UI.sheet({ title: '🎬 Make a video', body: h('div', { class: 'stack vmake' }, tplBox, phRow, h('div', { class: 'row nw' }, eIn, h('label', { class: 'f', style: { flex: 1 } }, h('span', null, 'Title'), tIn)), h('label', { class: 'f' }, h('span', null, '🎵 Music'), tSel), pv, prog,
+      h('p', { class: 'tiny muted' }, 'The video is made right on your device while you watch. It’s saved in Videos and Photos.')),
+      actions: [{ label: 'Close' }, { label: '🎬 Make it!', cls: 'pri', onClick: async c => {
+        if (busy) return; if (tpl === 'slides' && !photos.length) return UI.toast('Pick some photos first');
+        busy = true; prog.hidden = false; try { const blob = await this.make({ tpl, photos, title, emoji, tune, per }, pv, f => { prog.firstChild.style.width = Math.round(f * 100) + '%'; });
+          const ext = blob.type.includes('mp4') ? '.mp4' : '.webm'; await Media.add([new File([blob], (title || 'My video').slice(0, 30) + ext, { type: blob.type })]); Sfx.win(); UI.toast('Your video is ready 🎉'); c(); done && done(); }
+        catch (e) { console.error(e); UI.toast('Couldn’t make the video: ' + e.message, 4000); } busy = false;
+      } }] });
+    this.frame(pv, pg, { tpl, title, emoji }, 0.4, []);
+  },
+  // draw one frame at time t (seconds)
+  frame(cv, g, o, t, imgs, total = 6) {
+    const W = cv.width, H = cv.height; g.save(); g.clearRect(0, 0, W, H);
+    const bg = g.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#2F6BFF'); bg.addColorStop(1, '#FF2E4D'); g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    const k = W / 360, txt = (s, y, size, a = 1) => { g.globalAlpha = a; g.font = '900 ' + size * k + 'px system-ui,-apple-system,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 8 * k; g.strokeStyle = 'rgba(0,0,0,.35)'; g.strokeText(s, W / 2, y); g.fillStyle = '#fff'; g.fillText(s, W / 2, y); g.globalAlpha = 1; };
+    if (o.tpl === 'slides' && imgs.length) {
+      const per = o.per || 3, i = Math.min(imgs.length - 1, Math.floor(Math.max(0, t - 1.2) / per)), lt = Math.max(0, t - 1.2 - i * per) / per, im = imgs[i];
+      if (im && t > 1.2) { const s = Math.max(W / im.width, H / im.height) * (1.05 + lt * 0.12), x = (W - im.width * s) / 2 + (i % 2 ? -1 : 1) * lt * 18 * k, y = (H - im.height * s) / 2; g.globalAlpha = Math.min(1, lt * 4, (1 - lt) * 6 + 0.001); g.drawImage(im, x, y, im.width * s, im.height * s); g.globalAlpha = 1; }
+      if (t < 1.6) txt(o.title, H / 2, 40, Math.min(1, t * 2, (1.6 - t) * 3));
+    } else if (o.tpl === 'party') {
+      for (let n = 0; n < 26; n++) { const r = seeded(n * 7 + 3), sp = 60 + r() * 120, x = (r() * W + Math.sin(t * 2 + n) * 30 * k), y = ((r() * H * 1.2) - t * sp * k) % (H * 1.2); g.font = (24 + r() * 40) * k + 'px system-ui'; g.textAlign = 'center'; g.fillText(o.emoji || '🎉', x, (y + H * 1.2) % (H * 1.2) - H * 0.1); }
+      txt(o.title, H / 2 + Math.sin(t * 3) * 8 * k, 42 + Math.sin(t * 4) * 3);
+    } else {
+      const p = Math.min(1, t / 1.2), s = 0.6 + 0.4 * (1 - Math.pow(1 - p, 3)); g.translate(W / 2, H / 2); g.scale(s, s); g.rotate((1 - p) * -0.2); g.translate(-W / 2, -H / 2);
+      g.font = 120 * k + 'px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(o.emoji || '✨', W / 2, H / 2 - 110 * k);
+      txt(o.title, H / 2 + 40 * k, 44); g.setTransform(1, 0, 0, 1, 0, 0);
+      for (let n = 0; n < 12; n++) { const a = n / 12 * 6.283 + t, r2 = (60 + t * 70) * k; g.fillStyle = 'rgba(255,255,255,' + Math.max(0, 0.6 - t * 0.12) + ')'; g.beginPath(); g.arc(W / 2 + Math.cos(a) * r2, H / 2 + Math.sin(a) * r2, 5 * k, 0, 7); g.fill(); }
+    }
+    g.restore();
+  },
+  async make(o, preview, onProg) {
+    if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) throw new Error('this device can’t record videos from the app');
+    const imgs = []; for (const p of o.photos || []) imgs.push(await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(p.blob); }));
+    const total = o.tpl === 'slides' ? 1.4 + imgs.length * (o.per || 3) : 6, cv = h('canvas', { width: 720, height: 1280 }), g = cv.getContext('2d'), pg = preview.getContext('2d');
+    const stream = cv.captureStream(30), ac = Sfx.ctx(); let src = null;
+    if (o.tune && ac) { try { const buf = await VoiceFX.decode(await renderTune(TUNES.find(t => t.id === o.tune))); const dest = ac.createMediaStreamDestination(); src = ac.createBufferSource(); src.buffer = buf; src.loop = true; const gn = ac.createGain(); gn.gain.value = 0.8; gn.gain.setValueAtTime(0.8, ac.currentTime + Math.max(0, total - 1)); gn.gain.linearRampToValueAtTime(0, ac.currentTime + total); src.connect(gn).connect(dest); dest.stream.getAudioTracks().forEach(tr => stream.addTrack(tr)); } catch (e) { console.warn(e); } }
+    const type = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+    const rec = new MediaRecorder(stream, type ? { mimeType: type, videoBitsPerSecond: 4e6 } : undefined), chunks = [];
+    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise(res => { rec.onstop = res; });
+    rec.start(500); if (src) src.start(); const t0 = performance.now();
+    await new Promise(res => { const step = () => { const t = (performance.now() - t0) / 1000; this.frame(cv, g, o, t, imgs, total); pg.drawImage(cv, 0, 0, preview.width, preview.height); onProg(Math.min(1, t / total)); if (t < total) requestAnimationFrame(step); else res(); }; step(); });
+    rec.stop(); if (src) try { src.stop(); } catch (e) { } await stopped; stream.getTracks().forEach(t => t.stop()); imgs.forEach(i => URL.revokeObjectURL(i.src));
+    return new Blob(chunks, { type: (rec.mimeType || type || 'video/webm').split(';')[0] });
+  },
+};
 
 /* ---- 26-comics.js ---- */
 /* ===== Comics: read comic books (.cbz, pictures, PDF), make your own comic, comic websites ===== */
@@ -2439,6 +3227,7 @@ Apps.reg({
     async function shelf() {
       ctx.setActions(h('button', { class: 'btn ghost sm', onclick: importMenu }, '＋ Add'));
       const all = (await DB.all('comics')).sort((a, b) => (b.opened || b.created) - (a.opened || a.created));
+      if (typeof ComicOriginals !== 'undefined') body.append(ComicOriginals.row(c => read(c)));
       if (!all.length) { body.append(UI.empty('💥', 'No comics yet', 'Add a comic book file (.cbz), a PDF, or pick pictures to turn into a comic. Or make your own!'), h('div', { class: 'row', style: { justifyContent: 'center' } }, h('button', { class: 'btn pri', onclick: importMenu }, '＋ Add a comic'), h('button', { class: 'btn', onclick: () => { tab = 'make'; show(); } }, '✏️ Make one'))); return; }
       body.append(h('div', { class: 'cshelf' }, all.map(c => onLongPress(h('button', { class: 'cbook', onclick: () => read(c) }, h('div', { class: 'cv' }, c.cover ? h('img', { src: c.cover, alt: '' }) : (c.kind === 'pdf' ? '📕' : '💥')), h('b', null, c.title), h('small', null, c.kind === 'pdf' ? 'PDF' : (c.last ? 'Page ' + (c.last + 1) + ' of ' : '') + c.pages.length + ' pages')),
         () => UI.menu(c.title, [
@@ -2548,6 +3337,156 @@ Apps.reg({
     return () => { if (stop) stop(); };
   },
 });
+
+/* ---- 26b-comic-originals.js ---- */
+/* ===== Super One Originals: comics drawn right on your device (original characters: Captain One, Cubey, Bolt and Mia) ===== */
+const ComicArt = (() => {
+  const FONT = '"Chalkboard SE","Comic Sans MS","Marker Felt","Trebuchet MS",system-ui,sans-serif';
+  const rr = (g, x, y, w, h, r) => { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); };
+  const ink = g => { g.lineWidth = 4; g.strokeStyle = '#141428'; g.lineJoin = 'round'; g.lineCap = 'round'; };
+  function bg(g, kind, W, H) {
+    const lg = (a, b) => { const x = g.createLinearGradient(0, 0, 0, H); x.addColorStop(0, a); x.addColorStop(1, b); g.fillStyle = x; g.fillRect(0, 0, W, H); };
+    const cloud = (x, y, s) => { g.fillStyle = 'rgba(255,255,255,.9)'; g.beginPath(); for (const [dx, dy, r] of [[0, 0, 22], [24, -10, 28], [52, 0, 22], [26, 10, 22]]) { g.moveTo(x + (dx + r) * s, y + dy * s); g.arc(x + dx * s, y + dy * s, r * s, 0, 7); } g.fill(); };
+    if (kind === 'night') { lg('#0B1240', '#2B1F66'); g.fillStyle = '#fff'; for (let i = 0; i < 70; i++) { const r = seeded(i + 5); g.globalAlpha = 0.4 + r() * 0.6; g.fillRect(r() * W, r() * H * 0.75, 2 + r() * 2, 2 + r() * 2); } g.globalAlpha = 1; g.fillStyle = '#FFF4C2'; g.beginPath(); g.arc(W * 0.82, H * 0.16, 30, 0, 7); g.fill(); g.fillStyle = '#2B1F66'; g.beginPath(); g.arc(W * 0.82 + 14, H * 0.16 - 8, 26, 0, 7); g.fill(); g.fillStyle = '#123B2A'; g.fillRect(0, H * 0.82, W, H * 0.18); return; }
+    if (kind === 'room' || kind === 'gym') { lg(kind === 'gym' ? '#FFE3C2' : '#DDEBFF', kind === 'gym' ? '#FFD0A0' : '#C9DCFF'); g.fillStyle = kind === 'gym' ? '#3A7BD5' : '#B98A5B'; g.fillRect(0, H * 0.78, W, H * 0.22);
+      if (kind === 'room') { g.fillStyle = '#9ED2FF'; rr(g, W * 0.62, H * 0.12, W * 0.3, H * 0.26, 6); g.fill(); ink(g); g.stroke(); g.beginPath(); g.moveTo(W * 0.77, H * 0.12); g.lineTo(W * 0.77, H * 0.38); g.stroke(); }
+      else { g.fillStyle = '#2E5FB0'; g.fillRect(W * 0.1, H * 0.74, W * 0.8, H * 0.05); g.fillStyle = '#E5383B'; rr(g, W * 0.06, H * 0.18, 80, 46, 8); g.fill(); g.fillStyle = '#fff'; g.font = '900 22px ' + FONT; g.fillText('GYM', W * 0.06 + 14, H * 0.18 + 31); } return; }
+    lg('#6EC1FF', '#E6F5FF'); cloud(W * 0.12, H * 0.16, 1); cloud(W * 0.62, H * 0.1, 0.8);
+    if (kind === 'city') { for (let i = 0; i < 9; i++) { const r = seeded(i * 3 + 1), bw = 40 + r() * 40, bh = H * (0.25 + r() * 0.35), x = i * W / 8 - 10; g.fillStyle = ['#2B3A67', '#3E5C9A', '#5A6FA8'][i % 3]; g.fillRect(x, H - bh, bw, bh); g.fillStyle = '#FFE58A'; for (let wy = H - bh + 12; wy < H - 14; wy += 22) for (let wx = x + 8; wx < x + bw - 10; wx += 16) if (r() > 0.35) g.fillRect(wx, wy, 7, 10); } }
+    if (kind === 'park') { g.fillStyle = '#5CB85C'; g.fillRect(0, H * 0.72, W, H * 0.28); g.fillStyle = '#7A4E2D'; g.fillRect(W * 0.84, H * 0.42, 18, H * 0.32); g.fillStyle = '#2E8B57'; g.beginPath(); g.arc(W * 0.84 + 9, H * 0.4, 60, 0, 7); g.fill(); }
+  }
+  function face(g, x, y, r, mood) {
+    g.fillStyle = '#141428'; const e = r * 0.33;
+    if (mood === 'wow') { g.beginPath(); g.arc(x - e, y - r * 0.1, r * 0.13, 0, 7); g.arc(x + e, y - r * 0.1, r * 0.13, 0, 7); g.fill(); g.beginPath(); g.ellipse(x, y + r * 0.42, r * 0.16, r * 0.2, 0, 0, 7); g.fill(); return; }
+    g.beginPath(); g.arc(x - e, y - r * 0.1, r * 0.1, 0, 7); g.arc(x + e, y - r * 0.1, r * 0.1, 0, 7); g.fill();
+    ink(g); g.lineWidth = 3.5; g.beginPath(); if (mood === 'sad') g.arc(x, y + r * 0.55, r * 0.3, 1.15 * Math.PI, 1.85 * Math.PI); else g.arc(x, y + r * 0.2, r * 0.32, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
+  }
+  function hero(g, x, y, s, pose = 'stand', mood = 'happy') {
+    g.save(); g.translate(x, y); g.scale(s, s);
+    if (pose === 'fly') { g.rotate(-0.35); g.fillStyle = '#E5233A'; g.beginPath(); g.moveTo(20, -40); g.bezierCurveTo(-40, -70, -110, -80, -160, -55); g.lineTo(-140, -30); g.lineTo(-165, -5); g.bezierCurveTo(-90, -10, -30, -5, 15, -10); g.closePath(); g.fill(); ink(g); g.stroke();
+      g.fillStyle = '#1E5BEF'; rr(g, -120, -42, 60, 26, 12); g.fill(); g.stroke(); rr(g, -120, -16, 60, 24, 12); g.fill(); g.stroke(); g.fillStyle = '#E5233A'; rr(g, -140, -42, 26, 26, 8); g.fill(); g.stroke(); rr(g, -140, -16, 26, 24, 8); g.fill(); g.stroke();
+      g.fillStyle = '#2A66F5'; rr(g, -70, -55, 110, 62, 26); g.fill(); g.stroke(); g.fillStyle = '#FFC93C'; g.beginPath(); g.arc(5, -24, 14, 0, 7); g.fill(); g.stroke();
+      g.fillStyle = '#2A66F5'; rr(g, 30, -66, 70, 22, 11); g.fill(); g.stroke(); g.fillStyle = '#E5233A'; g.beginPath(); g.arc(106, -55, 15, 0, 7); g.fill(); g.stroke();
+      g.fillStyle = '#F2C29B'; g.beginPath(); g.arc(62, -22, 28, 0, 7); g.fill(); g.stroke(); g.fillStyle = '#16123A'; g.beginPath(); g.arc(58, -36, 26, Math.PI * 1.05, Math.PI * 1.95); g.fill(); face(g, 66, -22, 26, mood); g.restore(); return; }
+    // standing, hands on hips
+    g.fillStyle = '#E5233A'; g.beginPath(); g.moveTo(-34, -160); g.lineTo(34, -160); g.lineTo(58, -30); g.lineTo(-58, -30); g.closePath(); g.fill(); ink(g); g.stroke();
+    g.fillStyle = '#1E5BEF'; rr(g, -28, -90, 24, 80, 10); g.fill(); g.stroke(); rr(g, 4, -90, 24, 80, 10); g.fill(); g.stroke();
+    g.fillStyle = '#E5233A'; rr(g, -32, -24, 30, 24, 8); g.fill(); g.stroke(); rr(g, 2, -24, 30, 24, 8); g.fill(); g.stroke();
+    g.fillStyle = '#2A66F5'; rr(g, -38, -168, 76, 84, 22); g.fill(); g.stroke(); g.fillStyle = '#E5233A'; g.fillRect(-36, -98, 72, 10); g.fillStyle = '#FFC93C'; g.beginPath(); g.arc(0, -134, 15, 0, 7); g.fill(); g.stroke();
+    g.strokeStyle = '#2A66F5'; g.lineWidth = 18; g.beginPath(); g.moveTo(-34, -156); g.lineTo(-62, -118); g.lineTo(-38, -98); g.moveTo(34, -156); g.lineTo(62, -118); g.lineTo(38, -98); g.stroke();
+    g.fillStyle = '#F2C29B'; ink(g); g.beginPath(); g.arc(0, -198, 32, 0, 7); g.fill(); g.stroke(); g.fillStyle = '#16123A'; g.beginPath(); g.arc(0, -206, 31, Math.PI * 1.02, Math.PI * 1.98); g.fill(); face(g, 0, -194, 30, mood);
+    g.restore();
+  }
+  function cubey(g, x, y, s, mood = 'happy', scr = false) {
+    g.save(); g.translate(x, y); g.scale(s, s); ink(g);
+    const C = ['#FFFFFF', '#FFD500', '#009E60', '#0051BA', '#C41E3A', '#FF5800'], r = seeded(7);
+    g.strokeStyle = '#141428'; g.lineWidth = 6; g.beginPath(); g.moveTo(-26, -6); g.lineTo(-34, 0); g.moveTo(26, -6); g.lineTo(34, 0); g.moveTo(-50, -70); g.lineTo(-76, -50); g.moveTo(50, -70); g.lineTo(76, -50); g.stroke();
+    g.fillStyle = '#141428'; rr(g, -56, -122, 112, 112, 14); g.fill();
+    for (let i = 0; i < 9; i++) { const cx = -50 + (i % 3) * 34, cy = -116 + Math.floor(i / 3) * 34; g.fillStyle = scr ? C[Math.floor(r() * 6)] : '#009E60'; rr(g, cx, cy, 30, 30, 6); g.fill(); }
+    g.fillStyle = 'rgba(255,255,255,.92)'; g.beginPath(); g.ellipse(-18, -76, 13, 15, 0, 0, 7); g.ellipse(18, -76, 13, 15, 0, 0, 7); g.fill(); face(g, 0, -66, 34, mood);
+    g.restore();
+  }
+  function bolt(g, x, y, s, pose = 'stand', mood = 'happy') {
+    g.save(); g.translate(x, y); g.scale(s, s); ink(g);
+    if (pose === 'pushup' || pose === 'flat') { const lift = pose === 'pushup' ? 34 : 4; g.fillStyle = '#9AA6B8'; g.save(); g.translate(0, -lift); g.rotate(pose === 'pushup' ? -0.12 : 0); rr(g, -90, -26, 150, 40, 12); g.fill(); g.stroke(); rr(g, 60, -44, 56, 50, 10); g.fill(); g.stroke(); g.fillStyle = '#7DF9FF'; g.beginPath(); g.arc(80, -22, 7, 0, 7); g.arc(98, -22, 7, 0, 7); g.fill(); g.restore();
+      g.strokeStyle = '#6B7689'; g.lineWidth = 12; g.beginPath(); g.moveTo(40, -lift); g.lineTo(44, 0); g.moveTo(-80, -lift + 8); g.lineTo(-96, 0); g.stroke(); g.restore(); return; }
+    g.strokeStyle = '#6B7689'; g.lineWidth = 12; g.beginPath(); g.moveTo(-20, -60); g.lineTo(-22, 0); g.moveTo(20, -60); g.lineTo(22, 0); g.stroke();
+    g.fillStyle = '#9AA6B8'; ink(g); rr(g, -46, -140, 92, 84, 14); g.fill(); g.stroke(); g.fillStyle = '#FFC93C'; rr(g, -18, -118, 36, 22, 6); g.fill(); g.stroke();
+    g.strokeStyle = '#6B7689'; g.lineWidth = 12; g.beginPath(); g.moveTo(-46, -126); g.lineTo(pose === 'cheer' ? -76 : -70, pose === 'cheer' ? -176 : -80); g.moveTo(46, -126); g.lineTo(pose === 'cheer' ? 76 : 70, pose === 'cheer' ? -176 : -80); g.stroke();
+    g.fillStyle = '#B7C2D3'; ink(g); rr(g, -40, -206, 80, 64, 14); g.fill(); g.stroke(); g.beginPath(); g.moveTo(0, -206); g.lineTo(0, -228); g.stroke(); g.fillStyle = '#E5233A'; g.beginPath(); g.arc(0, -232, 7, 0, 7); g.fill();
+    g.fillStyle = '#7DF9FF'; g.beginPath(); g.arc(-16, -182, 9, 0, 7); g.arc(16, -182, 9, 0, 7); g.fill(); ink(g); g.lineWidth = 3.5; g.beginPath(); if (mood === 'sad') g.arc(0, -150, 12, 1.15 * Math.PI, 1.85 * Math.PI); else g.arc(0, -166, 13, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
+    g.restore();
+  }
+  function mia(g, x, y, s, pose = 'stand', mood = 'happy') {
+    g.save(); g.translate(x, y); g.scale(s, s); ink(g);
+    g.strokeStyle = '#3B2A1E'; g.lineWidth = 12; g.beginPath(); g.moveTo(-12, -70); g.lineTo(-14, 0); g.moveTo(12, -70); g.lineTo(14, 0); g.stroke();
+    g.fillStyle = '#FF5D8F'; ink(g); g.beginPath(); g.moveTo(-30, -140); g.lineTo(30, -140); g.lineTo(42, -64); g.lineTo(-42, -64); g.closePath(); g.fill(); g.stroke();
+    g.strokeStyle = '#E8A87C'; g.lineWidth = 11; g.beginPath();
+    if (pose === 'cheer') { g.moveTo(-28, -134); g.lineTo(-56, -186); g.moveTo(28, -134); g.lineTo(56, -186); }
+    else if (pose === 'point') { g.moveTo(-28, -134); g.lineTo(-44, -88); g.moveTo(28, -134); g.lineTo(78, -164); }
+    else { g.moveTo(-28, -134); g.lineTo(-44, -84); g.moveTo(28, -134); g.lineTo(44, -84); } g.stroke();
+    g.fillStyle = '#3B2A1E'; g.beginPath(); g.arc(0, -172, 34, 0, 7); g.fill(); g.beginPath(); g.ellipse(-34, -150, 10, 26, 0.2, 0, 7); g.ellipse(34, -150, 10, 26, -0.2, 0, 7); g.fill();
+    g.fillStyle = '#E8A87C'; ink(g); g.beginPath(); g.arc(0, -168, 28, 0, 7); g.fill(); g.stroke(); g.fillStyle = '#3B2A1E'; g.beginPath(); g.arc(0, -178, 28, Math.PI * 1.05, Math.PI * 1.95); g.fill(); face(g, 0, -164, 26, mood);
+    g.restore();
+  }
+  function wrap(g, text, maxW) { const words = text.split(' '), lines = []; let cur = ''; for (const w of words) { const t = cur ? cur + ' ' + w : w; if (g.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t; } if (cur) lines.push(cur); return lines; }
+  function bubble(g, text, x, y, w, tx, ty, shout) {
+    g.font = '700 ' + (shout ? 24 : 21) + 'px ' + FONT; const lines = wrap(g, text, w - 30), lh = shout ? 28 : 25, hgt = lines.length * lh + 22;
+    g.fillStyle = '#fff'; ink(g); g.lineWidth = 3.5;
+    if (tx != null) { const bx = x + w / 2, by = y + hgt, dx = tx - bx, dy = ty - by, d = Math.hypot(dx, dy) || 1, L = Math.min(d, 70); tx = bx + dx / d * L; ty = by + dy / d * L; }
+    if (tx != null) { g.beginPath(); g.moveTo(x + w * 0.4, y + hgt - 2); g.lineTo(tx, ty); g.lineTo(x + w * 0.6, y + hgt - 2); g.closePath(); g.fill(); g.stroke(); }
+    if (shout) { g.beginPath(); const cx = x + w / 2, cy = y + hgt / 2; for (let i = 0; i <= 28; i++) { const a = i / 28 * 6.283, rr2 = i % 2 ? 0.9 : 1.08; g.lineTo(cx + Math.cos(a) * w / 2 * rr2, cy + Math.sin(a) * hgt / 1.6 * rr2); } g.closePath(); g.fill(); g.stroke(); }
+    else { rr(g, x, y, w, hgt, 22); g.fill(); g.stroke(); }
+    if (tx != null) { g.fillStyle = '#fff'; g.fillRect(x + w * 0.4 + 4, y + hgt - 6, w * 0.2 - 8, 8); }
+    g.fillStyle = '#141428'; g.textAlign = 'center'; g.textBaseline = 'middle'; lines.forEach((l, i) => g.fillText(l, x + w / 2, y + 11 + lh / 2 + i * lh)); g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+  }
+  function caption(g, text, x, y, w) { g.font = '700 18px ' + FONT; const lines = wrap(g, text, w - 20); g.fillStyle = '#FFE14D'; ink(g); g.lineWidth = 3; g.fillRect(x, y, w, lines.length * 22 + 14); g.strokeRect(x, y, w, lines.length * 22 + 14); g.fillStyle = '#141428'; lines.forEach((l, i) => g.fillText(l, x + 10, y + 26 + i * 22)); }
+  function burst(g, text, x, y, r = 70, col = '#FFE14D') { g.beginPath(); for (let i = 0; i <= 24; i++) { const a = i / 24 * 6.283, k = i % 2 ? 0.62 : 1; g.lineTo(x + Math.cos(a) * r * k, y + Math.sin(a) * r * 0.72 * k); } g.closePath(); g.fillStyle = col; g.fill(); ink(g); g.stroke(); g.font = '900 ' + Math.round(r * 0.42) + 'px ' + FONT; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 6; g.strokeStyle = '#141428'; g.strokeText(text, x, y); g.fillStyle = '#E5233A'; g.fillText(text, x, y); g.textAlign = 'left'; g.textBaseline = 'alphabetic'; }
+  function sparkle(g, x, y, r = 14) { g.fillStyle = '#FFE14D'; g.beginPath(); for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, rr2 = i % 2 ? r * 0.3 : r; g.lineTo(x + Math.cos(a) * rr2, y + Math.sin(a) * rr2); } g.closePath(); g.fill(); }
+  function speed(g, x, y, w) { g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 5; for (let i = 0; i < 5; i++) { g.beginPath(); g.moveTo(x, y + i * 18); g.lineTo(x + w - i * 20, y + i * 18); g.stroke(); } }
+  function phone(g, x, y, s) { g.save(); g.translate(x, y); g.scale(s, s); g.fillStyle = '#141428'; rr(g, 0, 0, 70, 130, 12); g.fill(); const cols = ['#2F6BFF', '#FF2E4D', '#FFC93C', '#34C759', '#AF52DE', '#FF9500']; for (let i = 0; i < 9; i++) { g.fillStyle = cols[i % 6]; rr(g, 8 + (i % 3) * 19, 14 + Math.floor(i / 3) * 22, 15, 15, 4); g.fill(); } g.restore(); }
+  function clock(g, x, y, r, txt) { g.fillStyle = '#fff'; ink(g); g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.stroke(); g.fillStyle = '#E5233A'; g.fillRect(x - 8, y - r - 14, 16, 12); g.font = '900 ' + Math.round(r * 0.42) + 'px ui-monospace,Menlo,monospace'; g.fillStyle = '#141428'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, x, y); g.textAlign = 'left'; g.textBaseline = 'alphabetic'; }
+  const DRAW = { hero, cubey, bolt, mia, bubble, caption, burst, sparkle, speed, phone, clock };
+  // a page: title band + 2×2 panels
+  async function page(story) {
+    const W = 1080, H = 1350, c = h('canvas', { width: W, height: H }), g = c.getContext('2d');
+    g.fillStyle = '#FFF8E7'; g.fillRect(0, 0, W, H);
+    const tg = g.createLinearGradient(0, 0, W, 0); tg.addColorStop(0, '#2F6BFF'); tg.addColorStop(1, '#FF2E4D'); g.fillStyle = tg; g.fillRect(0, 0, W, 104);
+    g.fillStyle = '#fff'; g.font = '900 italic 46px ' + FONT; g.fillText(story.title, 28, 64); g.font = '700 20px ' + FONT; g.globalAlpha = 0.9; g.fillText('A SUPER ONE ORIGINAL', 30, 92); g.globalAlpha = 1;
+    const M = 24, G = 18, pw = (W - M * 2 - G) / 2, ph = (H - 104 - M * 2 - G) / 2;
+    story.panels.forEach((p, i) => {
+      const px = M + (i % 2) * (pw + G), py = 104 + M + Math.floor(i / 2) * (ph + G), VW = 500, VH = VW * ph / pw, k = pw / VW;
+      g.save(); g.beginPath(); g.rect(px, py, pw, ph); g.clip(); g.translate(px, py); g.scale(k, k);
+      bg(g, p.bg, VW, VH); for (const [fn, ...a] of p.d) DRAW[fn](g, ...a);
+      g.restore(); g.lineWidth = 6; g.strokeStyle = '#141428'; g.strokeRect(px, py, pw, ph);
+    });
+    return await new Promise(r => c.toBlob(r, 'image/png'));
+  }
+  return { page };
+})();
+const COMIC_ORIGINALS = [
+  { id: 'cube-hero', title: 'Captain One & the Scrambled Cube', e: '🧊', panels: [
+    { bg: 'city', d: [['caption', 'Metro City. A quiet Saturday…', 12, 12, 250], ['speed', 20, 300, 160], ['hero', 300, 330, 1, 'fly'], ['bubble', 'What a peaceful day!', 230, 90, 240, 330, 220]] },
+    { bg: 'park', d: [['cubey', 150, 520, 1.25, 'sad', true], ['hero', 380, 540, 0.95, 'stand', 'wow'], ['bubble', 'Help! I’m all mixed up!', 20, 40, 260, 150, 330]] },
+    { bg: 'park', d: [['hero', 130, 540, 0.95, 'stand'], ['cubey', 360, 520, 1.15, 'wow', true], ['burst', 'TWIST!', 380, 180, 78], ['bubble', 'Cross first, then F2L, OLL and PLL!', 20, 30, 250, 140, 300]] },
+    { bg: 'park', d: [['cubey', 160, 520, 1.25, 'happy', false], ['hero', 390, 540, 0.95, 'stand'], ['sparkle', 60, 260], ['sparkle', 270, 230, 18], ['sparkle', 120, 330, 10], ['bubble', 'Solved in 19 seconds!', 20, 40, 240, 150, 360], ['bubble', 'CFOP for the win!', 270, 120, 210, 390, 300]] },
+  ] },
+  { id: 'bolt-pushups', title: 'Bolt Learns Push-Ups', e: '🤖', panels: [
+    { bg: 'gym', d: [['bolt', 140, 520, 1.1, 'stand'], ['mia', 380, 520, 1.1, 'stand'], ['bubble', 'I will do 100 push-ups!', 20, 30, 240, 140, 260], ['bubble', 'Start slow, Bolt!', 270, 140, 200, 380, 300]] },
+    { bg: 'gym', d: [['bolt', 250, 500, 1.3, 'flat', 'sad'], ['burst', 'CLANK!', 250, 210, 92], ['bubble', 'Error: arms not found…', 40, 30, 300, 230, 120]] },
+    { bg: 'gym', d: [['mia', 120, 520, 1.1, 'point'], ['bolt', 360, 520, 1.05, 'stand', 'wow'], ['bubble', 'Try wall push-ups, then knee push-ups. Level up step by step!', 20, 20, 300, 130, 300]] },
+    { bg: 'gym', d: [['bolt', 230, 500, 1.2, 'pushup'], ['mia', 420, 520, 0.9, 'cheer'], ['sparkle', 90, 300], ['sparkle', 300, 280, 18], ['bubble', 'LEVEL UP! 3 × 12!', 20, 40, 230, 200, 350], ['bubble', 'Great job!', 300, 140, 160, 420, 330]] },
+  ] },
+  { id: 'offline-day', title: 'The Day the Wi-Fi Went Out', e: '📴', panels: [
+    { bg: 'room', d: [['caption', '6:00 PM. Uh-oh…', 12, 12, 200], ['mia', 200, 540, 1.2, 'stand', 'sad'], ['burst', 'NO WI-FI!', 380, 330, 80, '#FFFFFF'], ['bubble', 'What do I do now?!', 20, 70, 230, 190, 300]] },
+    { bg: 'room', d: [['hero', 330, 300, 0.9, 'fly'], ['mia', 120, 540, 1, 'stand', 'wow'], ['bubble', 'Don’t worry! Super One works offline!', 190, 20, 290, 330, 230]] },
+    { bg: 'room', d: [['mia', 160, 540, 1.1, 'point'], ['phone', 300, 300, 1.4], ['bubble', 'Dictionary, music, chess, my notes… all still here!', 20, 20, 300, 160, 330]] },
+    { bg: 'room', d: [['mia', 140, 540, 1.1, 'cheer'], ['hero', 370, 540, 0.95, 'stand'], ['sparkle', 250, 240], ['sparkle', 60, 300, 12], ['bubble', 'Who needs Wi-Fi?', 20, 50, 220, 140, 330], ['bubble', 'Offline hero!', 280, 120, 190, 370, 300]] },
+  ] },
+  { id: 'cubey-race', title: 'Cubey’s Speed Race', e: '⏱️', panels: [
+    { bg: 'room', d: [['cubey', 180, 520, 1.3, 'happy', true], ['clock', 390, 330, 60, '0.00'], ['bubble', 'Today I beat my record!', 20, 30, 250, 170, 340]] },
+    { bg: 'room', d: [['caption', 'Cross… F2L…', 12, 12, 200], ['speed', 30, 380, 180], ['cubey', 320, 520, 1.3, 'wow', true], ['burst', 'GO!', 120, 200, 80]] },
+    { bg: 'room', d: [['cubey', 170, 520, 1.3, 'wow', false], ['clock', 390, 300, 66, '18.92'], ['bubble', 'OLL… PLL… DONE!', 20, 30, 230, 160, 330]] },
+    { bg: 'room', d: [['cubey', 140, 520, 1.2, 'happy', false], ['mia', 380, 530, 1, 'cheer'], ['sparkle', 260, 200], ['sparkle', 70, 280, 12], ['sparkle', 300, 320, 16], ['bubble', 'New personal best!', 250, 30, 230, 370, 320], ['bubble', 'The splits timer says my F2L got faster!', 20, 110, 230, 140, 350]] },
+  ] },
+  { id: 'stars', title: 'Stars in the Sky', e: '🌌', panels: [
+    { bg: 'night', d: [['caption', 'Late one night…', 12, 12, 200], ['mia', 150, 540, 1.1, 'stand'], ['hero', 380, 540, 0.95, 'stand'], ['bubble', 'How many stars are there?', 20, 80, 250, 150, 330]] },
+    { bg: 'night', d: [['sparkle', 100, 120, 20], ['sparkle', 260, 80, 14], ['sparkle', 380, 200, 18], ['sparkle', 190, 230, 10], ['hero', 300, 540, 0.95, 'stand', 'wow'], ['bubble', 'More than anyone could ever count!', 20, 300, 260, 300, 380]] },
+    { bg: 'night', d: [['mia', 180, 540, 1.1, 'point'], ['bubble', '“The heavens declare the glory of God.” — Psalm 19:1', 20, 40, 300, 200, 330], ['sparkle', 380, 120, 22]] },
+    { bg: 'night', d: [['mia', 140, 540, 1, 'cheer'], ['hero', 370, 540, 0.95, 'stand'], ['speed', 300, 60, 120], ['sparkle', 430, 70, 18], ['bubble', 'And He knows every star by name! — Psalm 147:4', 120, 150, 300, 370, 340]] },
+  ] },
+];
+const ComicOriginals = {
+  async install(o) {
+    const id = 'orig-' + o.id, have = await DB.get('comics', id); if (have) return have;
+    const blob = await ComicArt.page(o), th = await imageThumb(blob, 360);
+    const rec = { id, title: o.title, kind: 'images', pages: [blob], cover: th && th.url, last: 0, created: Date.now(), original: 1 }; await DB.put('comics', rec); return rec;
+  },
+  row(open) {
+    return h('div', null, h('div', { class: 'sec' }, '⭐ Super One Originals'), h('div', { class: 'lrow', style: { gap: '10px' } }, COMIC_ORIGINALS.map(o => h('button', { class: 'bigbtn', style: { flex: '0 0 150px', minHeight: '120px', background: 'linear-gradient(135deg,#2F6BFF,#FF2E4D)', color: '#fff', border: 0 }, onclick: async () => { UI.toast('Opening ' + o.title + '…'); try { open(await this.install(o)); } catch (e) { console.error(e); UI.toast('Couldn’t draw this comic'); } } }, h('span', { class: 'e' }, o.e), h('b', { style: { fontSize: '14px' } }, o.title)))),
+      h('p', { class: 'tiny muted' }, 'Original comics drawn right on your phone — they work offline.'));
+  },
+};
 
 /* ---- 28-cube-cases.js ---- */
 /* ===== All 119 CFOP cases (41 F2L, 57 OLL, 21 PLL): every algorithm and scramble-style setup checked in the cube simulator by tools/gen_cfop.py ===== */
@@ -3072,24 +4011,62 @@ Apps.reg({
           h('button', { class: 'bigbtn', onclick: () => { const s = scramble(); const st = E.applyAlg(E.solved(3), s); const cm = C.Solver.crossMoves(st); player(solveProg(E.applyAlg(st, cm.join(' ')), s + (cm.length ? ' ' + cm.join(' ') : ''), 'F2L practice')); } }, h('span', { class: 'e' }, '🧩'), h('b', null, 'F2L practice'), h('small', null, 'Starts with the cross already done'))));
     }
     function timer(el) {
-      let times = Prefs.get('cubeTimes', []), t0 = 0, run = false, raf = 0, scr = scramble();
-      const disp = h('button', { class: 'timer', 'aria-label': 'Timer. Tap to start or stop.' }, '0.00'), scrBox = h('div', { class: 'scr' }), stats = h('div', { class: 'grid3 mt' }), list = h('div', { class: 'mt' });
-      const fmt = ms => (ms / 1000).toFixed(2);
-      const avg = n => { if (times.length < n) return '—'; const a = times.slice(0, n).map(t => t.ms).sort((x, y) => x - y); const m = a.slice(1, -1); return fmt(m.reduce((x, y) => x + y, 0) / m.length); };
-      const paint = () => {
-        scrBox.innerHTML = ''; E.tokenize(scr).forEach((t, i) => scrBox.append(h('span', { html: C.icon(t) + esc((i + 1) + '. ' + C.say(t)) })));
-        stats.innerHTML = ''; stats.append(h('div', { class: 'stat' }, h('b', null, times.length ? fmt(Math.min(...times.map(t => t.ms))) : '—'), h('small', null, 'Best')), h('div', { class: 'stat' }, h('b', null, avg(5)), h('small', null, 'Average of 5')), h('div', { class: 'stat' }, h('b', null, avg(12)), h('small', null, 'Average of 12')));
-        list.innerHTML = ''; if (times.length) list.append(h('div', { class: 'list' }, times.slice(0, 30).map((t, i) => h('div', { class: 'li' }, h('span', { class: 't' }, h('b', null, fmt(t.ms) + ' s'), h('small', null, fmtDay(new Date(t.at)) + ' · ' + fmtTime(new Date(t.at)))), h('button', { class: 'ib', 'aria-label': 'Delete time', html: SVG.trash, onclick: () => { times.splice(i, 1); Prefs.set('cubeTimes', times); paint(); } })))));
-      };
-      const tick = () => { disp.textContent = fmt(performance.now() - t0); raf = requestAnimationFrame(tick); };
-      const toggle = () => {
-        if (!run) { run = true; t0 = performance.now(); disp.classList.add('run'); tick(); }
-        else { run = false; cancelAnimationFrame(raf); const ms = performance.now() - t0; disp.textContent = fmt(ms); disp.classList.remove('run'); times.unshift({ ms, at: Date.now(), scr }); Prefs.set('cubeTimes', times.slice(0, 200)); scr = scramble(); Sfx.good(); paint(); }
-      };
-      disp.onclick = toggle; const onKey = e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); toggle(); } }; addEventListener('keydown', onKey);
-      el.append(h('div', { class: 'sec', style: { marginTop: '4px' } }, 'Scramble (yellow top, green front)'), scrBox, h('div', { class: 'row mt' }, h('button', { class: 'btn sm', onclick: () => { scr = scramble(); paint(); } }, '🎲 New scramble')), h('div', { class: 'mt' }, disp), h('p', { class: 'tiny muted center' }, 'Tap the timer to start, tap again when solved. Space bar works too.'), stats, list);
-      paint();
-      return () => { cancelAnimationFrame(raf); removeEventListener('keydown', onKey); };
+      let mode = Prefs.get('cubeTimerMode', 'full'), off = null;
+      const box = h('div');
+      el.append(h('div', { class: 'sec', style: { marginTop: '4px' } }, 'Which timer?'), UI.seg([['full', '⏱️ Full solve'], ['splits', '🧩 CFOP splits'], ['stage', '🎯 One step']], mode, m => { mode = m; Prefs.set('cubeTimerMode', m); go(); }), box);
+      const fmt = ms => ms == null ? '—' : (ms / 1000).toFixed(2), best = a => a.length ? Math.min(...a) : null;
+      const avg = (a, n) => { if (a.length < n) return null; const s = a.slice(0, n).sort((x, y) => x - y).slice(1, -1); return s.reduce((x, y) => x + y, 0) / s.length; };
+      const scrView = s => { const b = h('div', { class: 'scr' }); E.tokenize(s).forEach((t, i) => b.append(h('span', { html: C.icon(t) + esc((i + 1) + '. ' + C.say(t)) }))); return b; };
+      // a tap timer with optional phases (Cross → F2L → OLL → PLL) and optional 15 s inspection
+      function tapTimer(phases, onDone, insp) {
+        let st = 'idle', t0 = 0, raf = 0, splits = [], ins0 = 0, said = {};
+        const disp = h('button', { class: 'timer', 'aria-label': 'Timer. Tap to start, tap again for each step.' }, '0.00'), phase = h('div', { class: 'center', style: { fontWeight: 800, minHeight: '24px', marginTop: '6px' } }), chips = h('div', { class: 'chips', style: { justifyContent: 'center', marginTop: '6px' } });
+        const paintChips = () => { chips.innerHTML = ''; if (phases.length > 1) phases.forEach((p, i) => chips.append(h('span', { class: 'chip', 'aria-pressed': String(i === splits.length && st === 'run') }, p + ' ' + (splits[i] != null ? fmt(splits[i] - (splits[i - 1] || 0)) : '…')))); };
+        const tick = () => { const now = performance.now(); if (st === 'insp') { const left = 15 - (now - ins0) / 1000; disp.textContent = left > 0 ? Math.ceil(left) : '+2'; for (const s of [8, 12]) if ((now - ins0) / 1000 >= s && !said[s]) { said[s] = 1; Sfx.tone(880, 0.12, { type: 'square', vol: 0.06 }); if (Prefs.get('cubeVoice', true)) Speak.say(s + ' seconds'); } } else if (st === 'run') disp.textContent = fmt(now - t0); raf = requestAnimationFrame(tick); };
+        const tap = () => {
+          const now = performance.now();
+          if (st === 'idle' && insp && insp()) { st = 'insp'; ins0 = now; said = {}; phase.textContent = '👁️ Inspect your cube…'; disp.classList.add('run'); tick(); return; }
+          if (st === 'idle' || st === 'insp') { st = 'run'; t0 = now; splits = []; disp.classList.add('run'); phase.textContent = phases.length > 1 ? '▶ ' + phases[0] : 'Solving…'; cancelAnimationFrame(raf); tick(); paintChips(); return; }
+          if (st === 'run') { splits.push(now - t0); Sfx.tap(); if (splits.length < phases.length) { phase.textContent = '▶ ' + phases[splits.length]; paintChips(); return; }
+            st = 'idle'; cancelAnimationFrame(raf); disp.classList.remove('run'); disp.textContent = fmt(splits[splits.length - 1]); phase.textContent = '✅ Done!'; paintChips(); Sfx.good(); onDone(splits.slice()); }
+        };
+        disp.onclick = tap; const onKey = e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); tap(); } }; addEventListener('keydown', onKey);
+        paintChips();
+        return { el: h('div', { class: 'mt' }, disp, phase, chips), stop: () => { cancelAnimationFrame(raf); removeEventListener('keydown', onKey); } };
+      }
+      const timesList = (arr, del, extra) => arr.length ? h('div', { class: 'list mt' }, arr.slice(0, 30).map((t, i) => h('div', { class: 'li' }, h('span', { class: 't' }, h('b', null, fmt(t.ms) + ' s' + (extra ? extra(t) : '')), h('small', null, (t.case ? t.case + ' · ' : '') + fmtDay(new Date(t.at)) + ' · ' + fmtTime(new Date(t.at)))), h('button', { class: 'ib', 'aria-label': 'Delete time', html: SVG.trash, onclick: () => del(i) })))) : h('p', { class: 'small muted center' }, 'No times yet — let’s go!');
+      const statRow = (a, label) => h('div', { class: 'grid3 mt' }, h('div', { class: 'stat' }, h('b', null, fmt(best(a))), h('small', null, 'Best' + (label || ''))), h('div', { class: 'stat' }, h('b', null, fmt(avg(a, 5))), h('small', null, 'Average of 5')), h('div', { class: 'stat' }, h('b', null, fmt(avg(a, 12))), h('small', null, 'Average of 12')));
+      function full(b) {
+        let times = Prefs.get('cubeTimes', []), scr = scramble(), T = null, insp = Prefs.get('cubeInsp', false), alive = true;
+        const paint = () => { if (!alive) return; if (T) T.stop(); b.innerHTML = ''; T = tapTimer(['Solve'], s => { times.unshift({ ms: s[0], at: Date.now(), scr }); Prefs.set('cubeTimes', times.slice(0, 200)); scr = scramble(); setTimeout(paint, 700); }, () => insp);
+          const ib = h('button', { class: 'chip', 'aria-pressed': String(insp), onclick: () => { insp = !insp; Prefs.set('cubeInsp', insp); ib.setAttribute('aria-pressed', String(insp)); } }, '👁️ 15 s inspection');
+          b.append(h('div', { class: 'sec' }, 'Scramble (yellow top, green front)'), scrView(scr), h('div', { class: 'row mt' }, h('button', { class: 'btn sm', onclick: () => { scr = scramble(); paint(); } }, '🎲 New scramble'), ib), T.el, h('p', { class: 'tiny muted center' }, 'Tap the timer to start, tap again when solved. Space bar works too.'), statRow(times.map(t => t.ms)), timesList(times, i => { times.splice(i, 1); Prefs.set('cubeTimes', times); paint(); }, t => t.sp ? ' 🧩' : '')); };
+        paint(); return () => { alive = false; T && T.stop(); };
+      }
+      function splits(b) {
+        let times = Prefs.get('cubeTimes', []), scr = scramble(), T = null, alive = true; const P = ['Cross', 'F2L', 'OLL', 'PLL'];
+        const paint = () => { if (!alive) return; if (T) T.stop(); b.innerHTML = ''; T = tapTimer(P, s => { times.unshift({ ms: s[3], at: Date.now(), scr, sp: s }); Prefs.set('cubeTimes', times.slice(0, 200)); scr = scramble(); setTimeout(paint, 900); }, () => false);
+          const sp = times.filter(t => t.sp), part = i => sp.map(t => t.sp[i] - (t.sp[i - 1] || 0));
+          b.append(h('div', { class: 'sec' }, 'Scramble'), scrView(scr), T.el, h('p', { class: 'tiny muted center' }, 'Tap to start. Tap when the cross is done, again after F2L, after OLL, and when solved.'),
+            h('div', { class: 'sec' }, 'Your best and average for each step'), h('div', { class: 'list' }, P.map((p, i) => h('div', { class: 'li' }, h('span', { class: 'ic' }, ['✚', '🧩', '🟡', '🔁'][i]), h('span', { class: 't' }, h('b', null, p), h('small', null, 'Best ' + fmt(best(part(i))) + ' · avg of 5 ' + fmt(avg(part(i), 5)))), h('b', null, sp[0] ? fmt(part(i)[0]) : '—')))),
+            statRow(sp.map(t => t.ms), ' (total)'), timesList(sp, i => { times.splice(times.indexOf(sp[i]), 1); Prefs.set('cubeTimes', times); paint(); }, t => ' · ' + P.map((p, i) => p[0] + ' ' + fmt(t.sp[i] - (t.sp[i - 1] || 0))).join(' ')));
+        };
+        paint(); return () => { alive = false; T && T.stop(); };
+      }
+      function stage(b) {
+        let st = Prefs.get('cubeStageSel', 'pll'), all = Prefs.get('cubeStage', {}), T = null, cur = null, alive = true;
+        const newCase = () => { if (st === 'cross') return { name: 'Cross only', setup: scramble() }; const list = CUBE_CASES[st], c = list[Math.floor(Math.random() * list.length)]; return { name: st === 'oll' ? 'OLL ' + c.n + (c.name ? ' · ' + c.name : '') : st === 'pll' ? c.n + ' perm' : c.name, setup: c.setups[Math.floor(Math.random() * c.setups.length)], c }; };
+        const paint = () => { if (!alive) return; if (T) T.stop(); b.innerHTML = ''; const arr = all[st] || []; cur = cur || newCase();
+          T = tapTimer([st.toUpperCase()], s => { arr.unshift({ ms: s[0], at: Date.now(), case: cur.name }); all[st] = arr.slice(0, 200); Prefs.set('cubeStage', all); cur = null; setTimeout(paint, 700); }, () => false);
+          b.append(h('div', { class: 'mt' }, UI.seg([['cross', '✚ Cross'], ['f2l', '🧩 F2L'], ['oll', '🟡 OLL'], ['pll', '🔁 PLL']], st, x => { st = x; Prefs.set('cubeStageSel', x); cur = null; paint(); })),
+            h('div', { class: 'sec' }, (st === 'cross' ? 'Scramble, then time only the cross' : 'Set up this case from solved: ' + cur.name)), scrView(cur.setup),
+            h('div', { class: 'row mt' }, h('button', { class: 'btn sm', onclick: () => { cur = null; paint(); } }, '🎲 Another case'), cur.c ? h('button', { class: 'btn sm', onclick: () => { Prefs.set('cubeTab', 'all'); Prefs.set('cube119', st); Prefs.set('cubeTab', 'all'); tab = 'all'; setTimeout(home, 0); } }, '📚 See how to solve it') : null),
+            T.el, h('p', { class: 'tiny muted center' }, 'Tap to start, tap when this step is done. Each step keeps its own best times.'), statRow(arr.map(t => t.ms), ' ' + st.toUpperCase()), timesList(arr, i => { arr.splice(i, 1); Prefs.set('cubeStage', all); paint(); })); };
+        paint(); return () => { alive = false; T && T.stop(); };
+      }
+      const go = () => { if (off) off(); box.innerHTML = ''; off = ({ full, splits, stage })[mode](box); };
+      go();
+      return () => off && off();
     }
     home();
     return () => { if (stopPlay) stopPlay(); if (timerOff) timerOff(); };
@@ -3102,7 +4079,12 @@ addCSS(`
 .chess{max-width:520px;margin:0 auto}
 .board{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));border-radius:10px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.25);aspect-ratio:1/1;user-select:none;-webkit-user-select:none;touch-action:manipulation}
 .sq{position:relative;border:0;padding:0;display:grid;place-items:center;font-size:min(10.5vw,52px);line-height:1;aspect-ratio:1/1;min-width:0}
-.sq.l{background:#EEDDBB}.sq.d{background:#B58863}
+.sq.l{background:var(--sql,#EEDDBB)}.sq.d{background:var(--sqd,#B58863)}
+.evbar{height:14px;border-radius:7px;overflow:hidden;background:#2B2B33;margin:0 0 8px;position:relative}
+.evbar i{position:absolute;left:0;top:0;bottom:0;background:#F4F1EA;transition:width .5s}
+.evbar span{position:absolute;right:8px;top:-1px;font-size:11px;font-weight:800;color:#888;mix-blend-mode:difference}
+.cmode{display:flex;gap:8px;margin-bottom:10px}
+.pzbox{background:var(--accent-soft);border-radius:14px;padding:10px 12px;margin:10px 0;font-weight:700}
 .sq.last.l{background:#F3E37A}.sq.last.d{background:#D6B54B}
 .sq.sel{background:#8FB8F0!important}
 .sq.chk{background:radial-gradient(circle,#FF5A4E 0,#FF5A4E 35%,transparent 75%),#B58863}
@@ -3195,15 +4177,29 @@ const Chess = (() => {
   function legal(S, capsOnly) { const me = S.turn, out = []; for (const m of pseudo(S, capsOnly)) { const u = make(S, m); if (!inCheck(S, me)) out.push(m); unmake(S, u); } return out; }
   const key = S => S.b.map(p => p || '.').join('') + S.turn + (S.cs.K ? 'K' : '') + (S.cs.Q ? 'Q' : '') + (S.cs.k ? 'k' : '') + (S.cs.q ? 'q' : '') + S.ep;
   function evaluate(S) {
-    let s = 0, mat = 0; for (let i = 0; i < 64; i++) { const p = S.b[i]; if (p && typ(p) !== 'p' && typ(p) !== 'k') mat += VAL[typ(p)]; }
+    let s = 0, mat = 0; const pf = { w: [0, 0, 0, 0, 0, 0, 0, 0], b: [0, 0, 0, 0, 0, 0, 0, 0] }, pawns = { w: [], b: [] }, bish = { w: 0, b: 0 }, kings = {};
+    for (let i = 0; i < 64; i++) { const p = S.b[i]; if (!p) continue; const t = typ(p), c = col(p); if (t !== 'p' && t !== 'k') mat += VAL[t]; if (t === 'p') { pf[c][file(i)]++; pawns[c].push(i); } else if (t === 'b') bish[c]++; else if (t === 'k') kings[c] = i; }
     const end = mat <= 2600;
-    for (let i = 0; i < 64; i++) { const p = S.b[i]; if (!p) continue; const t = typ(p), w = col(p) === 'w', idx = w ? i : (7 - rank(i)) * 8 + file(i); const v = VAL[t] + (t === 'k' && end ? PST.ke : PST[t])[idx]; s += w ? v : -v; }
+    for (let i = 0; i < 64; i++) {
+      const p = S.b[i]; if (!p) continue; const t = typ(p), c = col(p), w = c === 'w', idx = w ? i : (7 - rank(i)) * 8 + file(i); let v = VAL[t] + (t === 'k' && end ? PST.ke : PST[t])[idx];
+      if (t === 'p') { const f = file(i), r = rank(i), en = w ? pawns.b : pawns.w;
+        if (!en.some(e => Math.abs(file(e) - f) <= 1 && (w ? rank(e) < r : rank(e) > r))) v += [0, 10, 15, 25, 42, 70, 110, 0][w ? 6 - r : r - 1] || 0;
+        if (!(f > 0 && pf[c][f - 1]) && !(f < 7 && pf[c][f + 1])) v -= 12; }
+      else if (t === 'r') { const f = file(i); if (!pf.w[f] && !pf.b[f]) v += 20; else if (!pf[c][f]) v += 10; }
+      s += w ? v : -v;
+    }
+    for (const c of ['w', 'b']) { let d = 0; for (const n of pf[c]) if (n > 1) d += 15 * (n - 1); const sg = c === 'w' ? 1 : -1; s -= sg * d; if (bish[c] >= 2) s += sg * 30;
+      const k = kings[c]; if (!end && k != null) { const fr = c === 'w' ? rank(k) - 1 : rank(k) + 1; let sh = 0; if (fr >= 0 && fr < 8) for (let f = Math.max(0, file(k) - 1); f <= Math.min(7, file(k) + 1); f++) if (S.b[fr * 8 + f] === (c === 'w' ? 'P' : 'p')) sh++; s += sg * sh * 9; } }
     return S.turn === 'w' ? s : -s;
   }
   function order(ms) { return ms.sort((a, b) => ((b.cap ? 10 * VAL[typ(b.cap)] - VAL[typ(b.p)] : 0) + (b.promo ? 800 : 0)) - ((a.cap ? 10 * VAL[typ(a.cap)] - VAL[typ(a.p)] : 0) + (a.promo ? 800 : 0))); }
-  function search(S, level) {
-    const cfg = [{ d: 1, t: 200, noise: 120 }, { d: 2, t: 700, noise: 35 }, { d: 4, t: 1300, noise: 0 }, { d: 6, t: 2600, noise: 0 }][level];
-    const t0 = performance.now(); let nodes = 0, stop = false;
+  const LV = [{ d: 1, t: 150, noise: 260, q: 1 }, { d: 1, t: 200, noise: 120, q: 2 }, { d: 2, t: 700, noise: 35, q: 2 }, { d: 4, t: 1300, noise: 0, q: 6 }, { d: 6, t: 2600, noise: 0, q: 8 }, { d: 12, t: 4500, noise: 0, q: 8 }];
+  const same = (a, b) => !!(a && b && a.from === b.from && a.to === b.to && (a.promo || '') === (b.promo || ''));
+  // returns the best move; opts.cfg overrides the level, opts.all returns [[move, score], …] best first
+  function search(S, level, opts = {}) {
+    const cfg = opts.cfg || LV[level] || LV[2], t0 = performance.now(); let nodes = 0, stop = false;
+    const TT = new Map(), killers = [], hist = new Int32Array(4096);
+    const ordered = (ms, ply, ttm) => { const kl = killers[ply] || []; for (const m of ms) m._s = same(m, ttm) ? 1e7 : m.cap ? 1e6 + 10 * VAL[typ(m.cap)] - VAL[typ(m.p)] : m.promo ? 9e5 : same(m, kl[0]) || same(m, kl[1]) ? 8e5 : hist[m.from * 64 + m.to]; return ms.sort((a, b) => b._s - a._s); };
     const q = (alpha, beta, depth) => {
       if ((++nodes & 1023) === 0 && performance.now() - t0 > cfg.t) stop = true;
       const stand = evaluate(S); if (stand >= beta) return beta; if (stand > alpha) alpha = stand; if (depth <= 0) return alpha;
@@ -3214,21 +4210,48 @@ const Chess = (() => {
       if ((++nodes & 1023) === 0 && performance.now() - t0 > cfg.t) stop = true;
       const ms = legal(S); if (!ms.length) return inCheck(S, S.turn) ? -100000 + ply : 0;
       if (S.half >= 100) return 0;
-      if (depth <= 0) return q(alpha, beta, level >= 2 ? 6 : 2);
-      for (const m of order(ms)) { const u = make(S, m); const sc = -ab(depth - 1, -beta, -alpha, ply + 1); unmake(S, u); if (stop) return alpha; if (sc >= beta) return beta; if (sc > alpha) alpha = sc; }
+      if (depth <= 0) return q(alpha, beta, cfg.q);
+      let k = null, e = null; const a0 = alpha;
+      if (depth >= 2) { k = key(S); e = TT.get(k); if (e && e.d >= depth) { if (e.f === 0) return Math.max(alpha, Math.min(beta, e.s)); if (e.f === 1 && e.s >= beta) return beta; if (e.f === -1 && e.s <= alpha) return alpha; } }
+      let best = null;
+      for (const m of ordered(ms, ply, e && e.m)) {
+        const u = make(S, m); const sc = -ab(depth - 1, -beta, -alpha, ply + 1); unmake(S, u); if (stop) return alpha;
+        if (sc >= beta) { if (!m.cap) { const kl = killers[ply] || (killers[ply] = []); if (!same(kl[0], m)) { kl[1] = kl[0]; kl[0] = m; } hist[m.from * 64 + m.to] += depth * depth; } if (k) TT.set(k, { d: depth, s: beta, f: 1, m }); return beta; }
+        if (sc > alpha) { alpha = sc; best = m; }
+      }
+      if (k) TT.set(k, { d: depth, s: alpha, f: alpha > a0 ? 0 : -1, m: best });
       return alpha;
     };
-    let root = order(legal(S)); if (!root.length) return null; let best = root[0], bestScores = null;
+    let root = order(legal(S)); if (!root.length) return opts.all ? [] : null; let best = root[0], bestScores = null;
     for (let d = 1; d <= cfg.d; d++) {
       const scores = []; let alpha = -Infinity;
       // easy levels search every root move fully (exact scores, then add "mistake" noise); strong levels prune with alpha-beta
-      for (const m of root) { const u = make(S, m); const sc = -ab(d - 1, -Infinity, cfg.noise ? Infinity : -alpha, 1); unmake(S, u); if (stop) break; scores.push([m, sc]); if (sc > alpha) alpha = sc; }
+      for (const m of root) { const u = make(S, m); const sc = -ab(d - 1, -Infinity, cfg.noise || opts.all ? Infinity : -alpha, 1); unmake(S, u); if (stop) break; scores.push([m, sc]); if (sc > alpha) alpha = sc; }
       if (stop && d > 1) break;
       scores.sort((a, b) => b[1] - a[1]); bestScores = scores; root = scores.map(x => x[0]).concat(root.filter(m => !scores.find(x => x[0] === m)));
-      if (stop) break;
+      if (stop || (scores.length && Math.abs(scores[0][1]) > 90000)) break;
     }
+    search.lastScore = bestScores && bestScores.length ? bestScores[0][1] : 0;
+    if (opts.all) return bestScores || [];
     if (bestScores && bestScores.length) { const noisy = bestScores.map(([m, sc]) => [m, sc + (Math.random() - 0.5) * 2 * cfg.noise]); noisy.sort((a, b) => b[1] - a[1]); best = noisy[0][0]; }
     return best;
+  }
+  // score for White in pawns (+ = White is better), from a short search
+  function score(S) { const r = search(S, 0, { cfg: { d: 2, t: 250, noise: 0, q: 4 }, all: true }); if (!r.length) { const st = status(S); return st.win ? (st.win === 'w' ? 99 : -99) : 0; } const v = r[0][1] / 100; return S.turn === 'w' ? v : -v; }
+  // a puzzle from a random game: "mate in 1" or "win material"
+  function puzzle(limit = 6000) {
+    const t0 = performance.now(), wantMate = Math.random() < 0.5; let win = null;
+    while (performance.now() - t0 < limit) {
+      const S = start(); S.keys = [];
+      const n = 14 + Math.floor(Math.random() * 46);
+      for (let i = 0; i < n; i++) { const ms = legal(S); if (!ms.length) break; const caps = ms.filter(m => m.cap), pickFrom = caps.length && Math.random() < 0.55 ? caps : ms; make(S, pickFrom[Math.floor(Math.random() * pickFrom.length)]); }
+      if (!legal(S).length || inCheck(S, S.turn === 'w' ? 'b' : 'w')) continue;
+      const sc = search(S, 0, { cfg: { d: 2, t: 450, noise: 0, q: 4 }, all: true }); if (sc.length < 2) continue;
+      const [b1, b2] = sc, stat = evaluate(S);
+      if (b1[1] > 90000 && b2[1] < 90000) return { S, kind: 'mate', sol: b1[0] };
+      if (b1[1] - stat >= 250 && b1[1] - b2[1] >= 250 && b1[1] < 90000 && b1[0].cap) { const p = { S, kind: 'win', sol: b1[0] }; if (!wantMate || performance.now() - t0 > 2500) return p; win = win || p; }
+    }
+    return win;
   }
   function san(S, m) {
     if (m.castle) return m.castle === 'K' ? 'O-O' : 'O-O-O';
@@ -3251,23 +4274,35 @@ const Chess = (() => {
     const k = key(S); if (S.keys.filter(x => x === k).length >= 3) return { over: true, why: 'Same position 3 times — draw' };
     return { over: false, check: chk };
   }
-  return { start, legal, make, unmake, search, san, status, key, inCheck, sqName, col, typ, VAL, kingSq };
+  return { start, legal, make, unmake, search, score, puzzle, san, status, key, inCheck, sqName, col, typ, VAL, kingSq };
 })();
 Apps.reg({
   id: 'chess', name: 'Chess', icon: '♟️', color: 'linear-gradient(135deg,#8D6E63,#4E342E)', group: 'play', keys: 'board game strategy checkmate', blurb: 'Play the computer or a friend',
   mount(v, ctx) {
     const GLY = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
-    const LEVELS = ['Easy', 'Medium', 'Hard', 'Expert'];
+    const LEVELS = ['Beginner', 'Easy', 'Medium', 'Hard', 'Expert', 'Master'];
+    const THEMES = { classic: ['Classic', '#EEDDBB', '#B58863'], hero: ['Hero', '#E6EEFF', '#E5383B'], ocean: ['Ocean', '#DCEBFF', '#5A86C9'], forest: ['Tournament', '#EEEED2', '#769656'], candy: ['Candy', '#FFE3EE', '#E85D9A'], night: ['Night', '#A9B4C8', '#3B4252'] };
+    let pz = null, evOn = Prefs.get('chessEval', true);
+    const evBar = h('div', { class: 'evbar', title: 'Who is winning' }, h('i', { style: { width: '50%' } }), h('span', null, '0.0'));
+    const paintTheme = () => { const t = THEMES[Prefs.get('chessTheme', 'classic')] || THEMES.classic; boardEl.style.setProperty('--sql', t[1]); boardEl.style.setProperty('--sqd', t[2]); };
+    const stats = () => Prefs.get('chessStats', {}), recLine = h('p', { class: 'small muted center' });
+    const paintRec = () => { const st = stats(), w = Object.values(st.w || {}).reduce((a, b) => a + b, 0), l = Object.values(st.l || {}).reduce((a, b) => a + b, 0), d = st.d || 0, pzs = Prefs.get('chessPuzzle', {}); recLine.textContent = '🏆 vs computer: ' + w + ' wins · ' + l + ' losses · ' + d + ' draws' + (pzs.solved ? ' · 🧩 ' + pzs.solved + ' puzzles (best streak ' + (pzs.best || 0) + ')' : ''); };
+    let evT = 0; const paintEval = () => { evBar.hidden = !evOn || !!pz; if (!evOn || pz) return; clearTimeout(evT); evT = setTimeout(() => { if (!alive) return; const sc = over ? (over.win ? (over.win === 'w' ? 99 : -99) : 0) : Chess.score(S); const pct = Math.max(4, Math.min(96, 50 + Math.atan(sc / 3) / Math.PI * 100)); evBar.firstChild.style.width = pct + '%'; evBar.lastChild.textContent = Math.abs(sc) >= 90 ? (sc > 0 ? 'White mates' : 'Black mates') : (sc > 0 ? '+' : '') + sc.toFixed(1); }, 60); };
     let S, cfg, moves = [], sans = [], sel = -1, targets = [], last = null, hint = null, thinking = false, over = null, flipped = false, alive = true;
     const boardEl = h('div', { class: 'board', role: 'grid', 'aria-label': 'Chess board' });
     const status = h('div', { class: 'cstatus' }), capsTop = h('div', { class: 'caps' }), capsBot = h('div', { class: 'caps' }), mlist = h('div', { class: 'mlist', 'aria-label': 'Moves' });
     const btns = h('div', { class: 'row mt' },
       h('button', { class: 'btn', onclick: () => undo() }, '↩️ Undo'), h('button', { class: 'btn', onclick: () => doHint() }, '💡 Hint'),
       h('button', { class: 'btn', onclick: () => { flipped = !flipped; draw(); } }, '🔄 Flip'), h('button', { class: 'btn pri', onclick: () => newGame() }, 'New game'));
-    v.append(h('div', { class: 'chess' }, capsTop, boardEl, capsBot, status, btns, h('div', { class: 'sec' }, 'Moves'), mlist, h('button', { class: 'btn ghost mt', onclick: rules }, '📘 How the pieces move')));
+    const modeSeg = UI.seg([['play', '♟️ Play'], ['puzzle', '🧩 Puzzles']], 'play', m => { if (m === 'puzzle') startPuzzle(); else { pz = null; pzBox.hidden = true; btns.hidden = false; load(); } });
+    const pzBox = h('div', { class: 'pzbox', hidden: true }), pzBtns = h('div', { class: 'row mt', hidden: true });
+    const themeRow = h('div', { class: 'chips mt' }, Object.entries(THEMES).map(([k, [n, l, d]]) => h('button', { class: 'chip', 'aria-pressed': String(Prefs.get('chessTheme', 'classic') === k), onclick: e => { Prefs.set('chessTheme', k); paintTheme(); e.currentTarget.parentNode.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c === e.currentTarget))); } }, h('span', { style: { display: 'inline-block', width: '14px', height: '14px', borderRadius: '3px', background: 'linear-gradient(135deg,' + l + ' 50%,' + d + ' 50%)', verticalAlign: '-2px' } }), ' ' + n)));
+    const evB = h('button', { class: 'chip', 'aria-pressed': String(evOn), onclick: () => { evOn = !evOn; Prefs.set('chessEval', evOn); evB.setAttribute('aria-pressed', String(evOn)); paintEval(); } }, '📊 Who’s winning');
+    v.append(h('div', { class: 'chess' }, h('div', { class: 'cmode' }, modeSeg), evBar, capsTop, boardEl, capsBot, status, pzBox, btns, pzBtns, recLine, h('div', { class: 'sec' }, 'Moves'), mlist, h('div', { class: 'sec' }, '🎨 Board'), themeRow, h('div', { class: 'chips mt' }, evB), h('button', { class: 'btn ghost mt', onclick: rules }, '📘 How the pieces move')));
+    paintTheme(); paintRec();
     const save = () => Prefs.set('chessGame', { cfg, moves: moves.map(m => [m.from, m.to, m.promo || '']) });
     function load() {
-      const g = Prefs.get('chessGame', null); cfg = g && g.cfg || { mode: 'ai', you: 'w', level: 1 };
+      const g = Prefs.get('chessGame', null); cfg = g && g.cfg || { mode: 'ai', you: 'w', level: 2, v: 2 }; if (!cfg.v) { cfg.level = Math.min(5, (cfg.level || 0) + 1); cfg.v = 2; }
       S = Chess.start(); S.keys = [Chess.key(S)]; moves = []; sans = []; flipped = cfg.mode === 'ai' && cfg.you === 'b';
       if (g) for (const [f, t, pr] of g.moves) { const m = Chess.legal(S).find(x => x.from === f && x.to === t && (x.promo || '') === pr); if (!m) break; apply(m, true); }
       draw(); maybeAI();
@@ -3275,7 +4310,9 @@ Apps.reg({
     function apply(m, quiet) {
       sans.push(Chess.san(S, m)); Chess.make(S, m); S.keys.push(Chess.key(S)); moves.push(m); last = m; sel = -1; targets = []; hint = null;
       const st = Chess.status(S); over = st.over ? st : null;
-      if (!quiet) { if (m.cap) Sfx.tone(300, 0.08, { type: 'square', vol: 0.06 }); else Sfx.tap(); if (over) setTimeout(() => (over.win ? (cfg.mode === 'ai' && over.win !== cfg.you ? Sfx.bad() : Sfx.win()) : null), 200); save(); }
+      if (!quiet) { if (Chess.inCheck(S, S.turn)) Sfx.tone(880, 0.12, { type: 'triangle', vol: 0.08 }); else if (m.cap) Sfx.tone(300, 0.08, { type: 'square', vol: 0.06 }); else Sfx.tap(); if (over) setTimeout(() => (over.win ? (cfg.mode === 'ai' && over.win !== cfg.you ? Sfx.bad() : Sfx.win()) : null), 200);
+        if (over && cfg.mode === 'ai' && !pz) { const st = stats(), L = String(cfg.level); if (!over.win) st.d = (st.d || 0) + 1; else { const k = over.win === cfg.you ? 'w' : 'l'; st[k] = st[k] || {}; st[k][L] = (st[k][L] || 0) + 1; } Prefs.set('chessStats', st); paintRec(); }
+        if (!pz) save(); }
     }
     function undo() {
       if (thinking || !moves.length) return; let n = cfg.mode === 'ai' ? (S.turn === cfg.you ? 2 : 1) : 1; n = Math.min(n, moves.length);
@@ -3288,14 +4325,30 @@ Apps.reg({
       if (!aiTurn()) return; thinking = true; draw();
       setTimeout(() => { if (!alive) return; const m = Chess.search(S, cfg.level); thinking = false; if (m) apply(m); draw(); }, 280);
     }
-    function doHint() { if (over || thinking || aiTurn()) return; status.firstChild && (status.firstChild.textContent = 'Thinking of a good move…'); setTimeout(() => { hint = Chess.search(S, 2); draw(); }, 30); }
+    function doHint() { if (over || thinking || aiTurn()) return; status.firstChild && (status.firstChild.textContent = 'Thinking of a good move…'); setTimeout(() => { hint = Chess.search(S, 3); draw(); }, 30); }
+    // 🧩 puzzles made from random games: mate in 1, or win material
+    function startPuzzle() {
+      pz = { loading: true }; btns.hidden = true; pzBox.hidden = false; pzBtns.hidden = true; pzBox.textContent = '🧩 Making a puzzle for you…'; evBar.hidden = true;
+      setTimeout(() => { if (!alive || !pz) return; const P = Chess.puzzle(7000); if (!P) { pzBox.textContent = 'Couldn’t find one — tap Next puzzle.'; pzBtns.hidden = false; return; }
+        pz = Object.assign(P, { tries: 0 }); S = P.S; S.keys = [Chess.key(S)]; moves = []; sans = []; last = null; over = null; sel = -1; targets = []; hint = null; flipped = S.turn === 'b';
+        pzBox.textContent = (S.turn === 'w' ? '⚪ White' : '⚫ Black') + ' to move: ' + (P.kind === 'mate' ? 'find the checkmate in one move!' : 'find the move that wins material!');
+        pzBtns.innerHTML = ''; pzBtns.append(h('button', { class: 'btn', onclick: () => { hint = pz.sol; draw(); } }, '💡 Show me'), h('button', { class: 'btn pri', onclick: startPuzzle }, '➡️ Next puzzle')); pzBtns.hidden = false; draw(); }, 60);
+    }
+    function puzzleMove(m) {
+      const ok = m.from === pz.sol.from && m.to === pz.sol.to, rec = Prefs.get('chessPuzzle', {});
+      if (ok) { apply(m); rec.solved = (rec.solved || 0) + 1; rec.streak = (rec.streak || 0) + 1; rec.best = Math.max(rec.best || 0, rec.streak); Prefs.set('chessPuzzle', rec); Sfx.win(); pzBox.textContent = '✅ Yes! ' + (pz.kind === 'mate' ? 'Checkmate!' : 'You win material!') + ' Streak: ' + rec.streak + ' 🔥'; pz.done = true; paintRec(); }
+      else { pz.tries++; Sfx.bad(); rec.streak = 0; Prefs.set('chessPuzzle', rec); pzBox.textContent = pz.tries >= 2 ? '❌ Not quite. The answer was ' + Chess.sqName(pz.sol.from) + ' → ' + Chess.sqName(pz.sol.to) + '.' : '❌ Not that one — try again!'; if (pz.tries >= 2) { hint = pz.sol; pz.done = true; } }
+      sel = -1; targets = []; draw();
+    }
     async function promoPick() { return new Promise(res => { const c = S.turn; const s = UI.sheet({ title: 'Turn your pawn into…', onClose: () => res(null), body: h('div', { class: 'row', style: { justifyContent: 'center' } }, ['q', 'r', 'b', 'n'].map(t => h('button', { class: 'btn', style: { fontSize: '40px', minWidth: '64px' }, onclick: () => { res(c === 'w' ? t.toUpperCase() : t); s.close(); } }, GLY[t] + '︎'))) }); }); }
     async function tap(sq) {
-      if (over || thinking || aiTurn()) return;
+      if (pz && (pz.loading || pz.done || !pz.sol)) return;
+      if (over || thinking || (!pz && aiTurn())) return;
       const p = S.b[sq];
       if (sel >= 0 && targets.some(m => m.to === sq)) {
         let opts = targets.filter(m => m.to === sq), m = opts[0];
         if (opts.length > 1) { const pr = await promoPick(); if (!pr) return; m = opts.find(x => x.promo === pr); }
+        if (pz) return puzzleMove(m);
         apply(m); draw(); maybeAI(); return;
       }
       if (p && Chess.col(p) === S.turn) { sel = sq; targets = Chess.legal(S).filter(m => m.from === sq); } else { sel = -1; targets = []; }
@@ -3321,7 +4374,8 @@ Apps.reg({
       const who = c => cfg.mode === 'ai' ? (c === cfg.you ? 'You' : 'Computer') : (c === 'w' ? 'White' : 'Black');
       let msg = over ? (over.win ? '🏆 ' + over.why + '! ' + (cfg.mode === 'ai' ? (over.win === cfg.you ? 'You win!' : 'The computer wins.') : (over.win === 'w' ? 'White' : 'Black') + ' wins!') : '🤝 ' + over.why) : thinking ? '🤔 Computer is thinking…' : (Chess.inCheck(S, S.turn) ? '⚠️ Check! ' : '') + (cfg.mode === 'ai' ? (S.turn === cfg.you ? 'Your move' : '') : who(S.turn) + ' to move');
       if (hint && !over) msg = '💡 Try moving from ' + Chess.sqName(hint.from) + ' to ' + Chess.sqName(hint.to);
-      status.append(h('b', null, msg), h('span', { class: 'pill' }, cfg.mode === 'ai' ? '🤖 ' + LEVELS[cfg.level] : '👥 2 players'));
+      status.append(h('b', null, msg), h('span', { class: 'pill' }, pz ? '🧩 Puzzle' : cfg.mode === 'ai' ? '🤖 ' + (LEVELS[cfg.level] || 'Medium') : '👥 2 players'));
+      paintEval();
       mlist.innerHTML = ''; for (let i = 0; i < sans.length; i += 2) mlist.append(h('span', null, (i / 2 + 1) + '. ' + sans[i] + (sans[i + 1] ? ' ' + sans[i + 1] : '')));
       mlist.scrollTop = mlist.scrollHeight;
       if (!moves.length) mlist.append(h('span', { class: 'muted' }, 'No moves yet'));
@@ -3333,10 +4387,10 @@ Apps.reg({
         h('div', { id: 'aiOpts' }));
       const aiOpts = body.querySelector('#aiOpts');
       aiOpts.append(h('label', { class: 'f' }, h('span', null, 'You play'), UI.seg([['w', '⚪ White'], ['b', '⚫ Black'], ['r', '🎲 Random']], you, x => you = x)),
-        h('label', { class: 'f' }, h('span', null, 'Computer level'), UI.seg(LEVELS.map((l, i) => [i, l]), level, x => level = x)));
+        h('label', { class: 'f' }, h('span', null, 'Computer level'), h('select', { onchange: e => { level = +e.target.value; } }, LEVELS.map((l, i) => h('option', { value: i, selected: i === level }, ['🐣', '🙂', '😎', '💪', '🧠', '👑'][i] + ' ' + l)))));
       aiOpts.hidden = mode !== 'ai';
       UI.sheet({ title: 'New game', body, actions: [{ label: 'Cancel' }, { label: 'Start', cls: 'pri', onClick: c => {
-        cfg = { mode, you: you === 'r' ? (Math.random() < 0.5 ? 'w' : 'b') : you, level }; Prefs.set('chessGame', { cfg, moves: [] }); c(); load();
+        cfg = { mode, you: you === 'r' ? (Math.random() < 0.5 ? 'w' : 'b') : you, level, v: 2 }; Prefs.set('chessGame', { cfg, moves: [] }); c(); load();
       } }] });
     }
     function rules() {
@@ -3389,6 +4443,46 @@ const Cards = {
   close(a, b) { a = this.norm(a); b = this.norm(b); if (a === b) return true; if (b.length < 5) return false; const m = a.length, n = b.length; if (Math.abs(m - n) > 1) return false; const d = Array.from({ length: m + 1 }, (_, i) => [i]); for (let j = 1; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[m][n] <= 1; },
   async grade(c, ok) { c.seen = (c.seen || 0) + 1; if (ok) { c.right = (c.right || 0) + 1; c.box = Math.min(5, (c.box || 0) + 1); } else { c.wrong = (c.wrong || 0) + 1; c.box = 0; } c.due = Date.now() + BOX_DAYS[c.box] * 86400e3; await DB.put('cards', c); },
 };
+/* turn any text into flashcards: Q/A pairs, "term = meaning", lists, definitions, dates */
+const CardGen = {
+  SAMPLE: 'Photosynthesis is how plants make food from sunlight.\nCapital of Canada = Ottawa\nQ: What is the largest planet?\nA: Jupiter\nCanada became a country in 1867.\nPrimary colors:\n- Red\n- Yellow\n- Blue\nA baby kangaroo is called a joey.\nH2O - water',
+  from(text) {
+    const out = [], seen = new Set(), cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+    const add = (f, b, how) => { f = f.trim().replace(/\s+/g, ' '); b = b.trim().replace(/\s+/g, ' ').replace(/[.;,]$/, ''); if (!f || !b || f.length > 220 || b.length > 320 || f.toLowerCase() === b.toLowerCase()) return; const k = f.toLowerCase(); if (seen.has(k)) return; seen.add(k); out.push({ front: f, back: cap(b), how }); };
+    const lines = String(text || '').replace(/\r/g, '').split('\n');
+    const BUL = /^\s*(?:[-*•▪◦–]|\d+[.)])\s+/;
+    // 1) Q: … / A: … pairs
+    for (let i = 0; i < lines.length; i++) {
+      const q = lines[i].match(/^\s*(?:q|question)\s*[:.)\-]\s*(.+)/i); if (!q) continue;
+      let j = i + 1; while (j < lines.length && !lines[j].trim()) j++;
+      const a = (lines[j] || '').match(/^\s*(?:a|answer)\s*[:.)\-]\s*(.+)/i); if (a) { add(q[1], a[1], 'Q&A'); lines[i] = lines[j] = ''; }
+    }
+    // 2) a heading followed by a list → "name them all"
+    for (let i = 0; i < lines.length; i++) {
+      const hd = lines[i].match(/^\s*#*\s*([^:\n]{2,60}?)\s*:?\s*$/); if (!hd || BUL.test(lines[i])) continue;
+      const items = []; let j = i + 1; while (j < lines.length && BUL.test(lines[j])) { items.push(lines[j].replace(BUL, '').trim()); j++; }
+      if (items.length >= 2 && items.every(x => !/\s(?:=|-|–|:)\s|=/.test(x))) { add(hd[1] + ' — name all ' + items.length, items.join(' · '), 'list'); for (let k = i; k < j; k++) lines[k] = ''; }
+    }
+    // 3) "term = meaning" style lines, otherwise sentences
+    const rest = [];
+    for (const raw of lines) {
+      const l = raw.replace(BUL, '').trim(); if (!l) continue;
+      const m = l.match(/^([^=:\t]{1,80}?)\s*(?:\t|\s=\s|=|\s-\s|\s–\s|\s—\s|:\s)\s*(.{1,})$/);
+      if (m && !/[.?!]$/.test(m[1]) && m[1].split(/\s+/).length <= 8) add(m[1], m[2], 'term'); else rest.push(l);
+    }
+    for (const sen of rest.join(' ').match(/[^.!?]+[.!?]*/g) || []) {
+      const s = sen.trim(); if (s.split(/\s+/).length < 3) continue; let m;
+      if ((m = s.match(/^(.{2,70}?)\s+(is|are|was|were)\s+called\s+(.+?)[.!]?$/i))) add('What ' + m[2].toLowerCase() + ' ' + m[1].replace(/^(A|An|The)\s/, w => w.toLowerCase()) + ' called?', m[3], 'name');
+      else if ((m = s.match(/^((?:the |a |an )?[\w'’\- ]{2,50}?)\s+(is|are|was|were|means|refers to|stands for)\s+(.+?)[.!]?$/i)) && m[1].split(/\s+/).length <= 6 && !/^(it|this|that|he|she|they|there|we|i|you)$/i.test(m[1])) {
+        const vb = m[2].toLowerCase(); add(/^(means|refers to|stands for)$/.test(vb) ? 'What does ' + m[1] + ' ' + (vb === 'means' ? 'mean' : vb.replace(/s\b/, '')) + '?' : 'What ' + vb + ' ' + m[1].replace(/^(The|A|An)\s/, w => w.toLowerCase()) + '?', m[3], 'definition');
+      }
+      else if ((m = s.match(/\b(1\d{3}|20\d{2})\b/))) add(s.replace(m[1], '_____'), m[1], 'date');
+      else if (s.split(/\s+/).length >= 6) { const w = s.split(/\s+/).slice(1).find(x => /^[A-Z][a-z]{2,}/.test(x)); if (w) { const word = w.replace(/[^\w'’-]/g, ''); add(s.replace(word, '_____'), word, 'fill-in'); } }
+      if (out.length >= 300) break;
+    }
+    return out.slice(0, 300);
+  },
+};
 Apps.reg({
   id: 'cards', name: 'Flashcards', icon: '🗂️', color: 'linear-gradient(135deg,#7F7FD5,#5B5BD6)', group: 'learn', keys: 'study quiz memorize decks review', blurb: 'Make cards, learn anything',
   async badge() { return (await DB.all('cards')).filter(c => Cards.due(c) && c.seen).length; },
@@ -3396,7 +4490,8 @@ Apps.reg({
     async function home() {
       v.innerHTML = ''; ctx.setTitle('Flashcards'); ctx.setBack(null); ctx.setActions();
       const decks = await Cards.decks(), all = await DB.all('cards');
-      v.append(h('button', { class: 'fab', 'aria-label': 'New deck', html: SVG.plus, onclick: newDeck }));
+      v.append(h('button', { class: 'fab', 'aria-label': 'New deck', html: SVG.plus, onclick: newDeck }),
+        h('button', { class: 'bigbtn makeb', style: { width: '100%', minHeight: 0, marginBottom: '14px', background: 'linear-gradient(135deg,#2F6BFF,#FF2E4D)', color: '#fff', border: 0 }, onclick: () => makeCards() }, h('span', { class: 'e' }, '✨'), h('b', null, 'Make cards from my info'), h('small', { style: { color: 'rgba(255,255,255,.9)' } }, 'Paste notes, facts or definitions — I turn them into flashcards')));
       if (!decks.length) {
         v.append(UI.empty('🗂️', 'Make your first deck', 'A deck is a set of cards: a question on the front, the answer on the back. I show you hard cards more often.'),
           h('div', { class: 'center' }, h('button', { class: 'btn pri', onclick: newDeck }, '＋ New deck')), h('div', { class: 'sec' }, 'Or start with a sample'),
@@ -3420,6 +4515,7 @@ Apps.reg({
       v.innerHTML = ''; ctx.setTitle(d.name); ctx.setBack(() => { home(); return true; });
       ctx.setActions(h('button', { class: 'ib', 'aria-label': 'Deck options', html: SVG.more, onclick: () => UI.menu(d.name, [
         { icon: '✏️', label: 'Rename or recolor', run: () => newDeck(d) },
+        { icon: '✨', label: 'Make cards from my info', sub: 'Paste notes — I find the questions', run: () => makeCards('', d) },
         { icon: '📋', label: 'Add many cards at once', run: () => bulk(d) },
         { icon: '📤', label: 'Share as text', run: async () => shareText((await Cards.cards(d.id)).map(c => c.front + ' = ' + c.back).join('\n'), d.name) },
         { icon: '🔄', label: 'Reset progress', run: async () => { for (const c of await Cards.cards(d.id)) { c.box = 0; c.due = 0; c.seen = c.right = c.wrong = 0; await DB.put('cards', c); } deck(d); } },
@@ -3492,7 +4588,40 @@ Apps.reg({
       async function next(c, ok) { if (ok) right++; else { wrong++; if (queue.filter(x => x === c).length < 2) queue.push(c); } if (!practice || !ok) await Cards.grade(c, ok); i++; show(); }
       show();
     }
-    home();
+    // ✨ paste anything → cards
+    async function makeCards(text0 = '', into = null) {
+      const decks = await Cards.decks(), ta = h('textarea', { placeholder: 'Paste or type your info here. For example:\n\nPhotosynthesis is how plants make food.\nCapital of Canada = Ottawa\nQ: Largest planet?\nA: Jupiter\nCanada became a country in 1867.', style: { minHeight: '170px' } });
+      ta.value = text0; let cards = [];
+      const sel = h('select', { 'aria-label': 'Which deck' }, [h('option', { value: '' }, '＋ A new deck'), ...decks.map(d => h('option', { value: d.id, selected: into && into.id === d.id }, (d.emoji || '🗂️') + ' ' + d.name))]);
+      const nm = h('input', { type: 'text', placeholder: 'New deck name', value: '' }), prev = h('div'), cnt = h('b');
+      const guessName = () => { const l = ta.value.split('\n').map(x => x.trim()).find(x => x && x.length < 40 && !/[=:]|\s-\s/.test(x)); return l ? l.replace(/[.:]$/, '') : 'My cards'; };
+      const paint = () => {
+        cards = CardGen.from(ta.value); prev.innerHTML = ''; cnt.textContent = cards.length + ' card' + (cards.length === 1 ? '' : 's');
+        if (!nm.value || nm.dataset.auto) { nm.value = guessName(); nm.dataset.auto = '1'; }
+        nm.parentNode && (nm.parentNode.hidden = !!sel.value);
+        if (!ta.value.trim()) return prev.append(h('p', { class: 'small muted' }, 'Your cards will show up here as you type.'));
+        if (!cards.length) return prev.append(h('p', { class: 'small muted' }, 'No cards yet. Try lines like “word = meaning”, “Q: … / A: …”, or full sentences like “The sun is a star.”'));
+        prev.append(h('div', { class: 'list' }, cards.map((c, i) => h('div', { class: 'li' }, h('span', { class: 'ic', style: { fontSize: '11px', fontWeight: 800 } }, { 'Q&A': '❓', list: '📋', term: '🔤', definition: '📖', name: '🏷️', date: '📅', 'fill-in': '✏️' }[c.how] || '•'),
+          h('span', { class: 't' }, h('b', null, c.front), h('small', null, c.back)), h('button', { class: 'ib', 'aria-label': 'Remove this card', onclick: () => { cards.splice(i, 1); const row = prev.querySelectorAll('.li')[i]; row && row.remove(); cnt.textContent = cards.length + ' cards'; } }, '✕')))));
+      };
+      nm.addEventListener('input', () => { delete nm.dataset.auto; });
+      ta.addEventListener('input', debounce(paint, 250)); sel.onchange = paint;
+      const fromNote = async () => { const notes = (await DB.all('notes')).filter(n => (n.body || '').trim()).sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 30); if (!notes.length) return UI.toast('No notes yet'); UI.menu('Use a note', notes.map(n => ({ icon: '📝', label: n.title || (n.body || '').split('\n')[0].slice(0, 40) || 'Untitled', sub: (n.body || '').slice(0, 60), run: () => { ta.value = (n.title ? n.title + '\n' : '') + n.body; delete nm.dataset.auto; nm.value = n.title || ''; if (!nm.value) nm.dataset.auto = '1'; paint(); } }))); };
+      const s = UI.sheet({ title: '✨ Make cards from my info', body: h('div', { class: 'stack' },
+        h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: fromNote }, '📝 Use a note'), h('button', { class: 'btn sm', onclick: () => { ta.value = CardGen.SAMPLE; paint(); } }, '👀 Show an example'), h('button', { class: 'btn sm', onclick: async () => { try { const t = await navigator.clipboard.readText(); if (t) { ta.value = t; paint(); } } catch (e) { UI.toast('Long-press the box and tap Paste'); } } }, '📋 Paste')),
+        ta, h('div', { class: 'grid2' }, h('label', { class: 'f' }, h('span', null, 'Put them in'), sel), h('label', { class: 'f' }, h('span', null, 'Deck name'), nm)),
+        h('div', { class: 'sec', style: { margin: '4px 0 0' } }, '👀 Preview · ', cnt), prev),
+        actions: [{ label: 'Cancel' }, { label: 'Add cards', cls: 'pri', onClick: async c => {
+          if (!cards.length) return UI.toast('No cards to add yet');
+          let d = decks.find(x => x.id === sel.value);
+          if (!d) { d = { id: uid(), name: (nm.value.trim() || 'My cards').slice(0, 40), emoji: '✨', color: pick(DECK_COLORS), created: Date.now() }; await DB.put('decks', d); }
+          let n = 0; for (const cd of cards) { await DB.put('cards', { id: uid(), deck: d.id, front: cd.front, back: cd.back, box: 0, due: 0, created: Date.now() + n }); n++; }
+          Sfx.good(); UI.toast('Added ' + n + ' cards to ' + d.name); c(); deck(d);
+        } }] });
+      paint();
+    }
+    if (ctx.param && ctx.param.startsWith('make:')) DB.get('notes', ctx.param.slice(5)).then(n => { home(); setTimeout(() => makeCards(n ? (n.title ? n.title + '\n' : '') + (n.body || '') : ''), 200); });
+    else home();
   },
 });
 
@@ -3554,6 +4683,19 @@ const MY_GAMES = [
   ['🦸‍♂️', 'Capeborn (Claude link)', '3D superhero', 'https://claude.ai/artifact/UpbieWc5vi9o7n4VdLHvi3'],
   ['🏝', 'Hollowsky (Claude link, co-op)', '3D adventure · play with friends', 'https://claude.ai/artifact/YZkGzjrrr1XRucVDZMhx3D'],
 ];
+// the user's own games copied into Super One (tools/prep_games.py) — they play offline in a full-screen frame
+const LOCAL_GAMES = [['lanternbound', '🏮', 'Lanternbound', 'Adventure RPG', 'linear-gradient(135deg,#F7B733,#FC4A1A)'], ['slimeborn', '🟢', 'Slimeborn', '3D slime RPG', 'linear-gradient(135deg,#56AB2F,#A8E063)'], ['misfit', '👑', 'Misfit Sovereign', '3D RPG · 2 players', 'linear-gradient(135deg,#8E2DE2,#FF4A6A)'],
+  ['capeborn', '🦸', 'Capeborn', '3D superhero city', 'linear-gradient(135deg,#2F6BFF,#FF2E4D)'], ['hollowsky', '🏝️', 'Hollowsky', '3D sky islands', 'linear-gradient(135deg,#00C6FB,#005BEA)'], ['chibi', '🧸', 'Chibi Studio', 'Character creator', 'linear-gradient(135deg,#F857A6,#FF5858)'], ['quarterturn', '🧊', 'Quarter Turn', 'Rubik’s cube 3D', 'linear-gradient(135deg,#11998E,#38EF7D)']];
+const GamePlayer = {
+  open(id, name) {
+    const fr = h('iframe', { src: 'data/play/' + id + '.html', title: name, allow: 'fullscreen; autoplay; gamepad; accelerometer; gyroscope', style: { position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, background: '#000' } });
+    const close = () => { el.remove(); removeEventListener('keydown', key); };
+    const el = h('div', { role: 'dialog', 'aria-label': name, style: { position: 'fixed', inset: 0, zIndex: 47, background: '#000' } }, fr,
+      h('button', { 'aria-label': 'Close ' + name, onclick: () => { if (confirm('Leave ' + name + '? Your game saves itself.')) close(); }, style: { position: 'absolute', left: '8px', top: 'calc(env(safe-area-inset-top) + 8px)', width: '36px', height: '36px', borderRadius: '50%', border: 0, background: 'rgba(0,0,0,.45)', color: '#fff', fontSize: '18px', zIndex: 2, opacity: 0.75 } }, '✕'));
+    const key = e => { if (e.key === 'Escape' && e.shiftKey) close(); }; addEventListener('keydown', key);
+    document.body.append(el); return { close, frame: fr };
+  },
+};
 function GameBest(k, val, lower) { const all = Prefs.get('gameBest', {}); if (val == null) return all[k]; if (all[k] == null || (lower ? val < all[k] : val > all[k])) { all[k] = val; Prefs.set('gameBest', all); return true; } return false; }
 const GAMES = [
   ['meteor', '☄️', 'Meteor Dash', 'Dodge space rocks, grab stars', 'linear-gradient(135deg,#3A1C71,#D76D77)'],
@@ -3572,7 +4714,8 @@ Apps.reg({
     function home() {
       if (cleanup) { cleanup(); cleanup = null; } v.innerHTML = ''; ctx.setTitle('Games'); ctx.setBack(null); ctx.setActions();
       v.append(h('div', { class: 'stack' }, GAMES.map(([id, e, n, d, c]) => h('button', { class: 'gcard', style: { background: c }, onclick: () => open(id, n) }, h('span', { class: 'e' }, e), h('span', null, h('b', null, n), h('small', null, d + (best(id) != null ? ' · Best: ' + (id === 'sudoku' || id === 'memory' || id === 'slide' ? fmtDur(best(id)) : best(id)) : '')))))),
-        h('div', { class: 'sec' }, '🕹️ All your games (' + MY_GAMES.length + ')'), h('p', { class: 'tiny muted', style: { margin: '0 4px 8px' } }, 'Your own big games. They open in Safari. ⚡ = works offline after the first visit; the others open on claude.ai.'),
+        h('div', { class: 'sec' }, '🎮 Your games — play offline right here'), h('div', { class: 'grid2' }, LOCAL_GAMES.map(([id, e, n, d, c]) => h('button', { class: 'bigbtn lgame', style: { background: c, color: '#fff', border: 0, minHeight: '96px' }, onclick: () => GamePlayer.open(id, n) }, h('span', { class: 'e' }, e), h('b', null, n), h('small', { style: { color: 'rgba(255,255,255,.92)' } }, d + ' · ⚡ offline')))),
+        h('div', { class: 'sec' }, '🕹️ All your game links (' + MY_GAMES.length + ')'), h('p', { class: 'tiny muted', style: { margin: '0 4px 8px' } }, 'These open in Safari. ⚡ = works offline after the first visit; the others open on claude.ai and need internet. The 7 above play inside Super One with no internet.'),
         h('div', { class: 'list' }, MY_GAMES.map(([e, n, g, u, off]) => h('button', { class: 'li', onclick: () => window.open(u, '_blank', 'noopener') }, h('span', { class: 'ic' }, e), h('span', { class: 't' }, h('b', null, n + (off ? ' ⚡' : '')), h('small', null, g)), h('span', { class: 'chev' }, '↗')))));
     }
     function open(id, name) {
@@ -4346,7 +5489,7 @@ const Fig = (() => {
   }
   const pts = a => a.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
   function propSvg(list) {
-    return (list || []).map(([k, ...v]) => k === 'r' ? '<rect x="' + v[0] + '" y="' + v[1] + '" width="' + v[2] + '" height="' + v[3] + '" rx="1.5" fill="var(--fig-prop)"/>'
+    return (list || []).map(([k, ...v]) => k === 'c' ? '<circle cx="' + v[0] + '" cy="' + v[1] + '" r="' + v[2] + '" fill="none" stroke="var(--fig-prop-dark)" stroke-width="2"/>' : k === 'r' ? '<rect x="' + v[0] + '" y="' + v[1] + '" width="' + v[2] + '" height="' + v[3] + '" rx="1.5" fill="var(--fig-prop)"/>'
       : '<line x1="' + v[0] + '" y1="' + v[1] + '" x2="' + v[2] + '" y2="' + v[3] + '" stroke="var(--fig-prop' + (v[4] > 2.5 ? '-dark' : '') + ')" stroke-width="' + (v[4] || 2) + '" stroke-linecap="round"/>').join('');
   }
   const ease = t => t * t * (3 - 2 * t);
@@ -4474,6 +5617,156 @@ const FIT_START = { // quick level picks
   strong: { push: 'diamond', pull: 'pullup', pullNB: 'row', legs: 'jumpsquat', core: 'hollow', dips: 'dip', hand: 'handstand' },
 };
 
+/* ---- 39-fit-goals.js ---- */
+/* ===== Calisthenics goals: real level test, body goals, elite skill paths and a weekly routine ===== */
+// more stick-figure demos for the skill families (side view, facing right, floor y=90)
+Object.assign(ANIMS, {
+  planche: { k: [{ h: [44, 66], s: [62, 67], a: [[54, 90], [52, 90]], f: [[44, 75]], toe: [-4, 1] }, { h: [38, 67], s: [61, 67], a: [[54, 90], [52, 90]], f: [[8, 67], [10, 68]], toe: [-4, 0] }], d: [1.4, 1.4] },
+  frontlever: { p: [['l', 30, 10, 30, 90, 1.6], ['l', 82, 10, 82, 90, 1.6], ['l', 24, 10, 88, 10, 3.2]], k: [{ h: [44, 34], s: [62, 33], a: [[66, 10], [64, 10]], f: [[46, 28]], toe: [-3, -1] }, { h: [38, 33], s: [62, 33], a: [[66, 10], [64, 10]], f: [[8, 33], [10, 34]], toe: [-4, 0] }], d: [1.4, 1.4] },
+  backlever: { p: [['l', 30, 10, 30, 90, 1.6], ['l', 82, 10, 82, 90, 1.6], ['l', 24, 10, 88, 10, 3.2]], k: [{ h: [48, 38], s: [68, 36], a: [[60, 10], [58, 10]], f: [[50, 46]], eb: -1, toe: [-3, 1] }, { h: [44, 36], s: [68, 36], a: [[60, 10], [58, 10]], f: [[14, 36], [16, 37]], eb: -1, toe: [-4, 0] }], d: [1.4, 1.4] },
+  flag: { p: [['l', 30, 4, 30, 90, 3.4]], k: [{ h: [58, 54], s: [36, 52], a: [[31, 30], [31, 74]], f: [[62, 64]], toe: [3, 1] }, { h: [60, 52], s: [36, 52], a: [[31, 30], [31, 74]], f: [[90, 52], [90, 53]], toe: [4, 0] }], d: [1.5, 1.5] },
+  freehand: { k: [{ h: [50, 42], s: [50, 66], a: [[51, 90], [49, 90]], f: [[50, 12], [51, 12]], toe: [0, -4] }, { h: [51, 42], s: [50.5, 66], a: [[51, 90], [49, 90]], f: [[52, 12], [53, 12]], toe: [0, -4] }], d: [1.2, 1.2] },
+  muscleup: { p: [['l', 28, 38, 28, 90, 1.6], ['l', 76, 38, 76, 90, 1.6], ['l', 22, 38, 82, 38, 3.2]], k: [{ h: [50, 86], s: [51, 62], a: [[53, 38], [51, 38]], f: [[36, 84]], eb: 1 }, { h: [47, 66], s: [49, 42], a: [[53, 38], [51, 38]], f: [[34, 70]], eb: 1 }, { h: [46, 54], s: [58, 34], a: [[53, 38], [51, 38]], f: [[34, 62]], eb: -1 }, { h: [50, 38], s: [52, 14], a: [[53, 38], [51, 38]], f: [[46, 66]] }], d: [0.7, 0.5, 0.6, 1] },
+  vsit: { k: [{ h: [50, 85], s: [48, 61], a: [[51, 90], [49, 90]], f: [[80, 85]], toe: [4, -1] }, { h: [50, 86], s: [40, 63], a: [[47, 90], [45, 90]], f: [[68, 62]], toe: [3, -3] }], d: [1.4, 1.4] },
+  dragonflag: { p: [['r', 8, 82, 62, 4], ['l', 12, 86, 12, 90, 1.6], ['l', 66, 86, 66, 90, 1.6]], k: [{ h: [52, 77], s: [28, 80], a: [[12, 82]], f: [[82, 70]], eb: -1, toe: [3, -2] }, { h: [44, 60], s: [28, 80], a: [[12, 82]], f: [[58, 33]], eb: -1, toe: [2, -4] }], d: [1.4, 1.6] },
+  nordic: { p: [['l', 20, 84, 30, 84, 3]], k: [{ h: [41, 75], s: [41, 51], a: [[43, 74]], f: [[25, 89]], toe: [-4, 1] }, { h: [50.6, 79.4], s: [67.6, 62.4], a: [[80, 82]], f: [[25, 89]], toe: [-4, 1] }], d: [1.2, 1.8] },
+  pistol: { k: [{ h: [50, 60], s: [50, 36], a: [[74, 40]], f: [[52, 90], [78, 66]], kb: [-1, -1], toe: [4, -2] }, { h: [42, 80], s: [54, 61], a: [[78, 60]], f: [[52, 90], [72, 80]], kb: [-1, -1] }], d: [1.4, 1.4] },
+  rings: { p: [['l', 46, 0, 46, 54, 1.2], ['l', 56, 0, 56, 54, 1.2], ['c', 46, 58, 4], ['c', 56, 58, 4]], k: [{ h: [50, 58], s: [51, 34], a: [[52, 58], [50, 58]], f: [[52, 88], [49, 88]] }, { h: [50, 58], s: [50, 34], a: [[52, 58], [50, 58]], f: [[80, 58], [80, 59]], toe: [4, -1] }], d: [1.5, 1.5] },
+});
+// families of advanced and elite skills, each an ordered path: [name, unit, goal per set, sets, coach]
+const SKILL_FAMILIES = [
+  { id: 'planche', n: 'Planche', e: '🛫', anim: 'planche', gear: 'Floor or parallettes', base: '30 push-ups, 10 dips and a 60 s plank', acc: ['pushup:12', 'pike:8'], works: 'Shoulders, chest, core', how: ['Lock your arms straight and lean your shoulders forward past your hands.', 'Push the floor away and round your upper back a little.', 'Squeeze your belly and bottom so your body stays one straight line.'],
+    steps: [['Planche Lean', 'sec', 30, 3], ['Tuck Planche', 'sec', 15, 5], ['Advanced Tuck Planche', 'sec', 10, 5], ['One-Leg Planche', 'sec', 8, 5], ['Straddle Planche', 'sec', 8, 5], ['Full Planche', 'sec', 5, 5], ['Planche Push-Up', 'reps', 3, 4], ['Straddle Planche Push-Up', 'reps', 3, 4], ['Reverse Planche', 'sec', 5, 4], ['Maltese Planche', 'sec', 3, 4, 1], ['Victorian Planche', 'sec', 2, 4, 1], ['One-Arm Planche', 'sec', 2, 4, 1]] },
+  { id: 'front', n: 'Front Lever', e: '🛸', anim: 'frontlever', bar: 1, gear: 'Pull-up bar or rings', base: '10 pull-ups and 10 hanging knee raises', acc: ['pullup:6', 'hangknee:10'], works: 'Back, core, arms', how: ['Hang with straight arms and pull the bar down toward your hips.', 'Lift your body until it is flat like a table, face up.', 'Keep your arms straight and your belly tight.'],
+    steps: [['Tuck Front Lever', 'sec', 15, 5], ['Advanced Tuck Front Lever', 'sec', 10, 5], ['One-Leg Front Lever', 'sec', 8, 5], ['Straddle Front Lever', 'sec', 8, 5], ['Full Front Lever', 'sec', 5, 5], ['Front Lever Row', 'reps', 5, 4], ['Front Lever Raise', 'reps', 5, 4], ['Front Lever Pull-Up', 'reps', 3, 4], ['Front Lever Touch', 'reps', 3, 4], ['Front Lever Muscle-Up', 'reps', 1, 4, 1], ['One-Arm Front Lever', 'sec', 2, 4, 1]] },
+  { id: 'back', n: 'Back Lever', e: '🦇', anim: 'backlever', bar: 1, gear: 'Pull-up bar or rings', base: 'German hang for 20 s and 5 skin-the-cats (with a spotter)', acc: ['hang:30', 'superman:20'], works: 'Shoulders, back, core', how: ['Turn upside down under the bar (skin the cat), then lower your body behind your arms.', 'Face down, body flat, arms straight.', 'Go slowly — this stretches your shoulders a lot.'],
+    steps: [['Tuck Back Lever', 'sec', 15, 5], ['Advanced Tuck Back Lever', 'sec', 10, 5], ['One-Leg Back Lever', 'sec', 8, 5], ['Straddle Back Lever', 'sec', 8, 5], ['Full Back Lever', 'sec', 8, 5], ['Back Lever Raise', 'reps', 5, 4], ['Back Lever Pull-Out', 'reps', 3, 4], ['Back Lever Pull-Up', 'reps', 2, 4, 1], ['One-Arm Back Lever', 'sec', 2, 4, 1]] },
+  { id: 'flag', n: 'Human Flag', e: '🚩', anim: 'flag', gear: 'A strong pole or wall bars', base: '10 pull-ups, 20 push-ups and a 45 s side plank', acc: ['pullup:6', 'pushup:12'], works: 'Shoulders, sides, core', how: ['Grab the pole with your top hand pulling and your bottom hand pushing.', 'Lift your body sideways until it sticks out like a flag.', 'Push hard with the bottom arm — it does most of the work.'],
+    steps: [['Tuck Human Flag', 'sec', 10, 5], ['Advanced Tuck Human Flag', 'sec', 8, 5], ['Straddle Human Flag', 'sec', 8, 5], ['Full Human Flag', 'sec', 5, 5], ['Human Flag Raise', 'reps', 3, 4], ['Human Flag Pull-Up', 'reps', 3, 4], ['Human Flag Windmill', 'reps', 3, 4], ['One-Arm Human Flag', 'sec', 2, 4, 1]] },
+  { id: 'hand', n: 'Handstand', e: '🤸', anim: 'freehand', gear: 'Soft floor with space (a wall to start)', base: 'Wall handstand for 60 s and 10 pike push-ups', acc: ['handstand:30', 'pike:10'], works: 'Shoulders, balance', how: ['Kick up with straight arms, hands shoulder-width apart.', 'Push tall through your shoulders and squeeze your legs together.', 'Balance with your fingers. To come down safely, step down or cartwheel out.'],
+    steps: [['Freestanding Handstand', 'sec', 30, 5], ['Handstand Walk', 'reps', 10, 4], ['Handstand Push-Up', 'reps', 5, 4], ['Deficit Handstand Push-Up', 'reps', 3, 4], ['L-Sit to Handstand', 'reps', 1, 5], ['Pike Press to Handstand', 'reps', 3, 4], ['Straddle Press to Handstand', 'reps', 3, 4], ['Planche to Handstand', 'reps', 1, 5], ['One-Arm Handstand', 'sec', 5, 5, 1], ['One-Arm Handstand Push-Up', 'reps', 1, 4, 1]] },
+  { id: 'mu', n: 'Muscle-Up', e: '⬆️', anim: 'muscleup', bar: 1, gear: 'Pull-up bar or rings', base: '10 pull-ups, 15 dips and 5 chest-to-bar pull-ups', acc: ['pullup:6', 'dip:10'], works: 'Back, chest, arms', how: ['Pull up fast and high — aim your chest at the bar.', 'Lean forward and move your wrists over the bar.', 'Push down into a dip until your arms are straight on top.'],
+    steps: [['Explosive Muscle-Up', 'reps', 3, 4], ['Strict Muscle-Up', 'reps', 3, 4], ['Slow Muscle-Up', 'reps', 2, 4], ['L-Sit Muscle-Up', 'reps', 2, 4], ['Weighted Muscle-Up', 'reps', 3, 4], ['Ring Muscle-Up', 'reps', 3, 4], ['False-Grip Ring Muscle-Up', 'reps', 2, 4], ['Reverse Muscle-Up', 'reps', 1, 4, 1], ['360 Muscle-Up', 'reps', 1, 4, 1], ['One-Arm Muscle-Up', 'reps', 1, 4, 1]] },
+  { id: 'core', n: 'Core Masters', e: '🐉', anim: 'dragonflag', gear: 'Floor, bench or bar', base: 'L-sit for 20 s and 10 hanging leg raises', acc: ['hollow:30', 'legraise:12'], works: 'Abs, hip flexors', how: ['Keep your lower back tight and your legs straight.', 'Move slowly — control is the whole point.', 'Breathe out as you squeeze.'],
+    steps: [['Hanging Windshield Wipers', 'reps', 10, 4], ['Dragon Flag', 'reps', 5, 4], ['Reverse Dragon Flag', 'reps', 5, 4], ['Weighted L-Sit', 'sec', 15, 4], ['V-Sit', 'sec', 10, 5], ['One-Arm L-Sit', 'sec', 5, 4], ['Full Manna', 'sec', 3, 5], ['Manna Press', 'reps', 1, 4], ['Victorian Cross Hold', 'sec', 2, 4, 1]] },
+  { id: 'rings', n: 'Rings', e: '⭕', anim: 'rings', gear: 'Gymnastic rings', base: 'Ring support for 60 s, 10 ring dips and 10 ring rows', acc: ['dip:10', 'row:12'], works: 'Everything — rings are wobbly!', how: ['Turn the rings out a little and lock your arms straight.', 'Stay tight — rings move, so your body has to be steady.', 'Learn each hold on a bar or floor first, then try it on rings.'],
+    steps: [['Ring Back Lever', 'sec', 8, 5], ['Ring Front Lever', 'sec', 8, 5], ['Ring Handstand', 'sec', 10, 5], ['Ring Handstand Push-Up', 'reps', 3, 4], ['Ring Planche', 'sec', 3, 5], ['One-Arm Ring Support', 'sec', 5, 4], ['Iron Cross', 'sec', 3, 5, 1], ['Inverted Cross', 'sec', 2, 5, 1], ['Maltese', 'sec', 2, 5, 1], ['Ring Maltese Push-Up', 'reps', 1, 4, 1], ['Victorian Cross', 'sec', 1, 5, 1]] },
+  { id: 'pullpow', n: 'Pull Power', e: '🧗', anim: 'pullup', bar: 1, gear: 'Pull-up bar', base: '15 pull-ups in a row', acc: ['pullup:8', 'negpull:4'], works: 'Back, biceps, grip', how: ['Pull with one arm while the other helps less and less.', 'Keep your body still — no swinging.', 'Lower slowly every time.'],
+    steps: [['Archer Pull-Up', 'reps', 5, 4], ['Typewriter Pull-Up', 'reps', 5, 4], ['One-Arm Chin-Up', 'reps', 1, 5], ['One-Arm Pull-Up', 'reps', 1, 5], ['Weighted One-Arm Pull-Up', 'reps', 1, 5, 1]] },
+  { id: 'pushpow', n: 'Push Power', e: '💥', anim: 'pushup', gear: 'Floor', base: '30 push-ups and 15 dips', acc: ['diamond:10', 'pike:8'], works: 'Chest, arms, shoulders', how: ['Wide feet for balance on one-arm moves.', 'Keep your body straight and tight.', 'Go down slowly, then push hard.'],
+    steps: [['One-Arm Push-Up', 'reps', 5, 4], ['90-Degree Hold', 'sec', 5, 5], ['90-Degree Push-Up', 'reps', 3, 4], ['Azarian Push-Up', 'reps', 3, 4, 1], ['Victorian Push-Up', 'reps', 1, 4, 1]] },
+  { id: 'bar', n: 'Bar Tricks', e: '🌀', anim: 'muscleup', bar: 1, gear: 'High bar with thick mats', base: '15 pull-ups, chest-to-bar pull-ups and a safe swing', acc: ['pullup:8', 'hang:30'], works: 'Power, grip, air awareness', how: ['Learn every trick with a coach, thick mats and a spotter.', 'Master safe swings and landings first.', 'Never try a release move alone.'], coach: 1,
+    steps: [['360 Pull-Up', 'reps', 1, 5], ['Swing 360', 'reps', 1, 5], ['Bar 360', 'reps', 1, 5], ['Ginger', 'reps', 1, 5], ['Shrimp Flip', 'reps', 1, 5], ['Double Bar Spin', 'reps', 1, 5], ['Russian Swing', 'reps', 1, 5], ['540 Pull-Up', 'reps', 1, 5], ['Swing 540', 'reps', 1, 5], ['Bar 540', 'reps', 1, 5], ['Backward Giant', 'reps', 1, 5], ['Forward Giant', 'reps', 1, 5], ['Release and Regroups', 'reps', 1, 5], ['Swing 720', 'reps', 1, 5], ['Bar 720', 'reps', 1, 5]] },
+  { id: 'legs', n: 'Leg Masters', e: '🦿', anim: 'nordic', gear: 'Floor and something to hook your feet under', base: '5 pistol squats each leg (or 20 lunges)', acc: ['lunge:16', 'squat:20'], works: 'Thighs, hamstrings, knees', how: ['Lock your feet in safely.', 'Lower as slowly as you can.', 'Use your hands to catch yourself at first.'],
+    steps: [['Reverse Nordic Curl', 'reps', 8, 4], ['Dragon Pistol Squat', 'reps', 5, 4], ['Full Nordic Curl', 'reps', 3, 4], ['One-Leg Nordic Curl', 'reps', 1, 4], ['One-Leg Natural Leg Extension', 'reps', 3, 4]] },
+];
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+for (const F of SKILL_FAMILIES) {
+  if (F.id === 'legs') F.steps.forEach(st => { if (/Pistol/.test(st[0])) st.anim = 'pistol'; });
+  if (F.id === 'core') F.steps.forEach(st => { if (/Sit|Manna|Victorian/.test(st[0])) st.anim = 'vsit'; });
+  F.steps.forEach((st, i) => { const id = 'sk-' + slug(st[0]); FIT_EX[id] = { id, n: st[0], e: F.e, anim: st.anim || F.anim, unit: st[1], works: F.works, kind: 'elite', fam: F.id, step: i, how: F.how, tip: (st[4] || F.coach ? '⚠️ Learn this one with a coach and a spotter. ' : '') + 'Goal: ' + st[3] + ' × ' + st[2] + (st[1] === 'sec' ? ' s' : '') + '. Hit it, then move to the next step.', bar: !!F.bar }; st.id = id; });
+}
+const FIT_BODY = [
+  ['abs6', '6 pack', '🍫', 'Strong, visible abs'], ['abs8', '8 pack', '🍫', 'Even more ab work'], ['abs10', '10 pack', '🍫', 'The max — see the note'], ['chest', 'Bigger chest', '🛡️', 'Push-ups, dips and more'],
+  ['back', 'Strong back', '🦅', 'Pull-ups, rows, holds'], ['legs', 'Strong legs', '🦵', 'Squats, lunges, pistols'], ['arms', 'Big front arms', '💪', 'Biceps: chin-ups and rows'],
+];
+const Goals = {
+  async get() { return Object.assign({ body: [], skills: {}, at: 0 }, await DB.kget('fitGoals', {})); },
+  save(g) { return DB.kset('fitGoals', g); },
+  async prog() { return await DB.kget('fitSkill', {}); },
+  // the week of sessions for your goals
+  plan(g, s, prog) {
+    const B = new Set(g.body), abs = ['abs6', 'abs8', 'abs10'].filter(x => B.has(x)), absLvl = abs.includes('abs10') ? 3 : abs.includes('abs8') ? 2 : abs.length ? 1 : 0, S = [];
+    const absItems = ['plank:' + (30 + absLvl * 10), 'legraise:' + (8 + absLvl * 2), 'hollow:' + (15 + absLvl * 10), absLvl >= 2 ? (s.bar ? 'hangknee:10' : 'climber:30') : 'climber:30', absLvl >= 3 ? 'sk-dragon-flag:3' : null].filter(Boolean);
+    if (B.has('chest')) S.push({ id: 'g-chest', n: 'Chest day', e: '🛡️', items: ['@push', '@dips', '@push-1', 'diamond:8'] });
+    if (B.has('back') || B.has('arms')) S.push({ id: 'g-back', n: B.has('arms') && !B.has('back') ? 'Arms day' : 'Back' + (B.has('arms') ? ' & arms' : '') + ' day', e: '🦅', items: s.bar ? ['@pull', 'row:12', B.has('arms') ? 'chinup:6' : 'superman:25', B.has('arms') ? 'negpull:4' : 'hang:30'] : ['@pull', 'row:12', 'superman:25', 'row:10'] });
+    if (B.has('legs')) S.push({ id: 'g-legs', n: 'Leg day', e: '🦵', items: ['@legs', 'lunge:16', 'bridge:15', 'calf:20', 'wallsit:40'] });
+    const fams = Object.keys(g.skills).map(id => SKILL_FAMILIES.find(f => f.id === id)).filter(Boolean);
+    for (let i = 0; i < fams.length; i += 2) { const pair = fams.slice(i, i + 2), items = [];
+      for (const F of pair) { const k = Math.min(prog[F.id] || 0, F.steps.length - 1), st = F.steps[k], prev = F.steps[k - 1]; items.push(st.id + ':' + st[2]); if (prev) items.push(prev.id + ':' + prev[2]); items.push(...F.acc.slice(0, 1)); }
+      S.push({ id: 'g-skill' + i, n: pair.map(f => f.n).join(' + '), e: pair[0].e, items, skill: true }); }
+    if (!S.length && absLvl) S.push({ id: 'g-full', n: 'Full body', e: '⚡', items: ['@push', '@pull', '@legs'] });
+    if (absLvl) { const n = Math.min(S.length, absLvl >= 2 ? 3 : 2); for (let i = 0; i < n; i++) S[i].items = S[i].items.concat(absItems.slice(0, i ? 3 : absItems.length)), S[i].n += ' + abs'; if (!S.length) S.push({ id: 'g-abs', n: 'Abs day', e: '🍫', items: absItems }); }
+    const DAYS = S.length <= 2 ? ['Mon', 'Thu'] : S.length === 3 ? ['Mon', 'Wed', 'Fri'] : S.length === 4 ? ['Mon', 'Tue', 'Thu', 'Fri'] : ['Mon', 'Tue', 'Wed', 'Fri', 'Sat'];
+    return S.slice(0, 5).map((x, i) => Object.assign(x, { day: DAYS[i], rounds: 3, warm: true, rest: x.skill ? 90 : undefined }));
+  },
+};
+/* ---------- the real level test ---------- */
+const FitTest = {
+  STEPS(bar) { return [
+    { k: 'P', ex: 'pushup', type: 'reps', t: 'Max push-ups', how: 'Do as many good push-ups as you can in a row. Chest close to the floor, body straight. Stop when your form breaks.' },
+    { k: 'K', ex: 'kneepush', type: 'reps', t: 'Max knee push-ups', how: 'Now do as many knee push-ups as you can.', only: r => (r.P || 0) < 3 },
+    bar ? { k: 'U', ex: 'pullup', type: 'reps', t: 'Max pull-ups', how: 'Hang with straight arms, palms away. Pull until your chin is over the bar. Count only full ones.' } : { k: 'R', ex: 'row', type: 'reps', t: 'Max Australian rows', how: 'Under a sturdy table (ask an adult to check it), pull your chest to the edge as many times as you can.' },
+    bar ? { k: 'H', ex: 'hang', type: 'hold', t: 'Longest dead hang', how: 'Hang from the bar as long as you can. Tap Start when you begin and Stop when you let go.', only: r => (r.U || 0) < 1 } : null,
+    { k: 'S', ex: 'squat', type: 'count60', t: 'Squats in 60 seconds', how: 'Do as many full squats as you can in one minute. Count them in your head, then type the number.' },
+    { k: 'T', ex: 'plank', type: 'hold', t: 'Longest plank', how: 'Forearm plank, body straight. Tap Start, hold as long as you can, then tap Stop.' },
+    { k: 'D', ex: 'benchdip', type: 'reps', t: 'Max bench dips', how: 'On a sturdy chair or bench, do as many dips as you can. No chair? Tap Skip.', skip: 1 },
+  ].filter(Boolean); },
+  // results → step on each ladder
+  levels(r, bar) {
+    const P = r.P || 0, K = r.K || 0, U = r.U || 0, H = r.H || 0, R = r.R || 0, S = r.S || 0, T = r.T || 0, D = r.D || 0, lv = {};
+    lv.push = P === 0 ? (K < 5 ? 0 : K < 12 ? 1 : 2) : P < 3 ? 2 : P < 12 ? 3 : P < 22 ? 4 : 5;
+    if (bar) lv.pull = U === 0 ? (H < 20 ? 0 : H < 40 ? 1 : 3) : U < 5 ? 4 : 5; else lv.pullNB = R < 5 ? 0 : R < 12 ? 1 : 2;
+    lv.legs = S < 15 ? 0 : S < 30 ? 1 : S < 40 ? 2 : 3;
+    lv[bar ? 'core' : 'coreNB'] = T < 30 ? 0 : T < 60 ? 1 : T < 100 ? 2 : 3;
+    lv.dips = D >= 12 ? 1 : 0; lv.hand = P < 10 ? 0 : P < 20 ? 1 : 2;
+    return lv;
+  },
+  run(s, onDone) {
+    let bar = s.bar, i = -1, steps = [], r = {}, fig = null, iv = 0;
+    const ov = h('div', { class: 'fplay', role: 'dialog', 'aria-label': 'Level test' }); document.body.append(ov); Sfx.ctx();
+    const clear = () => { clearInterval(iv); if (fig) { fig.stop(); fig = null; } ov.innerHTML = ''; ov.className = 'fplay'; };
+    const close = () => { clear(); ov.remove(); Speak.stop(); };
+    const top = () => h('div', { class: 'ftop' }, h('button', { class: 'ib', 'aria-label': 'Stop the test', html: SVG.close, onclick: close }), h('div', { class: 'prog' }, h('i', { style: { width: Math.max(0, 100 * i / Math.max(1, steps.length)) + '%' } })), h('b', { class: 'small' }, i < 0 ? 'Test' : Math.min(i + 1, steps.length) + ' / ' + steps.length));
+    const say = t => { if (s.voice) Speak.say(t); }, beep = f => { if (Sfx.on()) Sfx.tone(f || 880, 0.13, { type: 'square', vol: 0.06 }); };
+    function intro() {
+      clear(); fig = Fig.make('pushup', { crop: true, cls: 'fig' });
+      ov.append(top(), h('div', { class: 'fname mt' }, '🧪 Level test'), fig.el, h('p', { class: 'fsub', style: { maxWidth: '420px', margin: '8px auto', fontSize: '16px' } }, 'Do each move as many times as you can with good form. I’ll use your real numbers to set your level on every ladder. It takes about 5 minutes. Warm up first!'),
+        h('div', { class: 'center mt' }, h('div', { class: 'small', style: { marginBottom: '6px' } }, 'Do you have a pull-up bar (or something safe to hang from)?'), UI.seg([[true, '✅ Yes'], [false, '🚫 No']], bar, x => { bar = x; })),
+        h('div', { class: 'fctl' }, h('button', { class: 'btn pri fdone', onclick: () => { steps = FitTest.STEPS(bar); i = 0; next(); } }, 'Start the test ▶')));
+    }
+    function next() {
+      while (i < steps.length && steps[i].only && !steps[i].only(r)) i++;
+      if (i >= steps.length) return results();
+      const st = steps[i], E = FIT_EX[st.ex]; clear(); fig = Fig.make(E.anim, { crop: true, cls: 'fig' + (st.type === 'reps' ? '' : ' mid') });
+      ov.append(top(), h('div', { class: 'fsub mt' }, 'Test ' + (i + 1)), fig.el, h('div', { class: 'fname' }, E.e + ' ' + st.t), h('p', { class: 'fsub', style: { maxWidth: '440px', margin: '6px auto', fontSize: '15px' } }, st.how));
+      say(st.t + '. ' + st.how);
+      const done = val => { r[st.k] = Math.max(0, Math.round(val)); Sfx.good(); i++; next(); };
+      const skipB = st.skip ? h('button', { class: 'btn', onclick: () => { r[st.k] = 0; i++; next(); } }, 'Skip') : null;
+      if (st.type === 'reps' || st.type === 'count60') {
+        let n = 0; const num = h('div', { class: 'fbig' }, '0'), adj = d => { n = Math.max(0, n + d); num.textContent = n; };
+        const counter = h('div', null, h('div', { class: 'fadj' }, h('button', { class: 'btn', 'aria-label': 'One less', onclick: () => adj(-1) }, '−'), num, h('button', { class: 'btn', 'aria-label': 'One more', onclick: () => adj(1) }, '＋')), h('div', { class: 'row', style: { justifyContent: 'center', marginTop: '8px' } }, h('button', { class: 'btn sm', onclick: () => adj(5) }, '+5'), h('button', { class: 'btn sm', onclick: () => adj(10) }, '+10')));
+        if (st.type === 'count60') {
+          const clock = h('div', { class: 'fbig', style: { fontSize: '56px' } }, '60'), go = h('button', { class: 'btn pri fdone' }, 'Start 60 s ▶');
+          counter.hidden = true;
+          go.onclick = () => { go.disabled = true; let left = 60; const end = performance.now() + 60000; beep(660); iv = setInterval(() => { const l = Math.ceil((end - performance.now()) / 1000); if (l !== left) { left = Math.max(0, l); clock.textContent = left; if (left <= 3 && left > 0) beep(); if (left === 30) say('Halfway'); } if (left <= 0) { clearInterval(iv); beep(1320); say('Time! How many did you do?'); clock.textContent = '⏱️ Time!'; counter.hidden = false; go.remove(); ctl.append(h('button', { class: 'btn pri fdone', onclick: () => done(n) }, '✓ Save')); } }, 100); };
+          const ctl = h('div', { class: 'fctl' }, go, h('button', { class: 'btn', onclick: () => { clearInterval(iv); clock.textContent = '✍️'; counter.hidden = false; go.remove(); ctl.append(h('button', { class: 'btn pri fdone', onclick: () => done(n) }, '✓ Save')); } }, 'I timed it myself'));
+          ov.append(clock, counter, ctl);
+        } else ov.append(h('div', { class: 'small center', style: { opacity: .75 } }, 'Tap ＋ for each one you do — or type the total at the end.'), counter, h('div', { class: 'fctl' }, skipB, h('button', { class: 'btn pri fdone', onclick: () => done(n) }, '✓ That’s my max')));
+      } else {
+        let t0 = 0, val = 0; const clock = h('div', { class: 'fbig' }, '0 s'), b = h('button', { class: 'btn pri fdone' }, 'Start ▶');
+        b.onclick = () => { if (!t0) { t0 = performance.now(); b.textContent = '⏹ Stop'; beep(660); iv = setInterval(() => { val = (performance.now() - t0) / 1000; clock.textContent = Math.floor(val) + ' s'; if (Math.floor(val) % 30 === 0 && val > 1 && Math.floor(val) !== b._last) { b._last = Math.floor(val); beep(990); } }, 100); } else { clearInterval(iv); beep(1320); done(val); } };
+        ov.append(clock, h('div', { class: 'fctl' }, skipB, b));
+      }
+    }
+    async function results() {
+      clear(); ov.classList.add('done'); Sfx.win(); say('Test done! Here are your levels.');
+      const lv = FitTest.levels(r, bar), names = [];
+      s.bar = bar; s.setup = true; for (const k in lv) s.lv[k] = lv[k]; await Fit.save(s);
+      const tests = await DB.kget('fitTests', []); tests.unshift({ at: Date.now(), r, bar }); await DB.kset('fitTests', tests.slice(0, 50));
+      for (const L of FIT_LADDERS) { const x = Fit.ladder(L, s); names.push([L.e + ' ' + L.n, FIT_EX[x.list[x.i][0]].n, x.i + 1, x.list.length]); }
+      const row = (a, b) => h('div', { class: 'fstat' }, h('b', { style: { fontSize: '22px' } }, a), h('small', null, b));
+      ov.append(h('div', { class: 'fdonebox' }, h('div', { class: 'big' }, '🏅'), h('h2', null, 'Your levels'),
+        h('div', { class: 'fstats' }, [['P', 'push-ups'], ['U', 'pull-ups'], ['R', 'rows'], ['S', 'squats / min'], ['T', 's plank'], ['H', 's hang'], ['D', 'bench dips'], ['K', 'knee push-ups']].filter(([k]) => r[k] != null).map(([k, l]) => row(r[k], l))),
+        h('div', { class: 'fwin' }, names.map(([l, n, a, b]) => h('div', { style: { padding: '3px 0' } }, l + ': ', h('b', null, n), ' (step ' + a + ' of ' + b + ')'))),
+        h('p', { style: { opacity: .9, marginTop: '10px' } }, 'Take the test again every 4 weeks to see how much stronger you got!')),
+        h('div', { class: 'fctl' }, h('button', { class: 'btn fdone', style: { background: '#fff', color: '#5B3CC4', border: 0, fontWeight: 800 }, onclick: () => { close(); onDone && onDone(); } }, 'Done')));
+    }
+    intro();
+    return { close };
+  },
+};
+
 /* ---- 39-fit.js ---- */
 /* ===== Calisthenics: find your level, follow-along workouts, level ladders, progress ===== */
 addCSS(`
@@ -4573,9 +5866,11 @@ const Fit = {
         const m = it.slice(1).match(/^(\w+)(-1)?$/), r = this.ladder(FIT_LADDERS.find(l => l.id === m[1]), s), i = Math.max(0, r.i - (m[2] ? 1 : 0)), [ex, sets, goal] = r.list[i];
         return { ex, target: goal, goal, sets, slot: m[2] ? null : r.key, next: !m[2] && r.list[i + 1] ? r.list[i + 1][0] : null };
       }
-      const [ex, t] = it.split(':'), E = FIT_EX[ex]; return { ex, target: +t || (E.unit === 'sec' ? 30 : 10) };
+      const [ex, t] = it.split(':'), E = FIT_EX[ex], target = +t || (E.unit === 'sec' ? 30 : 10);
+      if (E.kind === 'elite') { const F = SKILL_FAMILIES.find(f => f.id === E.fam), nx = F && F.steps[E.step + 1]; return { ex, target, goal: target, sets: 3, skillFam: E.fam, skillStep: E.step, next: nx ? nx.id : null }; }
+      return { ex, target };
     };
-    const items = w.items.map(one).filter(x => s.bar || !FIT_EX[x.ex].bar || w.id === 'try'), seq = [];
+    const items = w.items.map(one).filter(x => s.bar || !FIT_EX[x.ex].bar || w.id === 'try').filter((x, i, a) => a.findIndex(y => y.ex === x.ex) === i), seq = [];
     if (w.warm) for (const it of ['armcircle:20', 'highknee:20', 'squat:8']) seq.push(Object.assign(one(it), { warm: true, round: 0 }));
     for (let r = 1; r <= w.rounds; r++) for (const it of items) seq.push(Object.assign({}, it, { round: r }));
     for (const x of seq) { x.unit = FIT_EX[x.ex].unit; if (w.hiit && !x.warm) { x.unit = 'sec'; x.target = w.hiit[0]; x.amrap = true; } }
@@ -4601,16 +5896,17 @@ Apps.reg({
   async mount(v, ctx) {
     let s = await Fit.st(), tab = Prefs.get('fitTab', 'train'), play = null;
     const body = h('div');
-    const tabs = UI.tabs([['train', '🏋️ Train'], ['levels', '🪜 Levels'], ['moves', '📖 Moves'], ['progress', '📈 Stats']], tab, t => { tab = t; Prefs.set('fitTab', t); show(); }); tabs.classList.add('fittabs');
+    const tabs = UI.tabs([['train', '🏋️ Train'], ['goals', '🏆 Goals'], ['levels', '🪜 Levels'], ['moves', '📖 Moves'], ['progress', '📈 Stats']], tab, t => { tab = t; Prefs.set('fitTab', t); show(); }); tabs.classList.add('fittabs');
     v.append(tabs, body);
-    function show() { body.innerHTML = ''; ({ train, levels, moves, progress })[tab](); }
+    function show() { body.innerHTML = ''; ({ train, goals, levels, moves, progress })[tab] ? ({ train, goals, levels, moves, progress })[tab]() : train(); }
+    const test = () => { if (play) play.close(); play = FitTest.run(s, () => { play = null; show(); }); };
     const goalTxt = (ex, sets, goal) => sets + ' × ' + goal + (FIT_EX[ex].unit === 'sec' ? ' s' : '');
     /* ---------- Train ---------- */
     async function train() {
       if (!s.setup) {
         const f = Fig.make('pushup', { crop: true, cls: 'fig fig-white' });
         body.append(h('div', { class: 'ftoday' }, f.el, h('div', null, h('div', { class: 'k' }, 'Welcome'), h('h3', null, 'Train with your body'), h('p', null, 'No gym needed. Push-ups, pull-ups, squats and more — and you level up as you get stronger.'), h('button', { class: 'btn', onclick: onboard }, 'Find my level →'))));
-        body.append(h('p', { class: 'tiny muted mt' }, 'Takes 30 seconds. You can change it any time.'));
+        body.append(h('p', { class: 'tiny muted mt' }, 'Take a 5-minute test with your real max reps, or pick quickly. You can change it any time.'));
         return;
       }
       const { w, today } = await Fit.next(s), f = Fig.make(FIT_EX[Fit.build(w, s).find(x => !x.rest && !x.warm).ex].anim, { crop: true, cls: 'fig fig-white' });
@@ -4621,7 +5917,7 @@ Apps.reg({
         h('div', null, h('div', { class: 'small muted mb' }, 'Do you have a pull-up bar?'), UI.seg([[true, '✅ Yes'], [false, '🚫 No bar']], s.bar, x => { set('bar', x); })),
         h('div', null, h('div', { class: 'small muted mb' }, 'Rest between moves'), UI.seg([[30, '30 s'], [45, '45 s'], [60, '60 s'], [90, '90 s']], s.rest, x => set('rest', x))),
         h('div', null, h('div', { class: 'small muted mb' }, 'Voice coach'), UI.seg([[true, '🔊 On'], [false, '🔇 Off']], s.voice, x => set('voice', x))),
-        h('button', { class: 'btn', onclick: onboard }, '🎯 Find my level again')));
+        h('div', { class: 'row' }, h('button', { class: 'btn pri', onclick: test }, '🧪 Take the level test'), h('button', { class: 'btn', onclick: onboard }, '🎯 Quick pick'))));
       body.append(h('p', { class: 'tiny muted mt' }, '⚠️ Warm up first. A burning feeling is OK — sharp pain is not, so stop. Drink water. Train on a safe, clear floor.'));
     }
     function onboard() {
@@ -4630,12 +5926,48 @@ Apps.reg({
       const opt = (kind, e, b, sm) => h('button', { class: 'li', onclick: () => pick(kind) }, h('span', { class: 'ic' }, e), h('span', { class: 't' }, h('b', null, b), h('small', null, sm)), h('span', { class: 'chev' }, '›'));
       const sh = UI.sheet({ title: '🎯 Find my level', body: h('div', { class: 'stack' },
         h('div', null, h('div', { class: 'small muted mb' }, '1. Do you have a pull-up bar (or something safe to hang from)?'), UI.seg([[true, '✅ Yes'], [false, '🚫 No']], bar, x => { bar = x; })),
-        h('div', { class: 'small muted' }, '2. Which sounds most like you?'),
+        h('button', { class: 'bigbtn', style: { width: '100%', minHeight: 0, background: 'linear-gradient(135deg,#FF5F6D,#FFC371)', color: '#fff', border: 0 }, onclick: () => { s.bar = bar; sh.close(); test(); } }, h('span', { class: 'e' }, '🧪'), h('b', null, 'Take the level test (best)'), h('small', { style: { color: 'rgba(255,255,255,.92)' } }, 'Do max push-ups, pull-ups, squats and a plank — I set your levels from your real numbers')),
+        h('div', { class: 'small muted' }, '2. Or pick what sounds most like you:'),
         h('div', { class: 'list' }, opt('new', '🌱', 'Just starting', 'Push-ups are hard for me'), opt('some', '💪', 'I can do about 10 push-ups', 'But pull-ups are tough'), opt('strong', '🔥', 'I can do push-ups and pull-ups', 'I want a challenge'))) });
+    }
+    /* ---------- Goals ---------- */
+    async function goals() {
+      const g = await Goals.get(), prog = await Goals.prog(), saveG = () => Goals.save(g);
+      body.append(h('div', { class: 'sec', style: { marginTop: '4px' } }, '🎯 What do you want to achieve?'),
+        h('div', { class: 'chips' }, FIT_BODY.map(([id, n, e, d]) => { const b = h('button', { class: 'chip', 'aria-pressed': String(g.body.includes(id)), title: d }, e + ' ' + n);
+          b.onclick = () => { if (g.body.includes(id)) g.body = g.body.filter(x => x !== id); else { if (id.startsWith('abs')) g.body = g.body.filter(x => !x.startsWith('abs')); g.body.push(id); } saveG(); body.innerHTML = ''; goals(); }; return b; })));
+      if (g.body.includes('abs10') || g.body.includes('abs8')) body.append(h('p', { class: 'small', style: { background: 'var(--accent-soft)', padding: '10px 12px', borderRadius: '12px' } }, '💡 How many “packs” you can see is set by your body — most people have a 6 pack, some an 8 pack, and a 10 pack is very rare. Training makes every ab muscle strong; eating healthy and sleeping well make them show. This plan gives you the hardest ab training.'));
+      // weekly routine
+      const plan = Goals.plan(g, s, prog), ws = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], today = ws[new Date().getDay()];
+      body.append(h('div', { class: 'sec' }, '🗓️ Your routine'));
+      if (!plan.length) body.append(h('div', { class: 'card muted center' }, 'Pick a goal above or a skill below, and I’ll build your weekly routine.'));
+      else body.append(h('div', { class: 'list' }, ws.slice(1).concat('Sun').map(d => { const x = plan.find(p => p.day === d);
+        return x ? h('button', { class: 'li', style: d === today ? { background: 'var(--accent-soft)' } : null, onclick: () => start(x) }, h('span', { class: 'ic' }, x.e), h('span', { class: 't' }, h('b', null, d + ' · ' + x.n + (d === today ? ' (today)' : '')), h('small', null, '~' + Fit.minutes(x, s) + ' min · ' + Fit.build(x, s).filter(y => !y.rest && !y.warm && y.round === 1).map(y => FIT_EX[y.ex].n).join(', '))), h('span', { class: 'chev' }, '▶'))
+          : h('div', { class: 'li', style: { opacity: .6 } }, h('span', { class: 'ic' }, '😴'), h('span', { class: 't' }, h('b', null, d + ' · Rest'), h('small', null, 'Muscles grow while you rest. Stretch or play outside!'))); })),
+        h('p', { class: 'tiny muted' }, 'Tap a day to start it. Every workout tracks your sets — hit the goal on every set and I’ll offer the next step.'));
+      // elite skills
+      body.append(h('div', { class: 'sec' }, '🏆 Advanced & elite skills'), h('p', { class: 'small muted', style: { margin: '-4px 2px 10px' } }, 'Pick a family to see every step from easy to elite. Add it as a goal and it joins your routine.'));
+      body.append(h('div', { class: 'mgrid' }, SKILL_FAMILIES.map(F => { const k = prog[F.id] || 0, on = !!g.skills[F.id];
+        return h('button', { class: 'mcard', style: on ? { borderColor: 'var(--accent)', boxShadow: '0 0 0 2px var(--accent) inset' } : null, onclick: () => family(F, g, prog) }, Fig.make(F.anim, { still: true }).el, h('b', null, F.e + ' ' + F.n), h('small', null, (on ? '🎯 Goal · ' : '') + 'Step ' + (k + 1) + ' of ' + F.steps.length)); })));
+      body.append(h('p', { class: 'tiny muted mt' }, '⚠️ Elite moves take months or years and need strong tendons. Never train through sharp pain. Moves marked ⚠️ (crosses, bar spins and releases) need a coach, a spotter and thick mats.'));
+    }
+    function family(F, g, prog) {
+      const k = Math.min(prog[F.id] || 0, F.steps.length - 1), f = Fig.make(F.anim, { crop: true, cls: 'fig' }); f.el.style.maxWidth = '280px'; f.el.style.margin = '0 auto';
+      const on = !!g.skills[F.id];
+      const s2 = UI.sheet({ title: F.e + ' ' + F.n, onClose: () => { f.stop(); show(); }, body: h('div', null, f.el,
+        h('div', { class: 'row', style: { justifyContent: 'center', gap: '6px' } }, h('span', { class: 'pill' }, '💪 ' + F.works), h('span', { class: 'pill' }, '🧰 ' + F.gear), F.coach ? h('span', { class: 'pill', style: { background: 'var(--bad-soft)', color: 'var(--bad)' } }, '⚠️ Coach needed') : null),
+        h('p', { class: 'small', style: { background: 'var(--surface2)', padding: '10px 12px', borderRadius: '12px' } }, '✅ Before you start: ', h('b', null, F.base), '.'),
+        h('ol', { style: { paddingLeft: '22px', lineHeight: 1.5 } }, F.how.map(x => h('li', null, x))),
+        h('div', { class: 'sec' }, 'The path (' + F.steps.length + ' steps)'),
+        h('div', { class: 'list' }, F.steps.map((st, i) => h('button', { class: 'li', style: i === k ? { background: 'var(--accent-soft)' } : null, onclick: async () => { prog[F.id] = i; await DB.kset('fitSkill', prog); UI.toast(st[0] + ' is your step now'); s2.close(); family(F, g, prog); } },
+          h('span', { class: 'ic', style: { fontSize: '13px', fontWeight: 800 } }, i < k ? '✅' : i === k ? '👉' : String(i + 1)), h('span', { class: 't' }, h('b', null, st[0] + (st[4] || F.coach ? ' ⚠️' : '')), h('small', null, 'Goal ' + st[3] + ' × ' + st[2] + (st[1] === 'sec' ? ' s hold' : '') + (i === k ? ' · you are here' : ''))), h('span', { class: 'chev' }, i === k ? '' : 'Set')))),
+        h('p', { class: 'tiny muted' }, 'Tap a step to set where you are. Hit the goal on every set in a workout and I’ll offer the next one.')),
+        actions: [{ label: on ? 'Remove goal' : '🎯 Make it my goal', cls: on ? '' : 'pri', onClick: async c => { if (on) delete g.skills[F.id]; else g.skills[F.id] = F.steps.length - 1; await Goals.save(g); UI.toast(on ? 'Removed from your goals' : F.n + ' added to your routine!'); c(); } },
+          { label: '▶ Practice now', onClick: c => { c(); const st = F.steps[k], prev = F.steps[k - 1]; start({ id: 'sk-' + F.id, n: F.n + ' practice', e: F.e, rounds: 3, warm: true, rest: 90, items: [st.id + ':' + st[2], prev ? prev.id + ':' + prev[2] : null, F.acc[0]].filter(Boolean) }); } }] });
     }
     /* ---------- Levels ---------- */
     function levels() {
-      body.append(h('p', { class: 'small muted' }, 'Each ladder goes from easy to hard. Hit the goal on every set in a workout and you can move up a step.'));
+      body.append(h('div', { class: 'row nw mb', style: { alignItems: 'center' } }, h('p', { class: 'small muted', style: { margin: 0, flex: 1 } }, 'Each ladder goes from easy to hard. Hit the goal on every set in a workout and you can move up a step.'), h('button', { class: 'btn sm pri', onclick: test }, '🧪 Test me')));
       if (!s.setup) body.append(h('div', { class: 'center mb' }, h('button', { class: 'btn pri', onclick: onboard }, '🎯 Find my level')));
       for (const L of FIT_LADDERS) {
         const r = Fit.ladder(L, s);
@@ -4650,7 +5982,7 @@ Apps.reg({
     function moves() {
       let kind = Prefs.get('fitKind', 'all'); const grid = h('div', { class: 'mgrid mt' });
       const KINDS = [['all', 'All'], ['push', '💪 Push'], ['pull', '🧗 Pull'], ['legs', '🦵 Legs'], ['core', '🍫 Core'], ['cardio', '❤️ Cardio'], ['skill', '🤸 Skill']];
-      const paint = () => { grid.innerHTML = ''; for (const E of Object.values(FIT_EX)) if (kind === 'all' || E.kind === kind) grid.append(h('button', { class: 'mcard', onclick: () => howTo(E, { tryIt: true }) }, Fig.make(E.anim, { still: true }).el, h('b', null, E.n), h('small', null, E.bar ? 'Needs a bar' : E.works))); };
+      const paint = () => { grid.innerHTML = ''; for (const E of Object.values(FIT_EX)) if (E.kind !== 'elite' && (kind === 'all' || E.kind === kind)) grid.append(h('button', { class: 'mcard', onclick: () => howTo(E, { tryIt: true }) }, Fig.make(E.anim, { still: true }).el, h('b', null, E.n), h('small', null, E.bar ? 'Needs a bar' : E.works))); };
       body.append(h('div', { class: 'chips fkinds' }, KINDS.map(([k, l]) => { const b = h('button', { class: 'chip', 'aria-pressed': String(k === kind) }, l); b.onclick = () => { kind = k; Prefs.set('fitKind', k); [...b.parentNode.children].forEach(c => c.setAttribute('aria-pressed', String(c === b))); paint(); }; return b; })), grid);
       paint();
     }
@@ -4686,7 +6018,7 @@ Apps.reg({
     }
     /* ---------- the follow-along player ---------- */
     function start(w) {
-      if (!s.setup && w.id !== 'try' && w.id !== 'warm' && w.id !== 'hiit' && w.id !== 'coreb') { onboard(); return; }
+      if (!s.setup && ['full', 'upper', 'lower', 'hand'].includes(w.id)) { onboard(); return; }
       if (play) play.close(); play = player(w, () => { play = null; show(); });
     }
     function player(w, onEnd) {
@@ -4710,7 +6042,7 @@ Apps.reg({
         return { el, set(c, left, total) { num.textContent = c >= 60 ? Math.floor(c / 60) + ':' + pad2(c % 60) : String(c); rg.style.strokeDashoffset = (C * (1 - clamp((left - 1) / total, 0, 1))).toFixed(1); }, text(t) { num.textContent = t; } };
       }
       const next = () => { if (closed) return; if (i >= steps.length) return finishAll(); if (steps[i].rest) showRest(); else showEx(); };
-      const record = val => { const x = steps[i]; done.push({ ex: x.ex, val: Math.max(0, Math.round(val)), unit: x.amrap ? 'sec' : x.unit, slot: x.slot, goal: x.goal, sets: x.sets, next: x.next, warm: x.warm, amrap: x.amrap }); i++; next(); };
+      const record = val => { const x = steps[i]; done.push({ ex: x.ex, val: Math.max(0, Math.round(val)), unit: x.amrap ? 'sec' : x.unit, slot: x.slot, goal: x.goal, sets: x.sets, next: x.next, warm: x.warm, amrap: x.amrap, skillFam: x.skillFam, skillStep: x.skillStep }); i++; next(); };
       function showEx() {
         const x = steps[i], E = FIT_EX[x.ex]; clear();
         fig = Fig.make(E.anim, { tempo: E.tempo, crop: true, cls: 'fig' + (x.unit === 'sec' ? ' mid' : '') });
@@ -4747,7 +6079,9 @@ Apps.reg({
         const secs = Math.round((Date.now() - t0) / 1000), pb = await DB.kget('fitPB', {}), best = [];
         for (const d of work) if (!d.amrap && d.val > (pb[d.ex] || 0)) { if (pb[d.ex] && !best.includes(d.ex)) best.push(d.ex); pb[d.ex] = d.val; }
         await DB.kset('fitPB', pb);
-        const ups = []; for (const slot of [...new Set(work.filter(d => d.slot).map(d => d.slot))]) { const sets = work.filter(d => d.slot === slot), need = Math.min(sets[0].sets, w.rounds); if (sets[0].next && sets.length >= need && sets.every(d => d.val >= d.goal)) ups.push(sets[0]); }
+        const prog = await DB.kget('fitSkill', {}), skillUps = [];
+        for (const ex of [...new Set(work.filter(d => d.skillFam).map(d => d.ex))]) { const sets = work.filter(d => d.ex === ex), d0 = sets[0]; if (d0.next && (prog[d0.skillFam] || 0) === d0.skillStep && sets.length >= Math.min(3, w.rounds) && sets.every(d => d.val >= d.goal)) skillUps.push(d0); }
+        const ups = skillUps; for (const slot of [...new Set(work.filter(d => d.slot).map(d => d.slot))]) { const sets = work.filter(d => d.slot === slot), need = Math.min(sets[0].sets, w.rounds); if (sets[0].next && sets.length >= need && sets.every(d => d.val >= d.goal)) ups.push(sets[0]); }
         const log = await Fit.log(); log.unshift({ id: uid(), at: Date.now(), w: w.id, n: w.n, secs, sets: work.map(d => [d.ex, d.val, d.unit === 'sec' ? 1 : 0]) }); await DB.kset('fitLog', log.slice(0, 500));
         return { secs, sets: work.length, reps: work.reduce((a, d) => a + (d.unit === 'sec' ? 0 : d.val), 0), best, ups };
       }
@@ -4757,7 +6091,7 @@ Apps.reg({
         const box = h('div', { class: 'fdonebox' }, h('div', { class: 'big' }, '🎉'), h('h2', null, 'Workout done!'), h('div', { class: 'fstats' }, st(fmtDur(r.secs), 'time'), st(r.sets, 'sets'), st(r.reps, 'reps'), st('🔥 ' + Fit.streak(await Fit.log()), 'day streak')));
         for (const ex of r.best) box.append(h('div', { class: 'fwin' }, '🏅 New best: ' + FIT_EX[ex].n + ' — ' + Math.max(...done.filter(d => d.ex === ex).map(d => d.val)) + (FIT_EX[ex].unit === 'sec' ? ' s' : ' reps')));
         for (const u of r.ups) { const nx = FIT_EX[u.next], b = h('button', { class: 'btn' }, 'Move up to ' + nx.n + ' →');
-          b.onclick = () => { s.lv[u.slot] = (s.lv[u.slot] || 0) + 1; Fit.save(s); b.disabled = true; b.textContent = '✓ Leveled up!'; Sfx.chime(); };
+          b.onclick = async () => { if (u.skillFam) { const pg = await DB.kget('fitSkill', {}); pg[u.skillFam] = u.skillStep + 1; await DB.kset('fitSkill', pg); } else { s.lv[u.slot] = (s.lv[u.slot] || 0) + 1; Fit.save(s); } b.disabled = true; b.textContent = '✓ Leveled up!'; Sfx.chime(); };
           box.append(h('div', { class: 'fwin' }, '⬆️ You hit the goal for ' + FIT_EX[u.ex].n + ' on every set! Ready for the next step?', h('br'), b)); }
         ov.append(box, h('div', { class: 'fctl' }, h('button', { class: 'btn fdone', style: { background: '#fff', color: '#5B3CC4', border: 0, fontWeight: 800 }, onclick: close }, 'Done')));
       }
@@ -5004,7 +6338,7 @@ Apps.reg({
     const box = h('div', { class: 'mapbox' }, cv, h('div', { class: 'mapctl' }, h('button', { 'aria-label': 'Zoom in', onclick: () => zoomAt(1.6) }, '+'), h('button', { 'aria-label': 'Zoom out', onclick: () => zoomAt(1 / 1.6) }, '−'), h('button', { 'aria-label': 'Show my location', onclick: locate }, '📍')), info);
     const search = h('input', { type: 'search', placeholder: 'Find a country', 'aria-label': 'Find a country' });
     const placesBox = h('div'), homeBox = h('div');
-    v.append(h('button', { class: 'btn pri mb', style: { width: '100%', fontSize: '18px', minHeight: '52px' }, onclick: () => GoHome.go() }, '🏠 Take me home'), h('div', { class: 'search mb' }, search), box, h('div', { class: 'row mt' }, h('button', { class: 'btn', onclick: locate }, '📍 Where am I?'), h('button', { class: 'btn', onclick: () => addPlace() }, '⭐ Save a place'), h('button', { class: 'btn', onclick: () => gmaps('') }, '🌍 Google Maps')), homeBox, placesBox,
+    v.append(h('button', { class: 'btn pri mb', style: { width: '100%', fontSize: '18px', minHeight: '52px' }, onclick: () => GoHome.go() }, '🏠 Take me home'), h('div', { class: 'search mb' }, search), box, h('div', { class: 'row mt' }, h('button', { class: 'btn', onclick: locate }, '📍 Where am I?'), h('button', { class: 'btn', onclick: () => addPlace() }, '⭐ Save a place'), h('button', { class: 'btn', onclick: () => gmaps('') }, '🌍 Google Maps'), h('button', { class: 'btn', onclick: () => gmaps(me ? me.lat.toFixed(5) + ',' + me.lon.toFixed(5) : '', me ? 'My location' : '', 'photo') }, '🛰️ Street photo')), homeBox, placesBox,
       h('p', { class: 'tiny muted mt' }, 'Your phone’s GPS works without internet. This map shows countries; for streets and directions tap 🌍 Google Maps (needs internet).'));
     let D; try { D = await WorldData.load(); } catch (e) { box.replaceWith(UI.empty('🌐', 'Map not saved yet', 'Open Super One once with internet so it can save the world map.')); return; }
     const g = cv.getContext('2d'); let W = 0, H = 0, dpr = 1, s = 1, tx = 0, ty = 0, sel = null, me = null, places = [], raf = 0;
@@ -5061,14 +6395,18 @@ Apps.reg({
         me ? h('p', { class: 'small muted mt' }, '📏 About ' + fmtKm(haversine(me.lat, me.lon, f.latlng[0], f.latlng[1])) + ' from you (to the middle of the country).') : null),
         actions: [{ label: '🔊 Say it', onClick: () => Speak.say(c.name + (f.capital ? '. Capital: ' + f.capital : '')) }, { label: '🌍 Google Maps', onClick: cl => { cl(); gmaps(c.name); } }, { label: 'Zoom to it', cls: 'pri', onClick: cl => { cl(); sel = c; fit(...c.bb, 0.3); } }] });
     }
-    function gmaps(query, label) {
+    function gmaps(query, label, view0) {
+      let view = view0 || Prefs.get('gmView', 'map');
       const inp = h('input', { type: 'search', placeholder: 'Search a place, address or shop', value: label || query || '', enterkeyhint: 'search' }), frame = h('div', { style: { marginTop: '10px' } });
+      const seg = UI.seg([['map', '🗺️ Map'], ['photo', '🛰️ Photo'], ['street', '🚶 Street view']], view, x => { if (x === 'street') { streetView(); seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.textContent.includes(view === 'photo' ? 'Photo' : 'Map')))); return; } view = x; Prefs.set('gmView', x); show(); });
+      const coords = () => { const t = (query && label === inp.value.trim() ? query : '') || (/^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/.test(inp.value.trim()) ? inp.value.trim() : '') || (!inp.value.trim() && me ? me.lat.toFixed(6) + ',' + me.lon.toFixed(6) : ''); return /^-?\d/.test(t) ? t.replace(/\s/g, '') : ''; };
+      const streetView = () => { if (!navigator.onLine) return UI.toast('Street view needs internet'); const c = coords(), t = target(); if (c) window.open('https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + encodeURIComponent(c), '_blank', 'noopener'); else { openOut('comgooglemaps://?q=' + encodeURIComponent(t), 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(t)); UI.toast('In Google Maps, tap the street photo to look around 🚶', 4000); } };
       const q = () => inp.value.trim() || (me ? me.lat.toFixed(5) + ',' + me.lon.toFixed(5) : '');
       const show = () => { frame.innerHTML = ''; const v2 = query && !inp.value.trim() ? query : q(); if (!v2) return; if (!navigator.onLine) { frame.append(h('div', { class: 'note-banner' }, '📴 Google Maps needs internet. The world map here still works offline.')); return; }
-        frame.append(h('iframe', { src: 'https://www.google.com/maps?q=' + encodeURIComponent(query && /^-?\d/.test(query) && label === inp.value.trim() ? query : v2) + '&z=15&output=embed', title: 'Google Maps', loading: 'lazy', referrerpolicy: 'no-referrer-when-downgrade', style: { width: '100%', height: '55vh', border: 0, borderRadius: '14px' } })); };
+        frame.append(h('iframe', { src: 'https://www.google.com/maps?q=' + encodeURIComponent(query && /^-?\d/.test(query) && label === inp.value.trim() ? query : v2) + (view === 'photo' ? '&t=k&z=18' : '&z=15') + '&output=embed', title: 'Google Maps', loading: 'lazy', referrerpolicy: 'no-referrer-when-downgrade', style: { width: '100%', height: '55vh', border: 0, borderRadius: '14px' } })); };
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') { query = ''; show(); } });
       const target = () => (query && label === inp.value.trim() ? query : q());
-      UI.sheet({ title: '🌍 Google Maps', body: h('div', null, inp, frame, h('p', { class: 'tiny muted mt' }, 'Google Maps works online. “Open app” uses the Google Maps app if you have it, or the website.')),
+      UI.sheet({ title: '🌍 Google Maps', body: h('div', null, inp, h('div', { class: 'mt' }, seg), frame, h('p', { class: 'tiny muted mt' }, '🛰️ Photo shows real streets and houses from the sky. 🚶 Street view lets you look around at street level. Google Maps needs internet.')),
         actions: [{ label: '🧭 Directions', onClick: () => { const t = target(); if (t) openOut('comgooglemaps://?daddr=' + encodeURIComponent(t) + '&directionsmode=driving', 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(t)); } },
           { label: 'Open app ↗', cls: 'pri', onClick: () => { const t = target(); openOut('comgooglemaps://?q=' + encodeURIComponent(t), 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(t)); } }] });
       show(); if (!query && !label) setTimeout(() => inp.focus(), 80);
@@ -5555,24 +6893,29 @@ const Bible = {
   },
 };
 Apps.reg({
-  id: 'bible', name: 'Bible', icon: '✝️', color: 'linear-gradient(135deg,#C9A227,#7A4E12)', group: 'learn', keys: 'scripture verse god jesus psalms gospel church', blurb: 'Read offline, 3 translations',
+  id: 'bible', name: 'Bible', icon: '✝️', color: 'linear-gradient(135deg,#C9A227,#7A4E12)', group: 'learn', keys: 'scripture verse god jesus psalms gospel church', blurb: 'Read offline, 10 versions, learn & quiz',
   async mount(v, ctx) {
     let B; const body = h('div'); v.append(body);
     const marks = () => Prefs.get('bibleMarks', []), hl = () => Prefs.get('bibleHL', {});
     try { B = await Bible.load(); } catch (e) { v.append(UI.empty('📥', 'The Bible isn’t saved yet', 'Connect to Wi-Fi once — Super One saves it for offline reading.')); return; }
     const size = () => Prefs.get('bibleSize', 19);
     async function switchTr(id) { Prefs.set('bibleTr', id); try { B = await Bible.load(id); } catch (e) { UI.toast('That translation isn’t saved yet'); } }
-    function trMenu(after) { UI.menu('Translation', Bible.T.map(([id, n]) => ({ icon: Bible.tr() === id ? '✓' : '📖', label: n, run: async () => { await switchTr(id); after(); } }))); }
+    async function trMenu(after) {
+      const saved = {}; for (const [id] of Bible.T) saved[id] = await Bible.saved(id);
+      UI.menu('Translation (' + Bible.T.length + ')', [...Bible.T.map(([id, n, x]) => ({ icon: Bible.tr() === id ? '✓' : saved[id] ? '📖' : '⬇️', label: n, sub: x ? (saved[id] ? 'Saved for offline' : navigator.onLine ? 'Tap to download (about 4 MB) — then it works offline' : 'Needs internet once to download') : 'Always saved', run: async () => { if (!saved[id] && !navigator.onLine) return UI.toast('Connect to the internet once to save this version'); if (!saved[id]) UI.toast('Downloading ' + id + '…'); await switchTr(id); after(); } })),
+        { icon: '💾', label: 'Save all versions for offline', sub: 'About 28 MB', run: async () => { if (!navigator.onLine) return UI.toast('Needs internet'); let n = 0; for (const [id] of Bible.T) { try { await Bible.load(id); n++; UI.toast('Saved ' + n + ' of ' + Bible.T.length); } catch (e) { } } UI.toast('All versions saved ✓'); } }]);
+    }
     async function home() {
       if (ctx._bar) ctx._bar(); body.innerHTML = ''; ctx.setTitle('Bible'); ctx.setBack(null);
       ctx.setActions(h('button', { class: 'btn ghost sm', onclick: () => trMenu(home) }, Bible.tr()), h('button', { class: 'ib', 'aria-label': 'Search', html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">' + ICON_PATHS.search + '</svg>', onclick: () => search('') }));
       const vd = await Bible.votd().catch(() => null), last = Prefs.get('bibleLast', null);
       if (vd) body.append(h('button', { class: 'card', style: { display: 'block', width: '100%', textAlign: 'left', background: 'linear-gradient(135deg,#FFF6D8,var(--surface))', color: 'var(--ink)' }, onclick: () => chapter(vd.b, vd.c, vd.v) }, h('div', { class: 'tiny', style: { fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#9A6B00' } }, '✨ Verse of the day'), h('p', { style: { fontFamily: 'Georgia,serif', fontSize: '19px', lineHeight: 1.5, margin: '8px 0' } }, '“' + vd.text + '”'), h('b', null, vd.ref)));
       if (last) body.append(h('button', { class: 'btn wide mt', onclick: () => chapter(last.b, last.c) }, '📖 Continue reading: ' + B.b[last.b][0] + ' ' + last.c));
+      if (typeof BibleLearn !== 'undefined') body.append(BibleLearn.card(B, (b, c) => chapter(b, c)));
       const mk = marks(); if (mk.length) body.append(h('div', { class: 'sec' }, '🔖 Bookmarks'), h('div', { class: 'list' }, mk.slice(0, 8).map(m => h('button', { class: 'li', onclick: () => chapter(m.b, m.c, m.v) }, h('span', { class: 'ic' }, '🔖'), h('span', { class: 't' }, h('b', null, B.b[m.b][0] + ' ' + m.c + ':' + m.v), h('small', null, (B.b[m.b][1][m.c - 1] || [])[m.v - 1] || '')), h('span', { class: 'chev' }, '›')))));
       body.append(h('div', { class: 'sec' }, 'Old Testament'), h('div', { class: 'bk' }, B.b.slice(0, 39).map((bk, i) => h('button', { onclick: () => chapters(i) }, bk[0]))),
         h('div', { class: 'sec' }, 'New Testament'), h('div', { class: 'bk' }, B.b.slice(39).map((bk, i) => h('button', { onclick: () => chapters(i + 39) }, bk[0]))),
-        h('p', { class: 'tiny muted mt2' }, 'Public-domain texts: New Heart English Bible, King James Version (1769), Bible in Basic English. Saved on your device.'));
+        h('p', { class: 'tiny muted mt2' }, 'Public-domain texts: New Heart English Bible, King James Version (1769), Bible in Basic English (always saved), plus Berean Standard Bible, ASV, Young’s Literal, Darby, Webster, Geneva 1599 and American KJV (saved when you pick them).'));
     }
     function chapters(b) {
       if (ctx._bar) ctx._bar(); body.innerHTML = ''; ctx.setTitle(B.b[b][0]); ctx.setBack(() => { home(); return true; }); const read = Prefs.get('bibleRead', {});
@@ -5616,10 +6959,123 @@ Apps.reg({
         res.append(h('p', { class: 'small muted' }, (hits.length >= 200 ? '200+' : hits.length) + ' verses found'), h('div', { class: 'list' }, hits.map(([bi, c, vv, t]) => { const i = t.toLowerCase().indexOf(q); return h('button', { class: 'li', onclick: () => chapter(bi, c, vv) }, h('span', { class: 't' }, h('b', null, B.b[bi][0] + ' ' + c + ':' + vv), h('small', { style: { whiteSpace: 'normal' } }, t.slice(0, i), h('mark', null, t.slice(i, i + q.length)), t.slice(i + q.length)))); }))); };
       inp.addEventListener('input', debounce(run, 250)); body.append(h('div', { class: 'search' }, inp), res); if (q0) run(); else setTimeout(() => inp.focus(), 60);
     }
-    if (ctx.param && ctx.param.startsWith('search:')) search(ctx.param.slice(7)); else home();
+    if (ctx.param && ctx.param.startsWith('search:')) search(ctx.param.slice(7)); else if (ctx.param && /^read:\d+:\d+$/.test(ctx.param)) { const [, b, c] = ctx.param.split(':').map(Number); chapter(b, c); } else home();
     return () => { if (window.speechSynthesis) speechSynthesis.cancel(); if (ctx._bar) ctx._bar(); };
   },
 });
+
+/* ---- 46b-bible-learn.js ---- */
+/* ===== Bible: more versions (saved when picked) + learning: reading plans, stories & quizzes, memory verses, books game ===== */
+Bible.T.push(['BSB', 'Berean Standard Bible (modern)', 1], ['ASV', 'American Standard Version (1901)', 1], ['YLT', 'Young’s Literal Translation', 1], ['Darby', 'Darby Translation', 1], ['Webster', 'Webster Bible (1833)', 1], ['Geneva1599', 'Geneva Bible (1599)', 1], ['AKJV', 'American King James Version', 1]);
+Bible.isExtra = id => !!(Bible.T.find(t => t[0] === id) || [])[2];
+Bible.url = id => (Bible.isExtra(id) ? 'data/bible-extra/' : 'data/bible/') + id + '.json';
+Bible.load = function (id = this.tr()) {
+  return this.cache[id] || (this.cache[id] = (async () => {
+    const url = this.url(id), r = await fetch(url); if (!r.ok) throw new Error('missing');
+    if (this.isExtra(id) && 'caches' in window) { try { const c = await caches.open('bible-extra'); if (!(await c.match(url))) await c.put(url, r.clone()); } catch (e) { } }
+    return r.json();
+  })().catch(e => { delete this.cache[id]; throw e; }));
+};
+Bible.saved = async id => { if (!Bible.isExtra(id)) return true; try { return !!(await (await caches.open('bible-extra')).match(Bible.url(id))); } catch (e) { return false; } };
+const BIBLE_STORIES = [ // title, emoji, book index, chapter, ref, summary, [question, right, wrong, wrong]...
+  ['Creation', '🌍', 0, 1, 'Genesis 1–2', 'God made the heavens and the earth, light, sky, land, plants, sun, moon and stars, animals, and people — and rested on the seventh day.', [['What did God make on the first day?', 'Light', 'Fish', 'People'], ['On which day did God rest?', 'The seventh day', 'The first day', 'The tenth day'], ['Who were the first man and woman?', 'Adam and Eve', 'Abraham and Sarah', 'Mary and Joseph']]],
+  ['Noah’s Ark', '🚢', 0, 6, 'Genesis 6–9', 'God told Noah to build a huge boat and fill it with animals. It rained for forty days, and afterward God put a rainbow in the sky as a promise.', [['What did God tell Noah to build?', 'An ark (a big boat)', 'A tower', 'A temple'], ['How many days and nights did it rain?', '40', '7', '100'], ['What sign did God give after the flood?', 'A rainbow', 'A star', 'A dove made of gold']]],
+  ['God’s promise to Abraham', '⭐', 0, 15, 'Genesis 15; 21', 'God promised Abraham more children and grandchildren than the stars. When Abraham and Sarah were very old, their son Isaac was born.', [['God said Abraham’s family would be as many as the…', 'Stars', 'Trees', 'Mountains'], ['What was the name of Abraham’s son born when he was old?', 'Isaac', 'Moses', 'David'], ['What did Sarah do when she heard she would have a son?', 'She laughed', 'She ran away', 'She sang']]],
+  ['Joseph and his coat', '🧥', 0, 37, 'Genesis 37–45', 'Joseph’s brothers were jealous of his special coat and sold him. In Egypt he explained Pharaoh’s dreams, saved many people from famine, and forgave his brothers.', [['What special gift did Jacob give Joseph?', 'A colorful coat', 'A sword', 'A crown'], ['What did Joseph’s jealous brothers do?', 'Sold him to traders', 'Made him king', 'Sent him to school'], ['Pharaoh’s dreams were about seven good years and seven years of…', 'Famine (no food)', 'Snow', 'War']]],
+  ['Moses and the Red Sea', '🌊', 1, 14, 'Exodus 3; 14; 20', 'God spoke to Moses from a burning bush and used him to lead Israel out of Egypt. God parted the Red Sea and later gave the Ten Commandments.', [['How did God first speak to Moses?', 'From a burning bush', 'In a dream at sea', 'Through a lion'], ['What happened at the Red Sea?', 'The water parted', 'It froze', 'It turned to gold'], ['On which mountain did Moses receive the Ten Commandments?', 'Mount Sinai', 'Mount Everest', 'Mount Zion']]],
+  ['The walls of Jericho', '🧱', 5, 6, 'Joshua 6', 'God told Joshua’s army to march around Jericho once a day for six days and seven times on the seventh day. When they shouted, the walls fell.', [['How many days did they march?', '7', '3', '12'], ['How many times did they march on the last day?', '7', '1', '40'], ['What happened when they shouted?', 'The walls fell down', 'It started to rain', 'The gates turned to gold']]],
+  ['David and Goliath', '🪨', 8, 17, '1 Samuel 17', 'Young David, a shepherd, trusted God and faced the giant Goliath with just a sling and a stone — and won.', [['What did David use to fight Goliath?', 'A sling and a stone', 'A big sword', 'A bow and arrow'], ['How many smooth stones did David pick up?', 'Five', 'One', 'Ten'], ['What was David’s job before?', 'Shepherd', 'Fisherman', 'Soldier captain']]],
+  ['Elijah and the fire', '🔥', 10, 18, '1 Kings 18', 'Elijah challenged the prophets of Baal. Their god never answered, but the Lord sent fire from heaven to burn up Elijah’s offering — even though it was soaked with water.', [['Who did Elijah challenge?', 'The prophets of Baal', 'The Philistines', 'The Romans'], ['What did Elijah pour on his altar?', 'Water', 'Oil', 'Honey'], ['How did God answer Elijah?', 'With fire from heaven', 'With a rainbow', 'With an earthquake']]],
+  ['Esther the brave queen', '👑', 16, 4, 'Esther 4–7', 'Queen Esther bravely went to the king without being called, to save her people from an evil plan. Her cousin Mordecai encouraged her.', [['What was Esther?', 'A queen', 'A shepherd', 'A judge'], ['Who was Esther’s cousin who raised her?', 'Mordecai', 'Haman', 'Daniel'], ['Who did Esther save?', 'Her people, the Jews', 'Only herself', 'The king’s horses']]],
+  ['Daniel and the lions', '🦁', 26, 6, 'Daniel 6', 'Daniel kept praying to God even when it was against the law. He was thrown into a den of lions, but God sent an angel to shut the lions’ mouths.', [['Why was Daniel thrown to the lions?', 'He kept praying to God', 'He stole bread', 'He ran away'], ['Who shut the lions’ mouths?', 'An angel', 'The king', 'Daniel’s friends'], ['Which king was it?', 'Darius', 'Pharaoh', 'Herod']]],
+  ['Jonah and the big fish', '🐋', 31, 1, 'Jonah 1–3', 'Jonah ran from God’s job for him. After a storm, a great fish swallowed him for three days. Then he went to Nineveh, and the people turned back to God.', [['Where did God send Jonah?', 'Nineveh', 'Egypt', 'Rome'], ['How long was Jonah inside the fish?', 'Three days and nights', 'One hour', 'A whole year'], ['What did the people of Nineveh do?', 'Turned from their wrong ways', 'Built a ship', 'Chased Jonah away']]],
+  ['The birth of Jesus', '⭐', 41, 2, 'Luke 2', 'Jesus was born in Bethlehem and laid in a manger. Angels told shepherds the good news.', [['In which town was Jesus born?', 'Bethlehem', 'Nazareth', 'Jerusalem'], ['Where was baby Jesus laid?', 'In a manger', 'In a palace bed', 'In a boat'], ['Who heard the angels’ news that night?', 'Shepherds', 'Kings in a castle', 'Fishermen']]],
+  ['Jesus calms the storm', '⛈️', 40, 4, 'Mark 4:35–41', 'A wild storm hit the boat while Jesus slept. He woke up, spoke to the wind and waves, and everything became calm.', [['What was Jesus doing when the storm started?', 'Sleeping in the boat', 'Swimming', 'Fishing'], ['What did Jesus say to the waves?', 'Be still!', 'Get bigger!', 'Go home!'], ['The disciples asked: “Who is this? Even the wind and waves…”', 'Obey him', 'Are scared', 'Are cold']]],
+  ['Feeding five thousand', '🐟', 42, 6, 'John 6:1–14', 'A boy shared five small loaves and two fish. Jesus thanked God, and it fed thousands of people with twelve baskets left over.', [['What food did the boy share?', 'Five loaves and two fish', 'Ten apples', 'A big cake'], ['How many baskets were left over?', 'Twelve', 'Two', 'None'], ['About how many men were fed?', '5,000', '50', '500,000']]],
+  ['The good Samaritan', '🤝', 41, 10, 'Luke 10:25–37', 'A man was hurt on the road. Two important people walked past, but a Samaritan stopped and took care of him. Jesus said: go and do the same.', [['Who stopped to help the hurt man?', 'A Samaritan', 'A priest', 'A soldier'], ['Who walked past without helping?', 'A priest and a Levite', 'Two children', 'A king and queen'], ['What is the lesson?', 'Love your neighbor — help anyone in need', 'Never travel', 'Only help friends']]],
+  ['The lost son', '🏡', 41, 15, 'Luke 15:11–32', 'A son wasted all his money far from home. When he came back sorry, his father ran to hug him and threw a party — like God welcomes us back.', [['What did the younger son ask his father for?', 'His share of the money', 'A new coat only', 'A horse'], ['What job did he end up doing?', 'Feeding pigs', 'Being a king', 'Fishing'], ['What did the father do when he came home?', 'Ran to hug him and had a party', 'Locked the door', 'Made him sleep outside']]],
+  ['Jesus walks on water', '🌊', 39, 14, 'Matthew 14:22–33', 'At night the disciples saw Jesus walking on the lake. Peter stepped out to meet him, but got scared and began to sink — and Jesus caught him.', [['Which disciple walked on the water too?', 'Peter', 'John', 'Thomas'], ['Why did Peter start to sink?', 'He got scared of the wind', 'He was too heavy', 'He fell asleep'], ['What did Jesus do?', 'Reached out and caught him', 'Swam away', 'Laughed']]],
+  ['Zacchaeus', '🌳', 41, 19, 'Luke 19:1–10', 'Zacchaeus was a short tax collector who climbed a tree to see Jesus. Jesus came to his house, and Zacchaeus changed and paid people back.', [['Why did Zacchaeus climb a tree?', 'He was too short to see', 'To hide', 'To pick fruit'], ['What kind of tree was it?', 'A sycamore', 'A pine', 'A palm'], ['What did Zacchaeus promise?', 'To give to the poor and pay people back', 'To climb higher', 'To move away']]],
+  ['The Last Supper and the cross', '✝️', 41, 22, 'Luke 22–23', 'Jesus shared the Passover meal with his disciples. He was betrayed, and died on the cross, praying, “Father, forgive them.”', [['Which meal did Jesus share with his disciples?', 'The Passover meal', 'A wedding feast', 'A picnic'], ['Who betrayed Jesus?', 'Judas', 'Peter', 'John'], ['What did Jesus pray on the cross?', 'Father, forgive them', 'Make it stop', 'Send soldiers']]],
+  ['Jesus is risen!', '🌅', 39, 28, 'Matthew 28', 'On the third day the stone was rolled away and the tomb was empty — Jesus rose from the dead! The women ran to tell the disciples.', [['On which day did Jesus rise?', 'The third day', 'The tenth day', 'The same day'], ['What was moved from the tomb?', 'The big stone', 'A tree', 'A gate'], ['Who found the empty tomb first?', 'Women, including Mary Magdalene', 'Roman kings', 'Nobody']]],
+  ['Pentecost', '🕊️', 43, 2, 'Acts 2', 'The Holy Spirit came on the disciples like wind and tongues of fire. They spoke in many languages and about 3,000 people believed that day.', [['Who came upon the disciples?', 'The Holy Spirit', 'An army', 'A storm only'], ['What appeared above them?', 'Tongues of fire', 'Rainbows', 'Doves made of gold'], ['About how many people believed that day?', '3,000', '12', '1 million']]],
+  ['Saul meets Jesus', '💡', 43, 9, 'Acts 9', 'Saul was hurting Christians until a bright light stopped him on the road to Damascus and Jesus spoke to him. He became Paul, a great messenger of Jesus.', [['What was Paul’s name before?', 'Saul', 'Silas', 'Samuel'], ['Where was he going?', 'Damascus', 'Bethlehem', 'Egypt'], ['For how many days could he not see?', 'Three', 'Seven', 'Forty']]],
+];
+const BIBLE_PLANS = [
+  ['jesus7', '✝️ The story of Jesus', '7 days', () => [[[41, 1, 2]], [[39, 5, 7]], [[40, 4, 6]], [[42, 9, 11]], [[41, 15, 15]], [[41, 22, 23]], [[41, 24, 24], [43, 1, 1]]]],
+  ['heroes', '🦸 Heroes of faith', '14 days', () => [[[0, 6, 9]], [[0, 22, 22]], [[0, 37, 37], [0, 41, 41]], [[1, 2, 3]], [[1, 14, 14]], [[5, 6, 6]], [[6, 6, 7]], [[8, 17, 17]], [[10, 18, 18]], [[16, 4, 5]], [[26, 3, 3]], [[26, 6, 6]], [[31, 1, 4]], [[57, 11, 11]]]],
+  ['gospels', '📖 The Gospels in 30 days', '30 days', B => { const ch = []; for (const b of [39, 40, 41, 42]) for (let c = 1; c <= B.b[b][1].length; c++) ch.push([b, c]); return Array.from({ length: 30 }, (_, i) => ch.slice(Math.floor(i * ch.length / 30), Math.floor((i + 1) * ch.length / 30)).map(([b, c]) => [b, c, c])); }],
+  ['psalms', '🎵 Psalms & Proverbs month', '31 days', () => Array.from({ length: 31 }, (_, i) => [[18, i * 5 + 1, Math.min(150, i * 5 + 5)], [19, i + 1, i + 1]].filter(x => x[1] <= 150))],
+  ['year', '🌍 The whole Bible in a year', '365 days', B => { const ch = []; B.b.forEach((bk, b) => bk[1].forEach((_, c) => ch.push([b, c + 1]))); return Array.from({ length: 365 }, (_, i) => { const part = ch.slice(Math.floor(i * ch.length / 365), Math.floor((i + 1) * ch.length / 365)), out = []; for (const [b, c] of part) { const last = out[out.length - 1]; if (last && last[0] === b && last[2] === c - 1) last[2] = c; else out.push([b, c, c]); } return out; }); }],
+];
+const BibleLearn = {
+  card(B, open) {
+    return h('div', { class: 'card mt', style: { background: 'linear-gradient(135deg,#2F6BFF,#7A4E12)', color: '#fff', border: 0 } }, h('div', { style: { fontWeight: 800, fontSize: '18px', marginBottom: '8px' } }, '🎓 Learn the Bible'),
+      h('div', { class: 'grid2' }, [['📅', 'Reading plans', () => this.plans(B, open)], ['📖', 'Stories & quiz', () => this.stories(B, open)], ['🧠', 'Memory verse', () => this.memory(B)], ['📚', 'Books game', () => this.books(B)]].map(([e, n, f]) => h('button', { class: 'btn', style: { background: 'rgba(255,255,255,.18)', color: '#fff', border: 0, justifyContent: 'flex-start' }, onclick: f }, e + ' ' + n))));
+  },
+  refText(B, parts) { return parts.map(([b, c1, c2]) => B.b[b][0] + ' ' + c1 + (c2 > c1 ? '–' + c2 : '')).join(', '); },
+  plans(B, open) {
+    const st = Prefs.get('biblePlans', {});
+    const s = UI.sheet({ title: '📅 Reading plans', body: h('div', { class: 'list' }, BIBLE_PLANS.map(([id, n, len, mk]) => { const P = st[id], days = mk(B), done = P ? P.done.length : 0;
+      return h('button', { class: 'li', onclick: () => { s.close(); this.plan(B, open, id); } }, h('span', { class: 'ic' }, n.split(' ')[0]), h('span', { class: 't' }, h('b', null, n.slice(n.indexOf(' ') + 1)), h('small', null, len + (P ? ' · ' + done + ' of ' + days.length + ' done' : ' · tap to start'))), h('span', { class: 'chev' }, '›')); })) });
+  },
+  plan(B, open, id) {
+    const [, n, , mk] = BIBLE_PLANS.find(p => p[0] === id), days = mk(B), st = Prefs.get('biblePlans', {}), P = st[id] || (st[id] = { start: ymd(new Date()), done: [] }); Prefs.set('biblePlans', st);
+    const next = days.findIndex((_, i) => !P.done.includes(i));
+    const s = UI.sheet({ title: n, body: h('div', null, h('div', { class: 'prog mb' }, h('i', { style: { width: (100 * P.done.length / days.length) + '%' } })), h('p', { class: 'small muted' }, P.done.length + ' of ' + days.length + ' days done. Tap a day to read it, then tick it.'),
+      h('div', { class: 'list' }, days.map((parts, i) => { const ok = P.done.includes(i), ck = h('button', { class: 'ib', 'aria-label': ok ? 'Mark not read' : 'Mark read', style: { fontSize: '20px' } }, ok ? '✅' : '⬜');
+        ck.onclick = () => { const k = P.done.indexOf(i); if (k >= 0) P.done.splice(k, 1); else { P.done.push(i); Sfx.good(); } Prefs.set('biblePlans', st); ck.textContent = P.done.includes(i) ? '✅' : '⬜'; };
+        return h('div', { class: 'li', style: i === next ? { background: 'var(--accent-soft)' } : null }, ck, h('button', { class: 't', style: { border: 0, background: 'none', textAlign: 'left', padding: 0, color: 'var(--ink)' }, onclick: () => { s.close(); open(parts[0][0], parts[0][1]); } }, h('b', null, 'Day ' + (i + 1) + (i === next ? ' · up next' : '')), h('small', null, this.refText(B, parts)))); }))),
+      actions: [{ label: 'Restart plan', onClick: c => { delete st[id]; Prefs.set('biblePlans', st); c(); } }, { label: next >= 0 ? '📖 Read day ' + (next + 1) : 'All done 🎉', cls: 'pri', onClick: c => { if (next < 0) return c(); c(); open(days[next][0][0], days[next][0][1]); } }] });
+    setTimeout(() => { const el = s.el.querySelectorAll('.li')[next]; el && el.scrollIntoView({ block: 'center' }); }, 120);
+  },
+  stories(B, open) {
+    const done = Prefs.get('bibleQuiz', {});
+    const s = UI.sheet({ title: '📖 Bible stories', body: h('div', null, h('p', { class: 'small muted' }, 'Read a story, then try the quiz. ' + Object.keys(done).length + ' of ' + BIBLE_STORIES.length + ' stars earned.'),
+      h('div', { class: 'list' }, BIBLE_STORIES.map((st, i) => h('button', { class: 'li', onclick: () => { s.close(); this.story(B, open, i); } }, h('span', { class: 'ic' }, st[1]), h('span', { class: 't' }, h('b', null, st[0]), h('small', null, st[4])), h('span', { class: 'chev' }, done[i] ? '⭐' : '›'))))) });
+  },
+  story(B, open, i) {
+    const [t, e, b, c, ref, sum, qs] = BIBLE_STORIES[i];
+    UI.sheet({ title: e + ' ' + t, body: h('div', null, h('p', { class: 'muted small' }, ref), h('p', { style: { fontSize: '18px', lineHeight: 1.55 } }, sum), h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => Speak.say(t + '. ' + sum) }, '🔊 Listen'), h('button', { class: 'btn', onclick: e2 => { e2.target.closest('.scrim').remove(); open(b, c); } }, '📖 Read it in the Bible'))),
+      actions: [{ label: '❓ Take the quiz', cls: 'pri', onClick: cl => { cl(); this.quiz(B, open, i); } }] });
+  },
+  quiz(B, open, i) {
+    const [t, e, , , , , qs] = BIBLE_STORIES[i]; let k = 0, right = 0; const box = h('div');
+    const ask = () => {
+      box.innerHTML = ''; if (k >= qs.length) { const star = right === qs.length; if (star) { const d = Prefs.get('bibleQuiz', {}); d[i] = 1; Prefs.set('bibleQuiz', d); Sfx.win(); } box.append(UI.empty(star ? '⭐' : '💪', right + ' of ' + qs.length + ' right', star ? 'You earned a star!' : 'Read the story again and try once more.')); return; }
+      const [q, ok, ...wr] = qs[k], opts = [ok, ...wr].sort(() => Math.random() - 0.5);
+      box.append(h('p', { style: { fontSize: '18px', fontWeight: 700 } }, (k + 1) + '. ' + q), h('div', { class: 'stack' }, opts.map(o => { const b2 = h('button', { class: 'btn wide', style: { justifyContent: 'flex-start' } }, o); b2.onclick = () => { const good = o === ok; if (good) { right++; Sfx.good(); } else Sfx.bad(); b2.classList.add(good ? 'good' : 'bad'); box.querySelectorAll('.btn').forEach(x => { x.disabled = true; if (x.textContent === ok) x.classList.add('good'); }); setTimeout(() => { k++; ask(); }, 900); }; return b2; })));
+    };
+    UI.sheet({ title: '❓ ' + t, body: box }); ask();
+  },
+  memory(B) {
+    const mem = Prefs.get('bibleMem', {}), refs = VOTD_REFS.slice(0, 24).filter(([b, c, v]) => B.b[b] && B.b[b][1][c - 1] && B.b[b][1][c - 1][v - 1]);
+    const s = UI.sheet({ title: '🧠 Memory verses', body: h('div', null, h('p', { class: 'small muted' }, 'Pick a verse, then build it word by word. ' + Object.keys(mem).length + ' memorized.'), h('div', { class: 'list' }, refs.map(([b, c, v]) => { const key = b + ':' + c + ':' + v;
+      return h('button', { class: 'li', onclick: () => { s.close(); this.build(B, b, c, v); } }, h('span', { class: 'ic' }, mem[key] ? '✅' : '📜'), h('span', { class: 't' }, h('b', null, Bible.ref(B, b, c, v)), h('small', null, B.b[b][1][c - 1][v - 1].slice(0, 70) + '…')), h('span', { class: 'chev' }, '›')); }))) });
+  },
+  build(B, b, c, v) {
+    const text = B.b[b][1][c - 1][v - 1], words = text.split(/\s+/).filter(Boolean), key = b + ':' + c + ':' + v; let at = 0, miss = 0;
+    const shown = h('p', { style: { fontSize: '19px', lineHeight: 1.6, fontFamily: 'Georgia,serif', minHeight: '90px' } }), bank = h('div', { class: 'chips' }), msg = h('div', { class: 'small muted center mt' });
+    const paint = () => { shown.textContent = words.slice(0, at).join(' ') + (at < words.length ? ' ' + '＿ '.repeat(Math.min(4, words.length - at)) : ''); bank.innerHTML = '';
+      if (at >= words.length) { Sfx.win(); const m = Prefs.get('bibleMem', {}); m[key] = 1; Prefs.set('bibleMem', m); msg.textContent = '🎉 You built the whole verse' + (miss ? ' (' + miss + ' mix-ups)' : ' with no mistakes!'); return; }
+      const pool = [...new Set([words[at], ...words.slice(at + 1, at + 6)])].sort(() => Math.random() - 0.5);
+      pool.forEach(w => { const bt = h('button', { class: 'chip' }, w); bt.onclick = () => { if (w === words[at]) { at++; Sfx.tap(); paint(); } else { miss++; Sfx.bad(); bt.classList.add('bad'); } }; bank.append(bt); }); };
+    UI.sheet({ title: '🧠 ' + Bible.ref(B, b, c, v), body: h('div', null, h('p', { class: 'small muted' }, 'Tap the next word. Say it out loud as you go!'), shown, bank, msg, h('div', { class: 'row mt' }, h('button', { class: 'btn sm', onclick: () => Speak.say(text) }, '🔊 Hear it'), h('button', { class: 'btn sm', onclick: () => { at = 0; miss = 0; msg.textContent = ''; paint(); } }, '↺ Start over'))) });
+    paint();
+  },
+  books(B) {
+    let score = 0, round = 0; const box = h('div'), names = B.b.map(x => x[0]);
+    const ask = () => {
+      box.innerHTML = ''; if (round >= 10) { const best = Prefs.get('bibleBooksBest', 0); if (score > best) Prefs.set('bibleBooksBest', score); Sfx.win(); box.append(UI.empty(score >= 8 ? '🏆' : '📚', score + ' / 10', 'Best: ' + Math.max(best, score) + ' · tap below to play again'), h('div', { class: 'center' }, h('button', { class: 'btn pri', onclick: () => { score = 0; round = 0; ask(); } }, 'Play again'))); return; }
+      const mode = round % 2, i = Math.floor(Math.random() * (mode ? 65 : 66));
+      let q, ok, opts;
+      if (!mode) { q = 'Is “' + names[i] + '” in the Old or New Testament?'; ok = i < 39 ? 'Old Testament' : 'New Testament'; opts = ['Old Testament', 'New Testament']; }
+      else { q = 'Which book comes right after “' + names[i] + '”?'; ok = names[i + 1]; opts = [ok, ...[...new Set([names[(i + 2) % 66], names[(i + 5) % 66], names[Math.max(0, i - 1)]])].filter(x => x !== ok).slice(0, 2)].sort(() => Math.random() - 0.5); }
+      box.append(h('div', { class: 'small muted' }, 'Question ' + (round + 1) + ' of 10 · score ' + score), h('p', { style: { fontSize: '18px', fontWeight: 700 } }, q), h('div', { class: 'stack' }, opts.map(o => { const b2 = h('button', { class: 'btn wide' }, o); b2.onclick = () => { const good = o === ok; if (good) { score++; Sfx.good(); } else Sfx.bad(); b2.classList.add(good ? 'good' : 'bad'); box.querySelectorAll('.btn').forEach(x => { x.disabled = true; if (x.textContent === ok) x.classList.add('good'); }); setTimeout(() => { round++; ask(); }, 800); }; return b2; })));
+    };
+    UI.sheet({ title: '📚 Books of the Bible', body: box }); ask();
+  },
+};
 
 /* ---- 47-wiki.js ---- */
 /* ===== Wikipedia: search and read articles online, save them to read offline ===== */
